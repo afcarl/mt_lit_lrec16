@@ -1,0 +1,794 @@
+<PAPER>
+  <FILENO/>
+  <TITLE></TITLE>
+  <AUTHORS/>
+  <ABSTRACT/>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-32103">Recent advances in Statistical Machine Translation (SMT) are widely centred around two concepts: (a) hierarchical translation processes, frequently employing Synchronous Context Free Grammars (SCFGs) and (b) transduction or synchronous rewrite processes over a linguistic syntactic tree.</S>
+        <S ID="S-32104">SCFGs in the form of the Inversion-Transduction Grammar (ITG) were first introduced by (Wu, 1997) as a formalism to recursively describe the translation process.</S>
+        <S ID="S-32105">The Hiero system (Chiang, 2005) 642</S>
+      </P>
+      <P>
+        <S ID="S-32106">utilised an ITG-flavour which focused on hierarchical phrase-pairs to capture context-driven translation and reordering patterns with &#8216;gaps&#8217;, offering competitive performance particularly for language pairs with extensive reordering.</S>
+        <S ID="S-32107">As Hiero uses a single non-terminal and concentrates on overcoming translation lexicon sparsity, it barely explores the recursive nature of translation past the lexical level.</S>
+        <S ID="S-32108">Nevertheless, the successful employment of SCFGs for phrase-based SMT brought translation models assuming latent syntactic structure to the spotlight.</S>
+        <S ID="S-32109">Simultaneously, mounting efforts have been directed towards SMT models employing linguistic syntax on the source side (Yamada and Knight, 2001; Quirk et al., 2005; Liu et al., 2006), target side (Galley et al., 2004; Galley et al., 2006) or both (Zhang et al., 2008; Liu et al., 2009; Chiang, 2010).</S>
+        <S ID="S-32110">Hierarchical translation was combined with target side linguistic annotation in (Zollmann and Venugopal, 2006).</S>
+        <S ID="S-32111">Interestingly, early on (Koehn et al., 2003) exemplified the difficulties of integrating linguistic information in translation systems.</S>
+        <S ID="S-32112">Syntaxbased MT often suffers from inadequate constraints in the translation rules extracted, or from striving to combine these rules together towards a full derivation.</S>
+        <S ID="S-32113">Recent research tries to address these issues, by re-structuring training data parse trees to better suit syntax-based SMT training (Wang et al., 2010), or by moving from linguistically motivated synchronous grammars to systems where linguistic plausibility of the translation is assessed through additional features in a phrase-based system (Venugopal et al., 2009; Chiang et al., 2009), obscuring the impact of higher level syntactic processes.</S>
+      </P>
+      <P>
+        <S ID="S-32114">While it is assumed that linguistic structure does correlate with some translation phenomena, in this</S>
+      </P>
+      <P>
+        <S ID="S-32115">work we do not employ it as the backbone of translation.</S>
+        <S ID="S-32116">In place of linguistically constrained translation imposing syntactic parse structure, we opt for linguistically motivated translation.</S>
+        <S ID="S-32117">We learn latent hierarchical structure, taking advantage of linguistic annotations but shaped and trained for translation.</S>
+      </P>
+      <P>
+        <S ID="S-32118">We start by labelling each phrase-pair span in the word-aligned training data with multiple linguistically motivated categories, offering multi-grained abstractions from its lexical content.</S>
+        <S ID="S-32119">These phrasepair label charts are the input of our learning algorithm, which extracts the linguistically motivated rules and estimates the probabilities for a stochastic SCFG, without arbitrary constraints such as phrase or span sizes.</S>
+        <S ID="S-32120">Estimating such grammars under a Maximum Likelihood criterion is known to be plagued by strong overfitting leading to degenerate estimates (DeNero et al., 2006).</S>
+        <S ID="S-32121">In contrast, our learning objective not only avoids overfitting the training data but, most importantly, learns joint stochastic synchronous grammars which directly aim at generalisation towards yet unseen instances.</S>
+        <S ID="S-32122">By advancing from structures which mimic linguistic syntax, to learning linguistically aware latent recursive structures targeting translation, we achieve significant improvements in translation quality for 4 different language pairs in comparison with a strong hierarchical translation baseline.</S>
+        <S ID="S-32123">Our key contributions are presented in the following sections.</S>
+        <S ID="S-32124">Section 2 discusses the weak independence assumptions of SCFGs and introduces a joint translation model which addresses these issues and separates hierarchical translation structure from phrase-pair emission.</S>
+        <S ID="S-32125">In section 3 we consider a chart over phrase-pair spans filled with sourcelanguage linguistically motivated labels.</S>
+        <S ID="S-32126">We show how we can employ this crucial input to extract and train a hierarchical translation structure model with millions of rules.</S>
+        <S ID="S-32127">Section 4 demonstrates decoding with the model by constraining derivations to linguistic hints of the source sentence and presents our empirical results.</S>
+        <S ID="S-32128">We close with a discussion of related work and our conclusions.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Joint Translation Model</HEADER>
+      <P>
+        <S ID="S-32181">Our model is based on a probabilistic Synchronous CFG (Wu, 1997; Chiang, 2005).</S>
+        <S ID="S-32182">SCFGs define a 643 SBAR &#8594; [WHNP SBAR\WHNP]</S>
+      </P>
+      <P>
+        <S ID="S-32183">SBAR\WHNP &#8594; &#12296;VP/NP L NP R &#12297; (b)</S>
+      </P>
+      <P>
+        <S ID="S-32184">NP R &#8594; [NP PP]</S>
+      </P>
+      <P>
+        <S ID="S-32185">WHNP &#8594; WHNP P</S>
+      </P>
+      <P>
+        <S ID="S-32186">WHNP P &#8594; which / der</S>
+      </P>
+      <P>
+        <S ID="S-32187">VP/NP L &#8594; VP/NP L P</S>
+      </P>
+      <P>
+        <S ID="S-32188">VP/NP L P &#8594; is / ist</S>
+      </P>
+      <P>
+        <S ID="S-32189">NP R &#8594; NP R P</S>
+      </P>
+      <P>
+        <S ID="S-32190">NP R P &#8594; the solution / die L&#246;sung</S>
+      </P>
+      <P>
+        <S ID="S-32191">NP &#8594; NP P</S>
+      </P>
+      <P>
+        <S ID="S-32192">NP P &#8594; the solution / die L&#246;sung</S>
+      </P>
+      <P>
+        <S ID="S-32193">PP &#8594; PP P</S>
+      </P>
+      <P>
+        <S ID="S-32194">PP P &#8594; to the problem / f&#252;r das Problem</S>
+      </P>
+      <P>
+        <S ID="S-32195">language over string pairs, which are generated beginning from a start symbol S and recursively expanding pairs of linked non-terminals across the two strings using the grammar&#8217;s rule set.</S>
+        <S ID="S-32196">By crossing the links between the non-terminals of the two sides reordering phenomena are captured.</S>
+        <S ID="S-32197">We employ binary SCFGs, i.e. grammars with a maximum of two non-terminals on the right-hand side.</S>
+        <S ID="S-32198">Also, for this work we only used grammars with either purely lexical or purely abstract rules involving one or two nonterminal pairs.</S>
+        <S ID="S-32199">An example can be seen in Figure 1, using an ITG-style notation and assuming the same non-terminal labels for both sides.</S>
+      </P>
+      <P>
+        <S ID="S-32200">We utilise probabilistic SCFGs, where each rule is assigned a conditional probability of expanding the left-hand side symbol with the rule&#8217;s right-hand side.</S>
+        <S ID="S-32201">Phrase-pairs are emitted jointly and the overall probabilistic SCFG is a joint model over parallel strings.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 SCFG Reordering Weaknesses</HEADER>
+        <P>
+          <S ID="S-32129">An interesting feature of all probabilistic SCFGs (i.e. not only binary ones), which has received surprisingly little attention, is that the reordering pat- (a)</S>
+        </P>
+        <P>
+          <S ID="S-32130">(c)</S>
+        </P>
+        <P>
+          <S ID="S-32131">(d)</S>
+        </P>
+        <P>
+          <S ID="S-32132">(e)</S>
+        </P>
+        <P>
+          <S ID="S-32133">(f)</S>
+        </P>
+        <P>
+          <S ID="S-32134">(g)</S>
+        </P>
+        <P>
+          <S ID="S-32135">(h)</S>
+        </P>
+        <P>
+          <S ID="S-32136">(i)</S>
+        </P>
+        <P>
+          <S ID="S-32137">(j)</S>
+        </P>
+        <P>
+          <S ID="S-32138">(k)</S>
+        </P>
+        <P>
+          <S ID="S-32139">(l)</S>
+        </P>
+        <P>
+          <S ID="S-32140">(m)</S>
+        </P>
+        <P>
+          <S ID="S-32141">tern between the non-terminal pairs (or in the case of ITGs the choice between monotone and swap expansion) are not conditioned on any other part of a derivation.</S>
+          <S ID="S-32142">The result is that, the reordering pattern with the highest probability will always be preferred (e.g. in the Viterbi derivation) over the rest, irrespective of lexical or abstract context.</S>
+          <S ID="S-32143">As an example, a probabilistic SCFG will always assign a higher probability to derivations swapping or monotonically translating nouns and adjectives between English and French, only depending on which of the two rules NP &#8594; [NN JJ], NP &#8594; &#12296;NN JJ&#12297; has a higher probability.</S>
+          <S ID="S-32144">The rest of the (sometimes thousands of) rule-specific features usually added to SCFG translation models do not directly help either, leaving reordering decisions disconnected from the rest of the derivation.</S>
+        </P>
+        <P>
+          <S ID="S-32145">While in a decoder this is somehow mitigated by the use of a language model, we believe that the weakness of straightforward applications of SCFGs to model reordering structure at the sentence level misses a chance to learn this crucial part of the translation process during grammar induction.</S>
+          <S ID="S-32146">As (Mylonakis and Sima&#8217;an, 2010) note, &#8216;plain&#8217; SCFGs seem to perform worse than the grammars described next, mainly due to wrong long-range reordering decisions for which the language model can hardly help.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Hierarchical Reordering SCFG</HEADER>
+        <P>
+          <S ID="S-32147">We address the weaknesses mentioned above by relying on an SCFG grammar design that is similar to the &#8216;Lexicalised Reordering&#8217; grammar of (Mylonakis and Sima&#8217;an, 2010).</S>
+          <S ID="S-32148">As in the rules of Figure 1, we separate non-terminals according to the reordering patterns in which they participate.</S>
+          <S ID="S-32149">Nonterminals such as B L , C R take part only in swapping right-hand sides &#12296;B L C R &#12297; (with B L swapping from the source side&#8217;s left to the target side&#8217;s right, C R swapping in the opposite direction), while non-terminals such as B, C take part solely in monotone right-hand side expansions [B C].</S>
+          <S ID="S-32150">These nonterminal categories can appear also on the left-hand side of a rule, as in rule (c) of Figure 1.</S>
+        </P>
+        <P>
+          <S ID="S-32151">In contrast with (Mylonakis and Sima&#8217;an, 2010), monotone and swapping non-terminals do not emit phrase-pairs themselves.</S>
+          <S ID="S-32152">Rather, each non-terminal NT is expanded to a dedicated phrase-pair emit- 644 A &#8594; [B C] A &#8594; &#12296;B L C R &#12297;</S>
+        </P>
+        <P>
+          <S ID="S-32153">A L &#8594; [B C] A L &#8594; &#12296;B L C R &#12297;</S>
+        </P>
+        <P>
+          <S ID="S-32154">A R &#8594; [B C] A R &#8594; &#12296;B L C R &#12297;</S>
+        </P>
+        <P>
+          <S ID="S-32155">A &#8594; A P</S>
+        </P>
+        <P>
+          <S ID="S-32156">A L &#8594; A L P</S>
+        </P>
+        <P>
+          <S ID="S-32157">A R &#8594; A R P</S>
+        </P>
+        <P>
+          <S ID="S-32158">A P &#8594; &#945; / &#946;</S>
+        </P>
+        <P>
+          <S ID="S-32159">A L P &#8594; &#945; / &#946;</S>
+        </P>
+        <P>
+          <S ID="S-32160">A R P &#8594; &#945; / &#946;</S>
+        </P>
+        <P>
+          <S ID="S-32161">ting non-terminal NT P , which generates all phrasepairs for it and nothing more.</S>
+          <S ID="S-32162">In this way, the preference of non-terminals to either expand towards a (long) phrase-pair or be further analysed recursively is explicitly modelled.</S>
+          <S ID="S-32163">Furthermore, this set of pre-terminals allows us to separate the higher order translation structure from the process that emits phrase-pairs, a feature we employ next.</S>
+        </P>
+        <P>
+          <S ID="S-32164">In (Mylonakis and Sima&#8217;an, 2010) this grammar design mainly contributed to model lexical reordering preferences.</S>
+          <S ID="S-32165">While we retain this function, for the rich linguistically-motivated grammars used in this work this design effectively propagates reordering preferences above and below the current rule application (e.g.</S>
+          <S ID="S-32166">Figure 1, rules (a)-(c)), allowing to learn and apply complex reordering patterns.</S>
+          <S ID="S-32167">The different types of grammar rules are summarised in abstract form in Figure 2.</S>
+          <S ID="S-32168">We will subsequently refer to this grammar structure as Hierarchical Reordering SCFG (HR-SCFG).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Generative Model</HEADER>
+        <P>
+          <S ID="S-32169">We arrive at a probabilistic SCFG model which jointly generates source e and target f strings, by augmenting each grammar rule with a probability, summing up to one for every left-hand side.</S>
+          <S ID="S-32170">The probability of a derivation D of tuple &#12296;e, f&#12297; beginning from start symbol S is equal to the product of the probabilities of the rules used to recursively generate it.</S>
+          <S ID="S-32171">We separate the structural part of the derivation D, down to the pre-terminals NT P , from the phraseemission part.</S>
+          <S ID="S-32172">The grammar rules pertaining to the</S>
+        </P>
+        <P>
+          <S ID="S-32173">structural part and their associated probabilities define a model p(&#963;) over the latent variable &#963; determining the recursive, reordering and phrase-pair segmenting structure of translation, as in Figure 4.</S>
+          <S ID="S-32174">Given &#963;, the phrase-pair emission part merely generates the phrase-pairs utilising distributions from every NT P to the phrase-pairs that it covers, thereby defining a model over all sentence-pairs generated given each translation structure.</S>
+          <S ID="S-32175">The probabilities of a derivation and of a sentence-pair are then as follows:</S>
+        </P>
+        <P>
+          <S ID="S-32176">p(D) =p(&#963;)p(e, f |&#963;) (1)</S>
+        </P>
+        <P>
+          <S ID="S-32177">p(e, f) = &#8721; p(D) (2)</S>
+        </P>
+        <P>
+          <S ID="S-32178">D:D &#8727; &#8658;&#12296;e,f&#12297;</S>
+        </P>
+        <P>
+          <S ID="S-32179">By splitting the joint model in a hierarchical structure model and a lexical emission one we facilitate estimating the two models separately.</S>
+          <S ID="S-32180">The following section discusses this.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Learning Translation Structure</HEADER>
+      <P>
+        <S ID="S-32257"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Phrase-Pair Label Chart</HEADER>
+        <P>
+          <S ID="S-32202">The input to our learning algorithm is a wordaligned parallel corpus.</S>
+          <S ID="S-32203">We consider as phrasepair spans those that obey the word-alignment constraints of (Koehn et al., 2003).</S>
+          <S ID="S-32204">For every training sentence-pair, we also input a chart containing one or more labels for every synchronous span, such as that of Figure 3.</S>
+          <S ID="S-32205">Each label describes different properties of the phrase pair (syntactic, semantic etc.), possibly in relation to its context, or supplying varying levels of abstraction (phrase-pair, determiner with noun, noun-phrase, sentence etc.).</S>
+          <S ID="S-32206">We aim to induce a recursive translation structure explaining the joint generation of the source and target 645</S>
+        </P>
+        <P>
+          <S ID="S-32207">sentence taking advantage of these phrase-pair span labels.</S>
+          <S ID="S-32208">For this work we employ the linguistically motivated labels of (Zollmann and Venugopal, 2006), albeit for the source language.</S>
+          <S ID="S-32209">Given a parse of the source sentence, each span is assigned the following kind of labels:</S>
+        </P>
+        <P>
+          <S ID="S-32210">Phrase-Pair label</S>
+        </P>
+        <P>
+          <S ID="S-32211">Constituent</S>
+        </P>
+        <P>
+          <S ID="S-32212">All phrase-pairs are assigned the X</S>
+        </P>
+        <P>
+          <S ID="S-32213">Source phrase is a constituent A</S>
+        </P>
+        <P>
+          <S ID="S-32214">Concatenation of Constituents Source phrase labelled A+B as a concatenation of constituents A and B, similarly for 3 constituents.</S>
+        </P>
+        <P>
+          <S ID="S-32215">Partial Constituents Categorial grammar (Bar- Hillel, 1953) inspired labels A/B, A\B, indicating a partial constituent A missing constituent B right or left respectively.</S>
+        </P>
+        <P>
+          <S ID="S-32216">An important point is that we assign all applicable labels to every span.</S>
+          <S ID="S-32217">In this way, each label set captures the features of the source side&#8217;s parse-tree without being bounded by the actual parse structure, as well as provides a coarse to fine-grained view of the source phrase.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Grammar Extraction</HEADER>
+        <P>
+          <S ID="S-32218">From every word-aligned sentence-pair and its label chart, we extract SCFG rules as those of Figure 2.</S>
+          <S ID="S-32219">Binary rules are extracted from adjoining synchronous spans up to the whole sentence-pair level, with the non-terminals of both left and right-hand side derived from the label names plus their reordering function (monotone, left/right swapping) in the span examined.</S>
+          <S ID="S-32220">A single unary rule per non-terminal NT generates the phrase-pair emitting NT P .</S>
+          <S ID="S-32221">Unary rules NT P &#8594; &#945; / &#946; generating the phrase-pair are created for all the labels covering it.</S>
+        </P>
+        <P>
+          <S ID="S-32222">While we label the phrase-pairs similarly to (Zollmann and Venugopal, 2006), the extracted grammar is rather different.</S>
+          <S ID="S-32223">We do not employ rules that are grounded to lexical context (&#8216;gap&#8217; rules), relying instead on the reordering-aware non-terminal set and related unary and binary rules.</S>
+          <S ID="S-32224">The result is a grammar which can both capture a rich array of translation phenomena based on linguistic and lexical grounds and explicitly model the balance between</S>
+        </P>
+        <P>
+          <S ID="S-32225">WHNP</S>
+        </P>
+        <P>
+          <S ID="S-32226">WHNP P</S>
+        </P>
+        <P>
+          <S ID="S-32227">which der SBAR</S>
+        </P>
+        <P>
+          <S ID="S-32228">&lt; SBAR\WHNP &gt;</S>
+        </P>
+        <P>
+          <S ID="S-32229">VP/NP L</S>
+        </P>
+        <P>
+          <S ID="S-32230">VP/NP L P</S>
+        </P>
+        <P>
+          <S ID="S-32231">is ist NP</S>
+        </P>
+        <P>
+          <S ID="S-32232">NP P</S>
+        </P>
+        <P>
+          <S ID="S-32233">the solution die L&#246;sung NP R</S>
+        </P>
+        <P>
+          <S ID="S-32234">PP</S>
+        </P>
+        <P>
+          <S ID="S-32235">PP P</S>
+        </P>
+        <P>
+          <S ID="S-32236">to the problem f&#252;r das Problem</S>
+        </P>
+        <P>
+          <S ID="S-32237">memorising long phrase-pairs and generalising over yet unseen ones, as shown in the next example.</S>
+        </P>
+        <P>
+          <S ID="S-32238">The derivation in Figure 4 illustrates some of the formalism&#8217;s features.</S>
+          <S ID="S-32239">A preference to reorder based on lexical content is applied for is / ist.</S>
+          <S ID="S-32240">Noun phrase NP R is recursively constructed with a preference to constitute the right branch of an order swapping nonterminal expansion.</S>
+          <S ID="S-32241">This is matched with VP/NP L which reorders in the opposite direction.</S>
+          <S ID="S-32242">The labels VP/NP and SBAR\WHNP allow linguistic syntax context to influence the lexical and reordering translation choices.</S>
+          <S ID="S-32243">Crucially, all these lexical, attachment and reordering preferences (as encoded in the model&#8217;s rules and probabilities) must be matched together to arrive at the analysis in Figure 4.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Parameter Estimation</HEADER>
+        <P>
+          <S ID="S-32244">We estimate the parameters for the phrase-emission model p(e, f |&#963;) using Relative Frequency Estimation (RFE) on the label charts induced for the training sentence-pairs, after the labels have been augmented by the reordering indications.</S>
+          <S ID="S-32245">In the RFE estimate, every rule NT P &#8594; &#945; / &#946; receives a probability in proportion with the times that &#945; / &#946; was covered by the NT label.</S>
+        </P>
+        <P>
+          <S ID="S-32246">On the other hand, estimating the parameters under Maximum-Likelihood Estimation (MLE) for the latent translation structure model p(&#963;) is bound to overfit towards memorising whole sentence-pairs as discussed in (Mylonakis and Sima&#8217;an, 2010), with the resulting grammar estimate not being able to 646</S>
+        </P>
+        <P>
+          <S ID="S-32247">generalise past the training data.</S>
+          <S ID="S-32248">However, apart from overfitting towards long phrase-pairs, a grammar with millions of structural rules is also liable to overfit towards degenerate latent structures which, while fitting the training data well, have limited applicability to unseen sentences.</S>
+        </P>
+        <P>
+          <S ID="S-32249">We avoid both pitfalls by estimating the grammar probabilities with the Cross-Validating Expectation- Maximization algorithm (CV-EM) (Mylonakis and Sima&#8217;an, 2008; Mylonakis and Sima&#8217;an, 2010).</S>
+          <S ID="S-32250">CV- EM is a cross-validating instance of the well known EM algorithm (Dempster et al., 1977).</S>
+          <S ID="S-32251">It works iteratively on a partition of the training data, climbing the likelihood of the training data while crossvalidating the latent variable values, considering for every training data point only those which can be produced by models built from the rest of the data excluding the current part.</S>
+          <S ID="S-32252">As a result, the estimation process simulates maximising future data likelihood, using the training data to directly aim towards strong generalisation of the estimate.</S>
+        </P>
+        <P>
+          <S ID="S-32253">For our probabilistic SCFG-based translation structure variable &#963;, implementing CV-EM boils down to a synchronous version of the Inside-Outside algorithm, modified to enforce the CV criterion.</S>
+          <S ID="S-32254">In this way we arrive at cross-validated ML estimate of the &#963; parameters while keeping the phrase-emission parameters of p(e, f |&#963;) fixed.</S>
+          <S ID="S-32255">The CV-criterion, apart from avoiding overfitting, results in discarding the structural rules which are only found in a single part of the training corpus, leading to a more compact grammar while still retaining millions of structural rules that are more hopeful to generalise.</S>
+        </P>
+        <P>
+          <S ID="S-32256">Unravelling the joint generative process, by modelling latent hierarchical structure separately from phrase-pair emission, allows us to concentrate our inference efforts towards the hidden, higher-level translation mechanism.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments</HEADER>
+      <P>
+        <S ID="S-32329"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Decoding Model</HEADER>
+        <P>
+          <S ID="S-32258">The induced joint translation model can be used to recover arg max e p(e|f), as it is equal to arg max e p(e, f).</S>
+          <S ID="S-32259">We employ the induced probabilistic HR-SCFG G as the backbone of a log-linear, feature based translation model, with the derivation probability p(D) under the grammar estimate being</S>
+        </P>
+        <P>
+          <S ID="S-32260">one of the features.</S>
+          <S ID="S-32261">This is augmented with a small number n of additional smoothing features &#966; i for derivation rules r: (a) conditional phrase translation probabilities, (b) lexical phrase translation probabilities, (c) word generation penalty, and (d) a count of swapping reordering operations.</S>
+          <S ID="S-32262">Features (a), (b) and (c) are applicable to phrase-pair emission rules and features for both translation directions are used, while (d) is only triggered by structural rules.</S>
+        </P>
+        <P>
+          <S ID="S-32263">These extra features assess translation quality past the synchronous grammar derivation and learning general reordering or word emission preferences for the language pair.</S>
+          <S ID="S-32264">As an example, while our probabilistic HR-SCFG maintains a separate joint phrase-pair emission distribution per non-terminal, the smoothing features (a) above assess the conditional translation of surface phrases irrespective of any notion of recursive translation structure.</S>
+        </P>
+        <P>
+          <S ID="S-32265">The final feature is the language model score for the target sentence, mounting up to the following model used at decoding time, with the feature weights &#955; trained by Minimum Error Rate Training (MERT) (Och, 2003) on a development corpus.</S>
+        </P>
+        <P>
+          <S ID="S-32266">p(D &#8727; &#8658; &#12296;e, f&#12297;) &#8733; p(e) &#955; lm p G (D) &#955; G</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Decoding Modifications</HEADER>
+        <P>
+          <S ID="S-32267">n&#8719; &#8719; &#966; i (r) &#955; i</S>
+        </P>
+        <P>
+          <S ID="S-32268">i=1 r&#8712;D</S>
+        </P>
+        <P>
+          <S ID="S-32269">We use a customised version of the Joshua SCFG decoder (Li et al., 2009) to translate, with the following modifications:</S>
+        </P>
+        <P>
+          <S ID="S-32270">Source Labels Constraints As for this work the phrase-pair labels used to extract the grammar are based on the linguistic analysis of the source side, we can construct the label chart for every input sentence from its parse.</S>
+          <S ID="S-32271">We subsequently use it to consider only derivations with synchronous spans which are covered by non-terminals matching one of the labels for those spans.</S>
+          <S ID="S-32272">This applies both for the nonterminals covering phrase-pairs as well as the higher level parts of the derivation.</S>
+        </P>
+        <P>
+          <S ID="S-32273">In this manner we not only constrain the translation hypotheses resulting in faster decoding time, but, more importantly, we may ground the hypotheses more closely to the available linguistic information of the source sentence.</S>
+          <S ID="S-32274">This is of particular interest as we move up the derivation tree, where 647</S>
+        </P>
+        <P>
+          <S ID="S-32275">an initial wrong choice below could propagate towards hypotheses wildly diverging from the input sentence&#8217;s linguistic annotation.</S>
+        </P>
+        <P>
+          <S ID="S-32276">Per Non-Terminal Pruning The decoder uses a combination of beam and cube-pruning (Huang and Chiang, 2007).</S>
+          <S ID="S-32277">As our grammar uses non-terminals in the hundreds of thousands, it is important not to prune away prematurely non-terminals covering smaller spans and to leave more options to be considered as we move up the derivation tree.</S>
+        </P>
+        <P>
+          <S ID="S-32278">For this, for every cell in the decoder&#8217;s chart, we keep a separate bin per non-terminal and prune together hypotheses leading to the same non-terminal covering a cell.</S>
+          <S ID="S-32279">This allows full derivations to be found for all input sentences, as well as avoids aggressive pruning at an early stage.</S>
+          <S ID="S-32280">Given the source label constraint discussed above, this does not increase running times or memory demands considerably as we allow only up to a few tens of nonterminals per span.</S>
+        </P>
+        <P>
+          <S ID="S-32281">Expected Counts Rule Pruning To compact the hierarchical structure part of the grammar prior to decoding, we prune rules that fail to accumulate 10 &#8722;8 expected counts during the last CV-EM iteration.</S>
+          <S ID="S-32282">For English to German, this brings the structural rules from 15M down to 1.2M.</S>
+          <S ID="S-32283">Note that we do not prune the phrase-pair emitting rules.</S>
+          <S ID="S-32284">Overall, we consider this a much more informed pruning criterion than those based on probability values (that are not comparable across left-hand sides) or righthand side counts (frequent symbols need many more expansions than a highly specialised one).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Experimental Setting &amp; Baseline</HEADER>
+        <P>
+          <S ID="S-32285">We evaluate our method on four different language pairs with English as the source language and French, German, Dutch and Chinese as target.</S>
+          <S ID="S-32286">The data for the first three language pairs are derived from parliament proceedings sourced from the Europarl corpus (Koehn, 2005), with WMT- 07 development and test data for French and German.</S>
+          <S ID="S-32287">The data for the English to Chinese task is composed of parliament proceedings and news articles.</S>
+          <S ID="S-32288">For all language pairs we employ 200K and 400K sentence pairs for training, 2K for development and 2K for testing (single reference per source sentence).</S>
+          <S ID="S-32289">Both the baseline and our method decode</S>
+        </P>
+        <P>
+          <S ID="S-32290">Training French German Dutch Chinese English to set size BLEU NIST BLEU NIST BLEU NIST BLEU NIST josh-base 29.20 7.2123 18.65 5.8047 21.97 6.2469 22.34 6.5540</S>
+        </P>
+        <P>
+          <S ID="S-32291">200K lts 29.43 7.2611** 19.10** 5.8714** 22.31* 6.2903* 23.67** 6.6595**</S>
+        </P>
+        <P>
+          <S ID="S-32292">400K</S>
+        </P>
+        <P>
+          <S ID="S-32293">with a 3-gram language model smoothed with modified Knesser-Ney discounting (Chen and Goodman, 1998), trained on around 1M sentences per target language.</S>
+          <S ID="S-32294">The parses of the source sentences employed by our system during training and decoding are created with the Charniak parser (Charniak, 2000).</S>
+          <S ID="S-32295">We compare against a state-of-the-art hierarchical translation (Chiang, 2005) baseline, based on the Joshua translation system under the default training and decoding settings (josh-base).</S>
+          <S ID="S-32296">Apart of evaluating against a state-of-the-art system, especially on the English-Chinese language pair, the comparison has an added interesting aspect.</S>
+          <S ID="S-32297">The heuristically trained baseline takes advantage of &#8216;gap rules&#8217; to reorder based on lexical context cues, but makes very limited use of the hierarchical structure above the lexical surface.</S>
+          <S ID="S-32298">In contrast, our method induces a grammar with no such rules, relying on lexical content and the strength of a higher level translation structure instead.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.4 Training &amp; Decoding Details</HEADER>
+        <P>
+          <S ID="S-32299">To train our Latent Translation Structure (LTS) system, we used the following settings.</S>
+          <S ID="S-32300">CV-EM crossvalidated on a 10-part partition of the training data and performed 10 iterations.</S>
+          <S ID="S-32301">The structural rule probabilities were initialised to uniform per lefthand side.</S>
+        </P>
+        <P>
+          <S ID="S-32302">The decoder does not employ any &#8216;glue grammar&#8217; as is usual with hierarchical translation systems to limit reordering up to a certain cut-off length.</S>
+          <S ID="S-32303">Instead, we rely on our LTS grammar to reorder and construct the translation output up to the full sentence length.</S>
+        </P>
+        <P>
+          <S ID="S-32304">In summary, our system&#8217;s experimental pipeline is as follows.</S>
+          <S ID="S-32305">All input sentences are parsed and label charts are created from these parses.</S>
+          <S ID="S-32306">The Hierarchi- 648</S>
+        </P>
+        <P>
+          <S ID="S-32307">cal Reordering SCFG is extracted and its parameters are estimated employing CV-EM.</S>
+          <S ID="S-32308">The structural rules of the estimate are pruned according to their expected counts and smoothing features are added to all rules.</S>
+          <S ID="S-32309">We train the feature weights under MERT and decode with the resulting log-linear model.</S>
+        </P>
+        <P>
+          <S ID="S-32310">The overall training and decoding setup is appealing also regarding computational demands.</S>
+          <S ID="S-32311">On an 8-core 2.3GHz system, training on 200K sentencepairs demands 4.5 hours while decoding runs on 25 sentences per minute.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.5 Results</HEADER>
+        <P>
+          <S ID="S-32312">Table 1 presents the results for the baseline and our method for the 4 language pairs, for training sets of both 200K and 400K sentence pairs.</S>
+          <S ID="S-32313">Our system (lts) outperforms the baseline for all 4 language pairs for both BLEU and NIST scores, by a margin which scales up to +1.92 BLEU points for English to Chinese translation when training on the 400K set.</S>
+          <S ID="S-32314">In addition, increasing the size of the training data from 200K to 400K sentence pairs widens the performance margin between the baseline and our system, in some cases considerably.</S>
+          <S ID="S-32315">All but one of the performance improvements are found to be statistically significant (Koehn, 2004) at the 95% confidence level, most of them also at the 99% level.</S>
+        </P>
+        <P>
+          <S ID="S-32316">We selected an array of target languages of increasing reordering complexity with English as source.</S>
+          <S ID="S-32317">Examining the results across the target languages, LTS performance gains increase the more challenging the sentence structure of the target language is in relation to the source&#8217;s, highlighted when translating to Chinese.</S>
+          <S ID="S-32318">Even for Dutch and German, which pose additional challenges such as compound words and morphology which we do not explicitly treat in the current system, LTS still delivers significant improvements in performance.</S>
+          <S ID="S-32319">Additionally,</S>
+        </P>
+        <P>
+          <S ID="S-32320">(a)</S>
+        </P>
+        <P>
+          <S ID="S-32321">(b)</S>
+        </P>
+        <P>
+          <S ID="S-32322">the robustness of our system is exemplified by delivering significant performance increases for all language pairs.</S>
+          <S ID="S-32323">For the English to Chinese translation task, we performed further experiments along two axes.</S>
+          <S ID="S-32324">We first investigate the contribution of the linguistic annotations, by comparing our complete system (lts) with an otherwise identical implementation (lts-nolabels) which does not employ any linguistically motivated labels.</S>
+          <S ID="S-32325">The latter system then uses a labels chart as that of Figure 3, which however labels all phrase-pair spans solely with the generic X label.</S>
+          <S ID="S-32326">The results in Table 2(a) indicate that a large part of the performance improvement can be attributed to the use of the linguistic annotations extracted from the source parse trees, indicating the potential of the LTS system to take advantage of such additional annotations to deliver better translations.</S>
+          <S ID="S-32327">The second additional experiment relates to the impact of employing a stronger language model during decoding, which may increase performance but slows down decoding speed.</S>
+          <S ID="S-32328">Notably, as can be seen in Table 2(b), switching to a 4-gram LM results in performance gains for both the baseline and our system and while the margin between the two systems decreases, our system continues to deliver a considerable and significant improvement in translation BLEU scores.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Related Work</HEADER>
+      <P>
+        <S ID="S-32330">In this work, we focus on the combination of learning latent structure with syntax and linguistic annotations, exploring the crossroads of machine 649</S>
+      </P>
+      <P>
+        <S ID="S-32331">learning, linguistic syntax and machine translation.</S>
+        <S ID="S-32332">Training a joint probability model was first discussed in (Marcu and Wong, 2002).</S>
+        <S ID="S-32333">We show that a translation system based on such a joint model can perform competitively in comparison with conditional probability models, when it is augmented with a rich latent hierarchical structure trained adequately to avoid overfitting.</S>
+      </P>
+      <P>
+        <S ID="S-32334">Earlier approaches for linguistic syntax-based translation such as (Yamada and Knight, 2001; Galley et al., 2006; Huang et al., 2006; Liu et al., 2006) focus on memorising and reusing parts of the structure of the source and/or target parse trees and constraining decoding by the input parse tree.</S>
+        <S ID="S-32335">In contrast to this approach, we choose to employ linguistic annotations in the form of unambiguous synchronous span labels, while discovering ambiguous translation structure taking advantage of them.</S>
+      </P>
+      <P>
+        <S ID="S-32336">Later work (Marton and Resnik, 2008; Venugopal et al., 2009; Chiang et al., 2009) takes a more flexible approach, influencing translation output using linguistically motivated features, or features based on source-side linguistically-guided latent syntactic categories (Huang et al., 2010).</S>
+        <S ID="S-32337">A feature-based approach and ours are not mutually exclusive, as we also employ a limited set of features next to our trained model during decoding.</S>
+        <S ID="S-32338">We find augmenting our system with a more extensive feature set an interesting research direction for the future.</S>
+      </P>
+      <P>
+        <S ID="S-32339">An array of recent work (Chiang, 2010; Zhang et al., 2008; Liu et al., 2009) sets off to utilise source and target syntax for translation.</S>
+        <S ID="S-32340">While for this work we constrain ourselves to source language syntax annotations, our method can be directly applied to employ labels taking advantage of linguistic annotations from both sides of translation.</S>
+        <S ID="S-32341">The decoding constraints of section 4.2 can then still be applied on the source part of hybrid source-target labels.</S>
+      </P>
+      <P>
+        <S ID="S-32342">For the experiments in this paper we employ a label set similar to the non-terminals set of (Zollmann and Venugopal, 2006).</S>
+        <S ID="S-32343">However, the synchronous grammars we learn share few similarities with those that they heuristically extract.</S>
+        <S ID="S-32344">The HR-SCFG we adopt allows capturing more complex reordering phenomena and, in contrast to both (Chiang, 2005; Zollmann and Venugopal, 2006), is not exposed to the issues highlighted in section 2.1.</S>
+        <S ID="S-32345">Nevertheless, our results underline the capacity of linguistic anno-</S>
+      </P>
+      <P>
+        <S ID="S-32346">tations similar to those of (Zollmann and Venugopal, 2006) as part of latent translation variables.</S>
+        <S ID="S-32347">Most of the aforementioned work does concentrate on learning hierarchical, linguistically motivated translation models.</S>
+        <S ID="S-32348">Cohn and Blunsom (2009) sample rules of the form proposed in (Galley et al., 2004) from a Bayesian model, employing Dirichlet Process priors favouring smaller rules to avoid overfitting.</S>
+        <S ID="S-32349">Their grammar is however also based on the target parse-tree structure, with their system surpassing a weak baseline by a small margin.</S>
+        <S ID="S-32350">In contrast to the Bayesian approach which imposes external priors to lead estimation away from degenerate solutions, we take a data-driven approach to arrive to estimates which generalise well.</S>
+        <S ID="S-32351">The rich linguistically motivated latent variable learnt by our method delivers translation performance that compares favourably to a state-of-the-art system.</S>
+        <S ID="S-32352">Mylonakis and Sima&#8217;an (2010) also employ the CV-EM algorithm to estimate the parameters of an SCFG, albeit a much simpler one based on a handful of non-terminals.</S>
+        <S ID="S-32353">In this work we employ some of their grammar design principles for an immensely more complex grammar with millions of hierarchical latent structure rules and show how such grammar can be learnt and applied taking advantage of source language linguistic annotations.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusions</HEADER>
+      <P>
+        <S ID="S-32354">In this work we contribute a method to learn and apply latent hierarchical translation structure.</S>
+        <S ID="S-32355">To this end, we take advantage of source-language linguistic annotations to motivate instead of constrain the translation process.</S>
+        <S ID="S-32356">An input chart over phrasepair spans, with each cell filled with multiple linguistically motivated labels, is coupled with the HR- SCFG design to arrive at a rich synchronous grammar with millions of structural rules and the capacity to capture complex linguistically conditioned translation phenomena.</S>
+        <S ID="S-32357">We address overfitting issues by cross-validating climbing the likelihood of the training data and propose solutions to increase the efficiency and accuracy of decoding.</S>
+        <S ID="S-32358">An interesting aspect of our work is delivering competitive performance for difficult language pairs such as English-Chinese with a joint probability generative model and an SCFG without &#8216;gap rules&#8217;.</S>
+        <S ID="S-32359">650</S>
+      </P>
+      <P>
+        <S ID="S-32360">Instead of employing hierarchical phrase-pairs, we invest in learning the higher-order hierarchical synchronous structure behind translation, up to the full sentence length.</S>
+        <S ID="S-32361">While these choices and the related results challenge current MT research trends, they are not mutually exclusive with them.</S>
+        <S ID="S-32362">Future work directions include investigating the impact of hierarchical phrases for our models as well as any gains from additional features in the log-linear decoding model.</S>
+      </P>
+      <P>
+        <S ID="S-32363">Smoothing the HR-SCFG grammar estimates could prove a possible source of further performance improvements.</S>
+        <S ID="S-32364">Learning translation and reordering behaviour with respect to linguistic cues is facilitated in our approach by keeping separate phrase-pair emission distributions per emitting nonterminal and reordering pattern, while the employment of the generic X non-terminals already allows backing off to more coarse-grained rules.</S>
+        <S ID="S-32365">Nevertheless, we still believe that further smoothing of these sparse distributions, e.g. by interpolating them with less sparse ones, could in the future lead to an additional increase in translation quality.</S>
+      </P>
+      <P>
+        <S ID="S-32366">Finally, we discuss in this work how our method can already utilise hundreds of thousands of phrasepair labels and millions of structural rules.</S>
+        <S ID="S-32367">A further promising direction is broadening this set with labels taking advantage of both source and targetlanguage linguistic annotation or categories exploring additional phrase-pair properties past the parse trees such as semantic annotations.</S>
+      </P>
+      <P>
+        <S ID="S-32368">Acknowledgments</S>
+      </P>
+      <P>
+        <S ID="S-32369">Both authors are supported by a VIDI grant (nr.</S>
+        <S ID="S-32370">639.022.604) from The Netherlands Organization for Scientific Research (NWO).</S>
+        <S ID="S-32371">The authors would like to thank Maxim Khalilov for helping with experimental data and Andreas Zollmann and the anonymous reviewers for their valuable comments.</S>
+      </P>
+      <P>
+        <S ID="S-32372">References</S>
+      </P>
+      <P>
+        <S ID="S-32373">Yehoshua Bar-Hillel.</S>
+        <S ID="S-32374">1953.</S>
+        <S ID="S-32375">A quasi-arithmetical notation for syntactic description.</S>
+        <S ID="S-32376">Language, 29(1):47&#8211;58.</S>
+        <S ID="S-32377">Eugene Charniak.</S>
+        <S ID="S-32378">2000.</S>
+        <S ID="S-32379">A maximum-entropy-inspired</S>
+      </P>
+      <P>
+        <S ID="S-32380">parser.</S>
+        <S ID="S-32381">In Proceedings of the North American Association for Computational Linguistics (HLT/NAACL), Seattle, Washington, USA, April.</S>
+      </P>
+      <P>
+        <S ID="S-32382">Stanley Chen and Joshua Goodman.</S>
+        <S ID="S-32383">1998.</S>
+        <S ID="S-32384">An empirical study of smoothing techniques for language modeling.</S>
+        <S ID="S-32385">Technical Report TR-10-98, Harvard University, August.</S>
+        <S ID="S-32386">David Chiang, Kevin Knight, and Wei Wang.</S>
+        <S ID="S-32387">2009.</S>
+        <S ID="S-32388">11,001 new features for statistical machine translation.</S>
+        <S ID="S-32389">In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, pages 218&#8211;226, Boulder, Colorado, June.</S>
+        <S ID="S-32390">Association for Computational Linguistics.</S>
+        <S ID="S-32391">David Chiang.</S>
+        <S ID="S-32392">2005.</S>
+        <S ID="S-32393">A hierarchical phrase-based model</S>
+      </P>
+      <P>
+        <S ID="S-32394">for statistical machine translation.</S>
+        <S ID="S-32395">In Proceedings of ACL 2005, pages 263&#8211;270.</S>
+        <S ID="S-32396">David Chiang.</S>
+        <S ID="S-32397">2010.</S>
+        <S ID="S-32398">Learning to translate with source</S>
+      </P>
+      <P>
+        <S ID="S-32399">and target syntax.</S>
+        <S ID="S-32400">In Proceedings of the 48th Annual Meeting of the Association for Computational Linguistics, pages 1443&#8211;1452, Uppsala, Sweden, July.</S>
+        <S ID="S-32401">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-32402">Trevor Cohn and Phil Blunsom.</S>
+        <S ID="S-32403">2009.</S>
+        <S ID="S-32404">A Bayesian model of syntax-directed tree to string grammar induction.</S>
+        <S ID="S-32405">In Proceedings of the 2009 Conference on Empirical Methods in Natural Language Processing, pages 352&#8211;361, Singapore, August.</S>
+        <S ID="S-32406">Association for Computational Linguistics.</S>
+        <S ID="S-32407">A.P.</S>
+        <S ID="S-32408">Dempster, N.M.</S>
+        <S ID="S-32409">Laird, and D.B.</S>
+        <S ID="S-32410">Rubin.</S>
+        <S ID="S-32411">1977.</S>
+        <S ID="S-32412">Maximum likelihood from incomplete data via the em algorithm.</S>
+        <S ID="S-32413">Journal of the Royal Statistical Society, Series B, 39(1):1&#8211;38.</S>
+        <S ID="S-32414">John DeNero, Dan Gillick, James Zhang, and Dan Klein.</S>
+        <S ID="S-32415">2006.</S>
+        <S ID="S-32416">Why generative phrase models underperform surface heuristics.</S>
+        <S ID="S-32417">In Proceedings on the Workshop on Statistical Machine Translation, pages 31&#8211;38, New York City.</S>
+        <S ID="S-32418">Association for Computational Linguistics.</S>
+        <S ID="S-32419">Michel Galley, Mark Hopkins, Kevin Knight, and Daniel Marcu.</S>
+        <S ID="S-32420">2004.</S>
+        <S ID="S-32421">What&#8217;s in a translation rule?</S>
+        <S ID="S-32422">In Daniel Marcu Susan Dumais and Salim Roukos, editors, HLT-NAACL 2004: Main Proceedings, pages 273&#8211;280, Boston, Massachusetts, USA, May.</S>
+        <S ID="S-32423">Association for Computational Linguistics.</S>
+        <S ID="S-32424">Michel Galley, Jonathan Graehl, Kevin Knight, Daniel</S>
+      </P>
+      <P>
+        <S ID="S-32425">Marcu, Steve DeNeefe, Wei Wang, and Ignacio Thayer.</S>
+        <S ID="S-32426">2006.</S>
+        <S ID="S-32427">Scalable inference and training of context-rich syntactic translation models.</S>
+        <S ID="S-32428">In Proceedings of the 21st International Conference on Computational Linguistics and 44th Annual Meeting of the Association for Computational Linguistics, pages 961&#8211; 968, Sydney, Australia, July.</S>
+        <S ID="S-32429">Association for Computational Linguistics.</S>
+        <S ID="S-32430">Liang Huang and David Chiang.</S>
+        <S ID="S-32431">2007.</S>
+        <S ID="S-32432">Forest rescoring:</S>
+      </P>
+      <P>
+        <S ID="S-32433">Faster decoding with integrated language models.</S>
+        <S ID="S-32434">In Proceedings of the 45th Annual Meeting of the Association of Computational Linguistics, pages 144&#8211;151, 651</S>
+      </P>
+      <P>
+        <S ID="S-32435">Prague, Czech Republic, June.</S>
+        <S ID="S-32436">Association for Computational Linguistics.</S>
+        <S ID="S-32437">Liang Huang, Kevin Knight, and Aravind Joshi.</S>
+        <S ID="S-32438">2006.</S>
+        <S ID="S-32439">Statistical syntax-directed translation with extended domain of locality.</S>
+        <S ID="S-32440">In Proceedings of the 7th Biennial Conference of the Association for Machine Translation in the Americas (AMTA), Boston, MA, USA.</S>
+        <S ID="S-32441">Zhongqiang Huang, Martin Cmejrek, and Bowen Zhou.</S>
+      </P>
+      <P>
+        <S ID="S-32442">2010.</S>
+        <S ID="S-32443">Soft syntactic constraints for hierarchical phrase-based translation using latent syntactic distributions.</S>
+      </P>
+      <P>
+        <S ID="S-32444">machine translation evaluation.</S>
+        <S ID="S-32445">In Dekang Lin and Dekai Wu, editors, Proceedings of EMNLP 2004, pages 388&#8211;395, Barcelona, Spain, July.</S>
+        <S ID="S-32446">Association for Computational Linguistics.</S>
+        <S ID="S-32447">Philipp Koehn.</S>
+        <S ID="S-32448">2005.</S>
+        <S ID="S-32449">Europarl: A Parallel Corpus for</S>
+      </P>
+      <P>
+        <S ID="S-32450">Statistical Machine Translation.</S>
+        <S ID="S-32451">In MT Summit 2005.</S>
+        <S ID="S-32452">Zhifei Li, Chris Callison-Burch, Chris Dyer, Sanjeev</S>
+      </P>
+      <P>
+        <S ID="S-32453">Khudanpur, Lane Schwartz, Wren Thornton, Jonathan Weese, and Omar Zaidan.</S>
+        <S ID="S-32454">2009.</S>
+        <S ID="S-32455">Joshua: An open source toolkit for parsing-based machine translation.</S>
+        <S ID="S-32456">In Proceedings of the Fourth Workshop on Statistical Machine Translation, pages 135&#8211;139, Athens, Greece, March.</S>
+        <S ID="S-32457">Association for Computational Linguistics.</S>
+        <S ID="S-32458">Yang Liu, Qun Liu, and Shouxun Lin.</S>
+        <S ID="S-32459">2006.</S>
+        <S ID="S-32460">Tree-tostring alignment template for statistical machine translation.</S>
+        <S ID="S-32461">In Proceedings of the 21st International Conference on Computational Linguistics and 44th Annual Meeting of the Association for Computational Linguistics, pages 609&#8211;616, Sydney, Australia, July.</S>
+        <S ID="S-32462">Association for Computational Linguistics.</S>
+        <S ID="S-32463">Yang Liu, Yajuan L&#252;, and Qun Liu.</S>
+        <S ID="S-32464">2009.</S>
+        <S ID="S-32465">Improving</S>
+      </P>
+      <P>
+        <S ID="S-32466">tree-to-tree translation with packed forests.</S>
+        <S ID="S-32467">In Proceedings of the Joint Conference of the 47th Annual Meeting of the ACL and the 4th International Joint Conference on Natural Language Processing of the AFNLP, pages 558&#8211;566, Suntec, Singapore, August.</S>
+        <S ID="S-32468">Association for Computational Linguistics.</S>
+        <S ID="S-32469">Daniel Marcu and William Wong.</S>
+        <S ID="S-32470">2002.</S>
+        <S ID="S-32471">A phrase-based,</S>
+      </P>
+      <P>
+        <S ID="S-32472">joint probability model for statistical machine translation.</S>
+        <S ID="S-32473">In Proceedings of Empirical methods in natural language processing, pages 133&#8211;139.</S>
+        <S ID="S-32474">Association for Computational Linguistics.</S>
+        <S ID="S-32475">Yuval Marton and Philip Resnik.</S>
+        <S ID="S-32476">2008.</S>
+        <S ID="S-32477">Soft syntactic</S>
+      </P>
+      <P>
+        <S ID="S-32478">constraints for hierarchical phrased-based translation.</S>
+        <S ID="S-32479">In Proceedings of ACL-08: HLT, pages 1003&#8211;1011,</S>
+      </P>
+      <P>
+        <S ID="S-32480">Columbus, Ohio, June.</S>
+        <S ID="S-32481">Association for Computational</S>
+      </P>
+      <P>
+        <S ID="S-32482">Linguistics.</S>
+        <S ID="S-32483">Markos Mylonakis and Khalil Sima&#8217;an.</S>
+        <S ID="S-32484">2008.</S>
+        <S ID="S-32485">Phrase</S>
+      </P>
+      <P>
+        <S ID="S-32486">translation probabilities with ITG priors and smoothing as learning objective.</S>
+        <S ID="S-32487">In Proceedings of the 2008 Conference on Empirical Methods in Natural Language Processing, pages 630&#8211;639, Honolulu, USA, October.</S>
+        <S ID="S-32488">Markos Mylonakis and Khalil Sima&#8217;an.</S>
+        <S ID="S-32489">2010.</S>
+        <S ID="S-32490">Learning probabilistic synchronous CFGs for phrase-based translation.</S>
+        <S ID="S-32491">In Fourteenth Conference on Computational Natural Language Learning, Uppsala, Sweden, July.</S>
+      </P>
+      <P>
+        <S ID="S-32492">Franz Josef Och.</S>
+        <S ID="S-32493">2003.</S>
+        <S ID="S-32494">Minimum error rate training in statistical machine translation.</S>
+        <S ID="S-32495">In Proceedings of the 41st Annual Meeting of the Association for Computational Linguistics, pages 160&#8211;167, Sapporo, Japan, July.</S>
+        <S ID="S-32496">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-32497">Chris Quirk, Arul Menezes, and Colin Cherry.</S>
+        <S ID="S-32498">2005.</S>
+        <S ID="S-32499">Dependency treelet translation: Syntactically informed phrasal smt.</S>
+        <S ID="S-32500">In Proceedings of 43rd Annual Meeting of the Association for Computational Linguistics, Ann Arbor, Michigan, USA, June.</S>
+        <S ID="S-32501">Ashish Venugopal, Andreas Zollmann, Noah A. Smith,</S>
+      </P>
+      <P>
+        <S ID="S-32502">and Stephan Vogel.</S>
+        <S ID="S-32503">2009.</S>
+        <S ID="S-32504">Preference grammars: Softening syntactic constraints to improve statistical machine translation.</S>
+        <S ID="S-32505">In Proceedings of Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics, pages 236&#8211;244, Boulder, Colorado, June.</S>
+        <S ID="S-32506">Association for Computational Linguistics.</S>
+        <S ID="S-32507">Wei Wang, Jonathan May, Kevin Knight, and Daniel Marcu.</S>
+        <S ID="S-32508">2010.</S>
+        <S ID="S-32509">Re-structuring, re-labeling, and realigning for syntax-based machine translation.</S>
+        <S ID="S-32510">Computational Linguistics, 36(2):247&#8211;277.</S>
+        <S ID="S-32511">Dekai Wu.</S>
+        <S ID="S-32512">1997.</S>
+        <S ID="S-32513">Stochastic inversion transduction grammars and bilingual parsing of parallel corpora.</S>
+        <S ID="S-32514">Computational Linguistics, 23(3):377&#8211;403.</S>
+      </P>
+      <P>
+        <S ID="S-32515">Kenji Yamada and Kevin Knight.</S>
+        <S ID="S-32516">2001.</S>
+        <S ID="S-32517">A syntax-based statistical translation model.</S>
+        <S ID="S-32518">In Proceedings of 39th Annual Meeting of the Association for Computational Linguistics, pages 523&#8211;530, Toulouse, France, July.</S>
+        <S ID="S-32519">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-32520">Min Zhang, Hongfei Jiang, Aiti Aw, Haizhou Li, Chew Lim Tan, and Sheng Li.</S>
+        <S ID="S-32521">2008.</S>
+        <S ID="S-32522">A tree sequence alignment-based tree-to-tree translation model.</S>
+        <S ID="S-32523">In Proceedings of ACL-08: HLT, pages 559&#8211;567, Columbus, Ohio, June.</S>
+        <S ID="S-32524">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-32525">Andreas Zollmann and Ashish Venugopal.</S>
+        <S ID="S-32526">2006.</S>
+        <S ID="S-32527">Syntax augmented machine translation via chart parsing.</S>
+        <S ID="S-32528">In Proceedings on the Workshop on Statistical Machine 652 Translation, pages 138&#8211;141, New York City, June.</S>
+        <S ID="S-32529">Association for Computational Linguistics.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES/>
+</PAPER>

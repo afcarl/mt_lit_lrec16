@@ -1,0 +1,805 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Efficient Left-to-Right Hierarchical Phrase-based Translation with Improved Reordering</TITLE>
+  <AUTHORS>
+    <AUTHOR>Maryam Siahbani</AUTHOR>
+    <AUTHOR>Baskaran Sankaran</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-16327">Left-to-right (LR) decoding (<REF ID="R-19" RPTR="27">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="42">Watanabe et al., 2006</REF>b) is a promising decoding algorithm for hierarchical phrase-based translation (Hiero).</A-S>
+    <A-S ID="S-16328">It generates the target sentence by extending the hypotheses only on the right edge.</A-S>
+    <A-S ID="S-16329">LR decoding has complexity O(n 2 b) for input of n words and beam size b, compared to O(n 3 ) for the CKY algorithm.</A-S>
+    <A-S ID="S-16330">It requires a single language model (LM) history for each target hypothesis rather than two LM histories per hypothesis as in CKY.</A-S>
+    <A-S ID="S-16331">In this paper we present an augmented LR decoding algorithm that builds on the original algorithm in (<REF ID="R-19" RPTR="28">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="43">Watanabe et al., 2006</REF>b).</A-S>
+    <A-S ID="S-16332">Unlike that algorithm, using experiments over multiple language pairs we show two new results: our LR decoding algorithm provides demonstrably more efficient decoding than CKY Hiero, four times faster; and by introducing new distortion and reordering features for LR decoding, it maintains the same translation quality (as in BLEU scores) obtained phrase-based and CKY Hiero with the same translation model.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-16333">Hiero (<REF ID="R-02" RPTR="2">Chiang, 2007</REF>) models translation using a lexicalized synchronous context-free grammar (SCFG) extracted from word aligned bitexts.</S>
+        <S ID="S-16334">Typically, CKY-style decoding is used for Hiero with time complexity O(n 3 ) for source input with n words.</S>
+        <S ID="S-16335">Scoring the target language output using a language model within CKY-style decoding requires two histories per hypothesis, one on the left edge of each span and one on the right, due to the fact that the target side is not generated in left to right order, but rather built bottom-up from sub-spans.</S>
+        <S ID="S-16336">This leads to complex problems in efficient language model integration and requires state reduction techniques (<REF ID="R-06" RPTR="11">Heafield et al., 2011</REF>; <REF ID="R-07" RPTR="12">Heafield et al., 2013</REF>).</S>
+        <S ID="S-16337">The size of a Hiero SCFG grammar is typically larger than phrase-based models extracted from the same data creating challenges in rule extraction and decoding time especially for larger datasets (<REF ID="R-18" RPTR="25">Sankaran et al., 2012</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-16338">In contrast, the LR-decoding algorithm could avoid these shortcomings such as faster time complexity, reduction in the grammar size and the simplified left-to-right language model scoring.</S>
+        <S ID="S-16339">It means LR decoding has the potential to replace CKY decoding for Hiero.</S>
+        <S ID="S-16340">Despite these attractive properties, we show that the original LR-Hiero decoding proposed by (<REF ID="R-19" RPTR="29">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="44">Watanabe et al., 2006</REF>b) does not perform to the same level of the standard CKY Hiero with cube pruning (see Table 3).</S>
+        <S ID="S-16341">In addition, the current LR decoding algorithm does not obtain BLEU scores comparable to phrase-based or CKYbased Hiero models for different language pairs (see Table 4).</S>
+        <S ID="S-16342">In this paper we propose modifications to the LR decoding algorithm that addresses these limitations and provides, for the first time, a true alternative to the standard CKY Hiero algorithm that uses left-to-right decoding.</S>
+      </P>
+      <P>
+        <S ID="S-16343">We introduce a new extended version of the LR decoding algorithm presented in (<REF ID="R-19" RPTR="30">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="45">Watanabe et al., 2006</REF>b) which is demonstrably more efficient than the CKY Hiero algorithm.</S>
+        <S ID="S-16344">We measure the efficiency of the LR Hiero decoder in a way that is independent of the choice of system and programming language by measuring the number of language model queries.</S>
+        <S ID="S-16345">Although more efficient, the new LR decoding algorithm suffered from lower BLEU scores compared to CKY Hiero.</S>
+        <S ID="S-16346">Our analysis of left to right decoding showed that it has more potential for search errors due to early pruning of good hypotheses.</S>
+        <S ID="S-16347">This is unlike bottom-up decoding (CKY) which keeps best hypotheses for each span.</S>
+        <S ID="S-16348">To address this issue, we introduce two novel features into the Hiero SMT model that deal with reordering and distortion.</S>
+        <S ID="S-16349">Our experiments show that LR decoding with these features using prefix lexi-</S>
+      </P>
+      <P>
+        <S ID="S-16350">calized target side rules equals the scores obtained by CKY decoding with prefix lexicalized target side rules and phrase-based translation system.</S>
+        <S ID="S-16351">It performs four times fewer language model queries on average, compare to CKY Hiero decoding with unrestricted Hiero rules: 6466.7 LM queries for CKY Hiero (with cube pruning) compared to 1500.45 LM queries in LR Hiero (with cube pruning).</S>
+        <S ID="S-16352">While translation quality suffers by only about 0.67 in BLEU score on average, across two different language pairs.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Left-to-Right Decoding for Hiero</HEADER>
+      <P>
+        <S ID="S-16528">Hierarchical phrase-based SMT (<REF ID="R-01" RPTR="1">Chiang, 2005</REF>; <REF ID="R-02" RPTR="3">Chiang, 2007</REF>) uses a synchronous context free grammar (SCFG), where the rules are of the form X &#8594; &#12296;&#947;, &#945;&#12297;, where X is a non-terminal, &#947; and &#945; are strings of terminals and non-terminals.</S>
+        <S ID="S-16529">Chiang (2007) places certain constraints on the extracted rules in order to simplify decoding.</S>
+        <S ID="S-16530">This includes limiting the maximum number of nonterminals (rule arity) to two and disallowing any rule with consecutive non-terminals on the foreign language side.</S>
+        <S ID="S-16531">It further limits the length of the initial phrase-pair as well as the number of terminals and non-terminals in the rule.</S>
+        <S ID="S-16532">For translating sentences longer than the maximum phrase-pair length, the decoder relies on additional glue rules S &#8594; &#12296;X, X&#12297; and S &#8594; &#12296;SX, SX&#12297; that allows monotone combination of phrases.</S>
+        <S ID="S-16533">The glue rules are used when no rules could match or the span length is larger than the maximum phrase-pair length.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Rule Extraction for LR Decoding</HEADER>
+        <P>
+          <S ID="S-16353">Left-to-right Hiero (<REF ID="R-19" RPTR="31">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="46">Watanabe et al., 2006</REF>b) generates the target hypotheses left to right, but for synchronous context-free grammar (SCFG) as used in Hiero.</S>
+          <S ID="S-16354">The target-side rules are constrained to be prefix lexicalized.</S>
+          <S ID="S-16355">These constrained SCFG rules are defined as:</S>
+        </P>
+        <P>
+          <S ID="S-16356">X &#8594; &#12296;&#947;, &#175;b &#946;&#12297; (1)</S>
+        </P>
+        <P>
+          <S ID="S-16357">where &#947; is a mixed string of terminals and nonterminals.</S>
+          <S ID="S-16358">&#175;b is a terminal sequence prefixed to the possibly empty non-terminal sequence &#946;.</S>
+          <S ID="S-16359">For the sake of simplicity, We refer to these type of rules as</S>
+        </P>
+        <P>
+          <S ID="S-16360">schuler ihre arbeit noch nicht gemacht haben .</S>
+        </P>
+        <P>
+          <S ID="S-16361">students have not yet done their work .</S>
+        </P>
+        <P>
+          <S ID="S-16362">schuler</S>
+        </P>
+        <P>
+          <S ID="S-16363">1 X1</S>
+        </P>
+        <P>
+          <S ID="S-16364">2 X2</S>
+        </P>
+        <P>
+          <S ID="S-16365">gemacht</S>
+        </P>
+        <P>
+          <S ID="S-16366">(a)</S>
+        </P>
+        <P>
+          <S ID="S-16367">3 6 X3 haben X6</S>
+        </P>
+        <P>
+          <S ID="S-16368">5 4 X5 noch nicht X4</S>
+        </P>
+        <P>
+          <S ID="S-16369">ihre arbeit</S>
+        </P>
+        <P>
+          <S ID="S-16370">.</S>
+        </P>
+        <P>
+          <S ID="S-16371">(b)</S>
+        </P>
+        <P>
+          <S ID="S-16372">students</S>
+        </P>
+        <P>
+          <S ID="S-16373">X1</S>
+        </P>
+        <P>
+          <S ID="S-16374">have</S>
+        </P>
+        <P>
+          <S ID="S-16375">not yet</S>
+        </P>
+        <P>
+          <S ID="S-16376">X2</S>
+        </P>
+        <P>
+          <S ID="S-16377">X3</S>
+        </P>
+        <P>
+          <S ID="S-16378">X4</S>
+        </P>
+        <P>
+          <S ID="S-16379">done</S>
+        </P>
+        <P>
+          <S ID="S-16380">X5</S>
+        </P>
+        <P>
+          <S ID="S-16381">X6</S>
+        </P>
+        <P>
+          <S ID="S-16382">their work</S>
+        </P>
+        <P>
+          <S ID="S-16383">GNF rules 1 in this paper.</S>
+          <S ID="S-16384">Rule extraction is similar to Hiero, except any rules violating GNF form on the target side are excluded.</S>
+          <S ID="S-16385">Rule extraction considers each smaller source-target phrase pair within a larger phrase pair and replaces the spans with non-terminal X, yielding hierarchical rules.</S>
+          <S ID="S-16386">Figure 1(a) shows a wordaligned German-English sentence with a phrase pair &#12296;ihre arbeit noch nicht gemacht haben, have not yet done their work&#12297; that will lead to a SCFG rule.</S>
+          <S ID="S-16387">Given other smaller phrases (marked by bars above the source side), we extract a GNF rule 2 :</S>
+        </P>
+        <P>
+          <S ID="S-16388">X &#8594;</S>
+        </P>
+        <P>
+          <S ID="S-16389">&#12296;X 1 noch nicht X 2 haben, have not yet X 2 X 1 &#12297; (2)</S>
+        </P>
+        <P>
+          <S ID="S-16390">In order to avoid data sparsity and for better generalization, <REF ID="R-19" RPTR="38">Watanabe et al. (2006</REF><REF ID="R-20" RPTR="53">Watanabe et al. (2006</REF>b) adds four glue rules for each lexical rule &#12296; &#175;f, &#275;&#12297; which are analogous to the glue rules defined in (<REF ID="R-02" RPTR="4">Chiang, 2007</REF>) (see above) except that these glue rules for LR decoding</S>
+        </P>
+        <P>
+          <S ID="S-16391">1 Griebach Normal Form (GNF), although the synchronous</S>
+        </P>
+        <P>
+          <S ID="S-16392">grammar is not in this normal form, rather only the target side is prefix lexicalized as if it were in GNF form.</S>
+          <S ID="S-16393">2 LR-Hiero rule extraction excludes non-GNF rules such as</S>
+        </P>
+        <P>
+          <S ID="S-16394">X &#8594; &#12296;X 1 noch nicht gemacht X 2, X 2 not yet done X 1&#12297;.</S>
+        </P>
+        <P>
+          <S ID="S-16395">.</S>
+        </P>
+        <P>
+          <S ID="S-16396">allow reordering as well.</S>
+        </P>
+        <P>
+          <S ID="S-16397">X &#8594; &#12296; &#175;fX 1 , &#275;X 1 &#12297; X &#8594; &#12296;X 1 &#175;fX2 , &#275;X 1 X 2 &#12297;</S>
+        </P>
+        <P>
+          <S ID="S-16398">X &#8594; &#12296;X 1 &#175;f, &#275;X1 &#12297; X &#8594; &#12296;X 1 &#175;fX2 , &#275;X 2 X 1 &#12297; (3)</S>
+        </P>
+        <P>
+          <S ID="S-16399">It might appear that the restriction that target-side rules be GNF is a severe restriction on the coverage of possible hypotheses compared to the full set of rules permitted by the Hiero extraction heuristic.</S>
+          <S ID="S-16400">However there is some evidence in the literature that discontinuous spans on the source side in translation rules is a lot more useful than discontinuous spans in the target side (which is disallowed in the GNF).</S>
+          <S ID="S-16401">For instance, (<REF ID="R-05" RPTR="10">Galley and Manning, 2010</REF>) do an extensive study of discontinuous spans on source and target side and show that source side discontinuous spans are very useful but removing discontinuous spans on the target side only lowers the BLEU score by 0.2 points (using the Joshua SMT system on Chinese-English).</S>
+          <S ID="S-16402">Removing discontinuous spans means that the target side rules have the form: uX, Xu, XuX, XXu, or uXX of which we disallow Xu, XuX, XXu.</S>
+          <S ID="S-16403">Zhang and Zong (2012) also conduct a study on discontinuous spans on source and target side of Hiero rules and conclude that source discontinuous spans are always more useful than discontinuities on the target side with experiments on four language pairs (zh-en, fren, de-en and es-en).</S>
+          <S ID="S-16404">As we shall also see in our experimental results (see Table 4) we can get close to the BLEU scores obtained using the full set of Hiero rules by using only target lexicalized rules in our LR decoder.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 LR-Hiero Decoding</HEADER>
+        <P>
+          <S ID="S-16405">LR-Hiero decoding uses a top-down depth-first search, which strictly grows the hypotheses in target surface ordering.</S>
+          <S ID="S-16406">Search on the source side follows an Earley-style search (<REF ID="R-04" RPTR="9">Earley, 1970</REF>), the dot jumps around on the source side of the rules based on the order of nonterminals on the target side.</S>
+          <S ID="S-16407">This search is integrated with beam search or cube pruning to efficiently find the k-best translations.</S>
+          <S ID="S-16408">Several important details about the algorithm of LR-Hiero decoding are implicit and unexplained in (<REF ID="R-19" RPTR="32">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="47">Watanabe et al., 2006</REF>b).</S>
+          <S ID="S-16409">In this section we describe the LR-Hiero decoding algorithm in more detail than the original description in (Watanabe et al.,</S>
+        </P>
+        <P>
+          <S ID="S-16410">Algorithm 1: LR-Hiero Decoding</S>
+        </P>
+        <P>
+          <S ID="S-16411">2006b).</S>
+          <S ID="S-16412">We explain our own modified algorithm for LR decoding with cube pruning in Section 2.3.</S>
+          <S ID="S-16413">Algorithm 1 shows the pseudocode for LR decoding.</S>
+          <S ID="S-16414">Decoding the example in Figure 1(b) is explained using a walk-through shown in Figure 2.</S>
+          <S ID="S-16415">Each partial hypothesis h is a 4-tuple (h t , h s , h cov , h c ): consisting of a translation prefix h t , a (LIFO-ordered) list h s of uncovered spans, source words coverage set h cov and the hypothesis cost h c .</S>
+          <S ID="S-16416">The initial hypothesis is a null string with just a sentence-initial marker &#12296;s&#12297; and the list h s containing a span of the whole sentence, [0, n].</S>
+          <S ID="S-16417">The hypotheses are stored in stacks S 0 , .</S>
+          <S ID="S-16418">.</S>
+          <S ID="S-16419">.</S>
+          <S ID="S-16420">, S n , where each stack corresponds to a coverage vector of same size, covering same number of source words (<REF ID="R-11" RPTR="14">Koehn et al., 2003</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-16421">At the beginning of beam search the initial hy-</S>
+        </P>
+        <P>
+          <S ID="S-16422">rules source side coverage hypothesis</S>
+        </P>
+        <P>
+          <S ID="S-16423">&#65533; X &#10214; schuler ihre arbeit noch nicht gemacht haben.&#10215; schuler &#65533; X 1 &lt;s&gt; [0,8]</S>
+        </P>
+        <P>
+          <S ID="S-16424">&#10214;ihre arbeit noch nicht gemacht haben.&#10215; G 1) X &#8594;&#12296;schuler X 1 / students X 1 &#12297; &lt;s&gt; students[1,8 ]</S>
+        </P>
+        <P>
+          <S ID="S-16425">G 2) X &#8594;&#12296; X schuler &#65533; X 2 1 &#10214;ihre arbeit noch nicht gemacht&#10215; haben X 2 2 &#10214;.&#10215;</S>
+        </P>
+        <P>
+          <S ID="S-16426">heban X 2 /have X 1 X 2</S>
+        </P>
+        <P>
+          <S ID="S-16427">&#12297; &lt;s&gt; students have [1,6][7,8] 3 ) X &#8594;&#12296; X schuler X 3 1 &#10214;ihre arbeit&#10215; noch nicht &#65533; X 3 2 &#10214; gemacht&#10215; haben X 2 1 nochnicht X 2 /not yet X 2 X 1</S>
+        </P>
+        <P>
+          <S ID="S-16428">&#12297; 2 &#10214;.&#10215; &lt;s&gt; students have not yet [5,6][1,3 ][7,8] 4 ) X &#8594;&#12296;gemacht /done &#12297; schuler &#65533; X 3 1 &#10214;ihre arbeit&#10215; nochnicht gemacht haben X 2 2 &#10214;.&#10215; &lt;s&gt; students have not yet done [1,3 ][7,8] 5 ) X &#8594;&#12296;ihre arbeit /their work &#12297; schuler ihre arbeit noch nicht gemacht haben &#65533; X 2 2 &#10214;.&#10215; &lt;s&gt; students have not yet done their work[7,8] 6 ) X &#8594;&#12296;./.</S>
+          <S ID="S-16429">&#12297; schuler ihre arbeit nochnicht gemacht haben.</S>
+          <S ID="S-16430">&lt;s&gt; students have not yet done their work .</S>
+          <S ID="S-16431">&lt;/s&gt;</S>
+        </P>
+        <P>
+          <S ID="S-16432">pothesis h 0 is added to the decoder stack S 0 (line 6 in Algoorithm 1).</S>
+          <S ID="S-16433">Hypotheses in each decoder stack are expanded iteratively, generating new hypotheses, which are added to the latter stacks corresponding to the number of source words covered.</S>
+          <S ID="S-16434">In each step it pops from the LIFO list h s , the span [u, v] of the next hypothesis h to be processed.</S>
+        </P>
+        <P>
+          <S ID="S-16435">All rules that match the entire span [u, v] are then obtained efficiently via pattern matching (<REF ID="R-13" RPTR="19">Lopez, 2007</REF>).</S>
+          <S ID="S-16436">GetSpanRules addresses possible ambiguities in matched rules to the given span [u, v].</S>
+          <S ID="S-16437">For example, given a rule r, with source side r s : &#12296;X 1 the X 2 &#12297; and source phrase p : &#12296;ok, the more the better&#12297;.</S>
+          <S ID="S-16438">There is ambiguity in matching r to p. GetSpanRules returns a distinct matched rule for each possible matching.</S>
+          <S ID="S-16439">The GrowHypothesis routine creates a new candidate by expanding given hypothesis h using rule r and computes the complete hypothesis score including language model score.</S>
+          <S ID="S-16440">Since the target-side rules are in GNF, the translation prefix of the new hypothesis is obtained by simply concatenating the terminal prefixes of h and r in same order (line 20).</S>
+          <S ID="S-16441">UpdateCoverage updates source word coverage set using the source side of r.</S>
+          <S ID="S-16442">The h s list is built by pushing the non-terminal spans of rule r in a reverse order (lines 17 and 18).</S>
+          <S ID="S-16443">The reverse ordering maintains the left-to-right generation of the target side.</S>
+          <S ID="S-16444">In the walk-through in Figure 2, the derivation process starts by expanding the initial hypothesis h 0 (first item in the right pane of Fig 2) with the rule (rule #1 in left pane) to generate a new partial candidate having a terminal prefix of &#12296;s&#12297; students (second item in right pane).</S>
+          <S ID="S-16445">The second item in the middle pane shows the current position of the parser employing Earley&#8217;s dot notation, indicating that the first word has already been translated.</S>
+          <S ID="S-16446">Now the decoder considers the second hypothesis and pops the span [1, 8].</S>
+          <S ID="S-16447">It then matches the rule (#2) and pushes the spans [1, 6] and [7, 8] into the list h s in the reverse order of their appearance in the target-side rule.</S>
+          <S ID="S-16448">At each step the new hypothesis is added to the decoder stack S l depending on the number of covered words in the new hypothesis (line 13 in Algorithm 1).</S>
+        </P>
+        <P>
+          <S ID="S-16449">For pruning we use an estimate of the future cost 3 of the spans uncovered by current hypothesis together with the hypothesis cost.</S>
+          <S ID="S-16450">The future cost is precomputed (line 2 Algorithm 1) in a way similar to the phrase-based models (<REF ID="R-12" RPTR="15">Koehn et al., 2007</REF>) using only the terminal rules of the grammar.</S>
+          <S ID="S-16451">The ComputeCost method (line 22 in Algorithm 1) uses the usual log-linear model and scores a hypothesis based on its different feature scores g(h &#8242; ) and the future cost of the yet to be covered spans (F &#172;h &#8242; cov ).</S>
+          <S ID="S-16452">Time complexity of left to right Hiero decoding with beam search is O(n 2 b) in practice where n is the length of source sentence and b is the size of beam (<REF ID="R-10" RPTR="13">Huang and Mi, 2010</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 LR-Hiero Decoding with Cube Pruning</HEADER>
+        <P>
+          <S ID="S-16453">The Algorithm 1 presented earlier does an exhaustive search as it generates all possible partial translations for a given stack that are reachable from the hypotheses in previous stacks.</S>
+          <S ID="S-16454">However only a few of these hypotheses are retained, while majority of them are pruned away.</S>
+          <S ID="S-16455">The cube pruning technique (<REF ID="R-02" RPTR="5">Chiang, 2007</REF>) avoids the wasteful generation of poor hypotheses that are likely to be pruned away by efficiently restricting the generation to only high scoring partial translations.</S>
+          <S ID="S-16456">We modify the cube pruning for LR-decoding that takes into account the next uncovered span to</S>
+        </P>
+        <P>
+          <S ID="S-16457">3 <REF ID="R-19" RPTR="39">Watanabe et al. (2006</REF><REF ID="R-20" RPTR="54">Watanabe et al. (2006</REF>b) also use a similar future cost, even</S>
+        </P>
+        <P>
+          <S ID="S-16458">though it is not discussed in the paper (p.c.</S>
+          <S ID="S-16459">).</S>
+        </P>
+        <P>
+          <S ID="S-16460">Algorithm 2: LR-Hiero Decoding with Cube Pruning</S>
+        </P>
+        <P>
+          <S ID="S-16461">be translated indicated by the Earley&#8217;s dot notation.</S>
+          <S ID="S-16462">The Algorithm 2 shows the pseudocode for LR-decoding using cube pruning.</S>
+          <S ID="S-16463">The structure of stacks and hypotheses and computing the future cost is similar to Algorithm 1 (lines 1-5).</S>
+          <S ID="S-16464">To fill stack S i , it iterates over previous stacks (line 8 in Algorithm 2) 4 .</S>
+          <S ID="S-16465">All hypotheses in each stack S p (covering p words on the source-side) are first partitioned into a set of groups, {G}, based on their first uncovered span (line 9) 5 .</S>
+          <S ID="S-16466">Each group g is a</S>
+        </P>
+        <P>
+          <S ID="S-16467">4 As the length of rules are limited (at most MRL), we can</S>
+        </P>
+        <P>
+          <S ID="S-16468">ignore stacks with index less than i &#8722; MRL 5 The beam search decoder in Phrase-based system (Huang</S>
+        </P>
+        <P>
+          <S ID="S-16469">and <REF ID="R-02" RPTR="6">Chiang, 2007</REF>; <REF ID="R-12" RPTR="16">Koehn et al., 2007</REF>; <REF ID="R-17" RPTR="24">Sankaran et al., 2010</REF>)</S>
+        </P>
+        <P>
+          <S ID="S-16470">2-tuple (g span , g hyps ), where g hyps is a list of hypotheses which share the same first uncovered span g span .</S>
+          <S ID="S-16471">Rules matching the span g span are obtained from routine GetSpanRules, which are then grouped based on unique source side rules (i.e. each R s contains rules that share the same source side s but have different target sides).</S>
+          <S ID="S-16472">Each g hyps and possible R s</S>
+        </P>
+        <P>
+          <S ID="S-16473">create a cube which is added to cubeList.</S>
+        </P>
+        <P>
+          <S ID="S-16474">In LR-Hiero, each hypothesis is developed with only one uncovered span, therefore each cube always has just two dimensions: (1) hypotheses with the same number of covered words and similar first uncovered span, (2) rules sharing the same source side.</S>
+          <S ID="S-16475">In Figure 3(a), each group of hypotheses, g hyps , is shown in a green box (in stacks), and each rectangle on the top is a cube.</S>
+          <S ID="S-16476">Figure 3 is using the example in Figure 2.</S>
+        </P>
+        <P>
+          <S ID="S-16477">The Merge routine is the core function of cube pruning which generates the best hypotheses from all cubes (<REF ID="R-02" RPTR="7">Chiang, 2007</REF>).</S>
+          <S ID="S-16478">For each possible cube, (H, R), the best hypothesis is generated by calling GrowHypothesis(h 1 , r 1 , span, F) where h 1 and r 1 are the best hypothesis and rule in H and R respectively (line 22).</S>
+          <S ID="S-16479">Figure 3 (b) shows a more detailed view of a cube (shaded cube in Figure 3(a)).</S>
+          <S ID="S-16480">Rows are hypotheses and columns are rules which are sorted based on their scores.</S>
+        </P>
+        <P>
+          <S ID="S-16481">The first best hypotheses, h &#8242; , along with their score, h &#8242; c and corresponding cube, (H, R) are placed in a priority queue, heapQ (triangle in Figure 3).</S>
+          <S ID="S-16482">Iteratively the best hypothesis is popped from the queue (line 26) and its neighbours in the cube are added to the priority queue (using GetN eighbours([H, Q])).</S>
+          <S ID="S-16483">It continues to generate all K best hypotheses.</S>
+          <S ID="S-16484">Using cube pruning technique, each stack is filled with K best hypotheses without generating all possible hypotheses in each cube.</S>
+        </P>
+        <P>
+          <S ID="S-16485">groups the hypotheses in a given stack based on their coverage vector.</S>
+          <S ID="S-16486">But this idea does not work in LRHiero decoding in which the expansion of each hypothesis is restricted to its first uncovered span.</S>
+          <S ID="S-16487">We have also tried another way of grouping hypotheses: group by all uncovered spans, h s.</S>
+          <S ID="S-16488">Our experiments did not show any significant difference between the final results (BLEU score), therefore we decided to stick to the simpler idea: using first uncovered span for grouping.</S>
+          <S ID="S-16489">6 Note that, just rules whose number of terminals in their</S>
+        </P>
+        <P>
+          <S ID="S-16490">source side is equal to i &#8722; p can be used.</S>
+        </P>
+        <P>
+          <S ID="S-16491">...</S>
+        </P>
+        <P>
+          <S ID="S-16492">[1,8]</S>
+        </P>
+        <P>
+          <S ID="S-16493">[1,8]</S>
+        </P>
+        <P>
+          <S ID="S-16494">[0,3]</S>
+        </P>
+        <P>
+          <S ID="S-16495">[0,3]</S>
+        </P>
+        <P>
+          <S ID="S-16496">[5,8]</S>
+        </P>
+        <P>
+          <S ID="S-16497">[1,6]</S>
+        </P>
+        <P>
+          <S ID="S-16498">[1,6]</S>
+        </P>
+        <P>
+          <S ID="S-16499">[1,6]</S>
+        </P>
+        <P>
+          <S ID="S-16500">[0,3]</S>
+        </P>
+        <P>
+          <S ID="S-16501">[0,3]</S>
+        </P>
+        <P>
+          <S ID="S-16502">[5,6]</S>
+        </P>
+        <P>
+          <S ID="S-16503">[5,6]</S>
+        </P>
+        <P>
+          <S ID="S-16504">[1,4]</S>
+        </P>
+        <P>
+          <S ID="S-16505">[6,8]</S>
+        </P>
+        <P>
+          <S ID="S-16506">[6,8]</S>
+        </P>
+        <P>
+          <S ID="S-16507">[5,6]</S>
+        </P>
+        <P>
+          <S ID="S-16508">[5,6]</S>
+        </P>
+        <P>
+          <S ID="S-16509">[5,6]</S>
+        </P>
+        <P>
+          <S ID="S-16510">[1,3]</S>
+        </P>
+        <P>
+          <S ID="S-16511">[7,8]</S>
+        </P>
+        <P>
+          <S ID="S-16512">1 2 3 4 5</S>
+        </P>
+        <P>
+          <S ID="S-16513">(a)</S>
+        </P>
+        <P>
+          <S ID="S-16514">0.9</S>
+        </P>
+        <P>
+          <S ID="S-16515">students have not yet [5,6] 10.2 12.5 12.4 14.3</S>
+        </P>
+        <P>
+          <S ID="S-16516">student has not already [5,6] 12.7 13.3 1.1 3.2</S>
+        </P>
+        <P>
+          <S ID="S-16517">pupils have not yet [5,6] 11.5 12.6 12.8 14.7 12.6</S>
+        </P>
+        <P>
+          <S ID="S-16518">(b)</S>
+        </P>
+        <P>
+          <S ID="S-16519">13.5 15.4 12.5 12.4 14.3</S>
+        </P>
+        <P>
+          <S ID="S-16520">13.3</S>
+        </P>
+        <P>
+          <S ID="S-16521">12.8 14.7</S>
+        </P>
+        <P>
+          <S ID="S-16522">13.5 15.4</S>
+        </P>
+        <P>
+          <S ID="S-16523">Figure 3 (b) shows the derivation of the two best hypotheses from the cube.</S>
+          <S ID="S-16524">The best hypothesis of this cube which is likely created from the best hypothesis and rule (left top most entry) is popped at first step.</S>
+          <S ID="S-16525">Then, GetNeighbours calls GrowHypothesis to generate next potential best hypotheses of this cube (neighbours of the popped entry which are shaded in Figure 3(b)).</S>
+          <S ID="S-16526">These hypotheses are added to the priority queue.</S>
+          <S ID="S-16527">In the next iteration, the best hypothesis is popped from all candidates in the queue and algorithm continues.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Features</HEADER>
+      <P>
+        <S ID="S-16569">We use the following standard SMT features for the log-linear model of LR-Hiero: relative-frequency translation probabilities p(f |e) and p(e|f), lexical translation probabilities p l (f|e) and p l (e|f), a language model probability, word count and phrase count.</S>
+        <S ID="S-16570">In addition we also use the glue rule count and the two reordering penalty features employed by <REF ID="R-19" RPTR="40">Watanabe et al. (2006</REF><REF ID="R-20" RPTR="55">Watanabe et al. (2006</REF>b; 2006a).</S>
+        <S ID="S-16571">These features compute the height and width (span size of the entire subtree) of all subtrees which are backtraced in the derivation of a hypothesis.</S>
+        <S ID="S-16572">A non-terminal X i is pushed into the LIFO list of a partial hypothesis; it&#8217;s backtrace refers to the set of NTs that must be popped before X i .</S>
+      </P>
+      <P>
+        <S ID="S-16573">In Figure 1(b), X 2 has two subtrees X 3 and X 6 , where X 3 should be processed before X 6 .</S>
+        <S ID="S-16574">The subtree rooted at X 3 in Figure 1(b) has a height of 2 and span [1, 6] having a width of 5.</S>
+        <S ID="S-16575">Similarly, X 4 should be backtraced before X 5 and has height and width of 1.</S>
+        <S ID="S-16576">Backtracing applies only for rules having at least two non-terminals.</S>
+        <S ID="S-16577">Thus the total height and width penalty for this derivation are 3 and 6 respectively.</S>
+        <S ID="S-16578">However, the height and width features do not distinguish between a rule that reorders the nonterminals in source and target from one that preserves the ordering.</S>
+        <S ID="S-16579">Rules #2 and #3 in Figure 2 are treated equally although they have different orderings.</S>
+        <S ID="S-16580">The decoder is thus agnostic to this difference and would not be able to exploit this effectively to control reordering and instead would rely on the partial LM score.</S>
+        <S ID="S-16581">This issue is exacerbated for glue rules, where the decoder has to choose from different possibilities without any way to favour one over the others.</S>
+        <S ID="S-16582">Instead of the rule #2, the decoder could use its reordered version &#12296;X 1 haben X 2 , have X 2 X 1 &#12297; leading to a poor translation.</S>
+      </P>
+      <P>
+        <S ID="S-16583">The features we introduce can be used to learn if the model should favour monotone translations at the cost of re-orderings or vice versa and hence can easily adapt to different language pairs.</S>
+        <S ID="S-16584">Further, our experiments (see Section 4) suggest that the features h and w are not sufficient by themselves to model reordering for language pairs exhibiting very different syntactic structure.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Distortion Features</HEADER>
+        <P>
+          <S ID="S-16534">Our distortion features are inspired by their namesake in phrase-based system, with some modifications to adapt the idea for the discontiguous phrases in LR-Hiero grammar.</S>
+        </P>
+        <P>
+          <S ID="S-16535">(a)</S>
+        </P>
+        <P>
+          <S ID="S-16536">f 1 X 1 f 2 X 2 f 3</S>
+        </P>
+        <P>
+          <S ID="S-16537">r : hf 1 X 1 f 2 X 2 f 3 ,tX 2 X 1 i I =[`,f 1 ,f 2 ,f 3 ,X 2 ,X 1 , a]</S>
+        </P>
+        <P>
+          <S ID="S-16538">r :&#12296; X 1 noch nicht X 2 /not yet X 2 X 1</S>
+        </P>
+        <P>
+          <S ID="S-16539">&#12297;</S>
+        </P>
+        <P>
+          <S ID="S-16540">.</S>
+          <S ID="S-16541">1 ihre 2</S>
+        </P>
+        <P>
+          <S ID="S-16542">arbeit 3 noch 4</S>
+        </P>
+        <P>
+          <S ID="S-16543">nicht 5 gemacht (b)</S>
+        </P>
+        <P>
+          <S ID="S-16544">I=[(1,1),(3,5),(5,6),(1,3),(6,6)]</S>
+        </P>
+        <P>
+          <S ID="S-16545">Consider a rule r = &#12296;&#947;, &#175;b &#946;&#12297;, with the source term &#947; being a mixed string of terminals and nonterminals.</S>
+          <S ID="S-16546">Representing the non-terminal spans and each sequence of terminals in &#947; as distinct items, our distortion feature counts the total length of jumps between the items during Earley parsing.</S>
+        </P>
+        <P>
+          <S ID="S-16547">Figure 4 (a) explains the computation of our distortion feature for an example rule r. Let I = [I 0 , .</S>
+          <S ID="S-16548">.</S>
+          <S ID="S-16549">.</S>
+          <S ID="S-16550">, I k ] be the items denoting the terminal sequences and non-terminal spans with I 0 and I k being dummy items (&#8866; and &#8867; in Fig) marking the left and right indices of the rule r in input sentence f. Other items are arranged by their realization order on the target-side with the terminal sequences preceding non-terminal spans.</S>
+          <S ID="S-16551">The items for the example rule are shown in Figure 4 (a).</S>
+          <S ID="S-16552">The distortion feature is computed as follows:</S>
+        </P>
+        <P>
+          <S ID="S-16553">d(r) = k&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-16554">|Ij L &#8722; Ij&#8722;1| R (4)</S>
+        </P>
+        <P>
+          <S ID="S-16555">j=1</S>
+        </P>
+        <P>
+          <S ID="S-16556">where superscripts refer to position of left (L) and right (R) edge of each item in the source sentence f. These are then aggregated across the rules of a derivation D as: d = &#8721; r&#8712;D d(r).</S>
+          <S ID="S-16557">For each item I j , we count the jump from the end of previous item to the beginning of the current.</S>
+          <S ID="S-16558">In Figure 4 (a) the jumps are indicated by the arrows above the rule.</S>
+          <S ID="S-16559">Figure 4 (b) shows an example of distortion computation for r 3 and phrase &#12296;ihre arbeit noch nicht gemacht haben&#12297; from Figure 2.</S>
+        </P>
+        <P>
+          <S ID="S-16560">Since the glue rules are likely to be used in the top levels (possibly with large distortion) of the derivation, we would want the decoder to learn the distortion for regular and glue rules separately.</S>
+          <S ID="S-16561">We thus use two distortion features for the two rule types and we call them d p and d g .</S>
+        </P>
+        <P>
+          <S ID="S-16562">These features do not directly model the sourcetarget reordering, but only capture the source-side jumps.</S>
+          <S ID="S-16563">Furthermore they apply for both monotone and reordering rules.</S>
+          <S ID="S-16564">We now introduce a new feature for exclusively modelling the reordering.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Reordering Feature</HEADER>
+        <P>
+          <S ID="S-16565">This feature simply counts the number of reordering rules, where the non-terminals in source and target sides are reordered.</S>
+          <S ID="S-16566">Thus r &#12296;&#12297; = rule(D, &#12296;&#12297;), where rule(D, &#12296;&#12297;) is the number of reordering rules in D.</S>
+          <S ID="S-16567">Similar to width and height, this feature is applied for rule having at least two non-terminals.</S>
+          <S ID="S-16568">This feature is applied to regular and glue rules.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments</HEADER>
+      <P>
+        <S ID="S-16641">We conduct different types of experiments to evaluate LR-Hiero decoding developed by cube pruning and integrating new features into LR-Hiero system for two language pairs: German-English (de-en) and Czech-English (cs-en).Table 1 shows the dataset details.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 System Setup</HEADER>
+        <P>
+          <S ID="S-16585">In our experiments we use four baselines as well as our implementation of LR-Hiero (written in Python):</S>
+        </P>
+        <P>
+          <S ID="S-16586">cs-en</S>
+        </P>
+        <P>
+          <S ID="S-16587">de-en</S>
+        </P>
+        <P>
+          <S ID="S-16588">Corpus</S>
+        </P>
+        <P>
+          <S ID="S-16589">Europarl(v7), CzEng(v0.9); News commentary Europarl(v7); News commentary</S>
+        </P>
+        <P>
+          <S ID="S-16590">Train/Dev/Test</S>
+        </P>
+        <P>
+          <S ID="S-16591">7.95M/3000/3003</S>
+        </P>
+        <P>
+          <S ID="S-16592">1.5M/2000/2000</S>
+        </P>
+        <P>
+          <S ID="S-16593">Model cs-en de-en</S>
+        </P>
+        <P>
+          <S ID="S-16594">&#8226; Hiero: we used Kriya, our open-source implementation of Hiero in Python, which performs comparably to other open-source Hiero systems (<REF ID="R-18" RPTR="26">Sankaran et al., 2012</REF>).</S>
+          <S ID="S-16595">Kriya can obtain statistically significantly equal BLEU scores when compared with Moses (<REF ID="R-12" RPTR="17">Koehn et al., 2007</REF>) for several language pairs (<REF ID="R-16" RPTR="23">Razmara et al., 2012</REF>; <REF ID="R-00" RPTR="0">Callison-Burch et al., 2012</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-16596">&#8226; Hiero-GNF: where we use Hiero decoder with the restricted LR-Hiero grammar (GNF rules).</S>
+        </P>
+        <P>
+          <S ID="S-16597">&#8226; LR-Hiero: our implementation of LR-Hiero (<REF ID="R-19" RPTR="33">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="48">Watanabe et al., 2006</REF>b) in Python.</S>
+        </P>
+        <P>
+          <S ID="S-16598">&#8226; phrase-based: Moses (<REF ID="R-12" RPTR="18">Koehn et al., 2007</REF>)</S>
+        </P>
+        <P>
+          <S ID="S-16599">&#8226; LR-Hiero+CP: LR-Hiero decoding with cube pruning.</S>
+        </P>
+        <P>
+          <S ID="S-16600">We use a 5-gram LM trained on the Gigaword corpus and use KenLM (Heafield, 2011) for LM scoring during decoding.</S>
+          <S ID="S-16601">We tune weights by minimizing BLEU loss on the dev set through MERT (Och, 2003) and report BLEU scores on the test set.</S>
+          <S ID="S-16602">We use comparable pop limits in each of the decoders: 1000 for Moses and LR-Hiero and 500 with cube pruning for CKY Hiero and LR-Hiero+CP.</S>
+          <S ID="S-16603">Other extraction and decoder settings such as maximum phrase length, etc. were identical across settings so that the results are comparable.</S>
+        </P>
+        <P>
+          <S ID="S-16604">Table 2 shows how the LR-Hiero grammar is much smaller than CKY-based Hiero.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Time Efficiency Comparison</HEADER>
+        <P>
+          <S ID="S-16605">To evaluate the performance of LR-Hiero decoding with cube pruning (LR-Hiero+CP), we compare it with three baselines: (i) CKY Hiero, (ii) CKY Hiero-GNF, and (iii) LR-Hiero (without cube pruning) with two different beam size 500 and 1000.</S>
+          <S ID="S-16606">When it comes to instrument timing results, there are lots of system level details that we wish to abstract away from, and focus only on the number of &#8220;edges&#8221; processed by the decoder.</S>
+          <S ID="S-16607">In comparison of parsing algorithms, the common practice is to measure the number of edges processed by different algorithms for the same reason (<REF ID="R-14" RPTR="20">Moore and Dowding, 1991</REF>).</S>
+          <S ID="S-16608">By analogy to parsing algorithm comparisons, we compare the different decoding algorithms with respect to the number of calls made to the language model (LM) since that directly corresponds to the number of hypotheses considered by the decoder.</S>
+          <S ID="S-16609">A decoder is more time efficient if it can consider fewer translation hypotheses while maintaining the same BLEU score.</S>
+          <S ID="S-16610">All of the baselines use the same wrapper to query the language model, and we have instrumented the wrapper to count the statistics we need and thus we can say this is a fair comparison.</S>
+          <S ID="S-16611">For this experiment we use a sample set of 50 sentences taken from the test sets.</S>
+        </P>
+        <P>
+          <S ID="S-16612">Table 3 shows the results in terms of average number of language model queries and times in milliseconds.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Reordering Features</HEADER>
+        <P>
+          <S ID="S-16613">To evaluate the new reordering features proposed to LR-Hiero (Section 3.2), LR-Hiero+CP with new features is compared to all baselines.</S>
+          <S ID="S-16614">Table 4 shows the BLEU scores of different models in two language pairs.</S>
+          <S ID="S-16615">The baseline (<REF ID="R-19" RPTR="34">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="49">Watanabe et al., 2006</REF>b) model uses all the features mentioned therein but is</S>
+        </P>
+        <P>
+          <S ID="S-16616">Model cs-en de-en</S>
+        </P>
+        <P>
+          <S ID="S-16617">worse than both phrase-based and CKY-Hiero baselines by up to 2.3 BLEU points.</S>
+        </P>
+        <P>
+          <S ID="S-16618">All the reported results are obtained from a single optimizer run.</S>
+          <S ID="S-16619">However we observed insignificant changes in different tuning runs in our experiments.</S>
+          <S ID="S-16620">We find a gain of about 1 BLEU point when we add a single distortion feature d and a further gain of 0.3 BLEU (not shown due to lack of space) when we split the distortion feature for the two rule types (d p and d g ).</S>
+          <S ID="S-16621">The last line in part two of Table 4 shows a consistent gain of 1.6 BLEU over the LR- Hiero baseline for both language pairs.</S>
+          <S ID="S-16622">It shows that LR-Hiero maintains the BLEU scores obtained by &#8220;phrase-based&#8221; and &#8220;CKY Hiero-GNF&#8221;.</S>
+        </P>
+        <P>
+          <S ID="S-16623">We performed statistical significance tests using two different tools: Moses bootstrap resampling and MultEval (<REF ID="R-03" RPTR="8">Clark et al., 2011</REF>).</S>
+          <S ID="S-16624">The difference between &#8220;LR-Hiero+CP+reordering feat&#8221; and three baselines: &#8220;phrase-based&#8221;, &#8220;CKY Hiero- GNF&#8221;, &#8220;LR-Hiero+reordering feat&#8221; are not statistically significant even for p-value of 0.1 for both tools.</S>
+        </P>
+        <P>
+          <S ID="S-16625">To investigate the impact of proposed reordering features with other decoder or models.</S>
+          <S ID="S-16626">We add these features to both Hiero and Hiero-GNF 7 .</S>
+          <S ID="S-16627">The last part of Table 4 shows the performance CKY decoder</S>
+        </P>
+        <P>
+          <S ID="S-16628">7 Feature r &#12296;&#12297; is defined for SCFG rules and cannot be</S>
+        </P>
+        <P>
+          <S ID="S-16629">adopted to phrase-based translation systems; and Moses uses distortion feature therefore we omit Moses from this experiment.</S>
+        </P>
+        <P>
+          <S ID="S-16630">with different models (full Hiero and GNF) with the new reordering features in terms of BLEU score.</S>
+          <S ID="S-16631">The results show that these features are helpful in both models.</S>
+          <S ID="S-16632">Although, they do not make a big difference in Hiero with full model, they can alleviate the lack of non-GNF rules in Hiero-GNF.</S>
+        </P>
+        <P>
+          <S ID="S-16633"><REF ID="R-15" RPTR="21">Nguyen and Vogel (2013)</REF> integrate traditional phrase-based features: distortion and lexicalized reordering into Hiero as well.</S>
+          <S ID="S-16634">They show that such features can be useful to boost the translation quality of CKY Hiero with the full rule set.</S>
+          <S ID="S-16635"><REF ID="R-15" RPTR="22">Nguyen and Vogel (2013)</REF> compute the distortion feature in a different way, only applicable to CKY.</S>
+          <S ID="S-16636">The distortion for each cell is computed after the translation for nonterminal sub-spans is complete.</S>
+          <S ID="S-16637">In LR-decoding, we compute distortion for rules even though we are yet to translate some of the sub-spans.</S>
+          <S ID="S-16638">Thus our approach computes the distortion incrementally for the untranslated sub-spans which are later added.</S>
+          <S ID="S-16639">Unlike (Nguyen and Vogel, 2013), our distortion feature can be applied to both LR and CKY-decoding (Table 4).</S>
+          <S ID="S-16640">We have also introduced another reordering feature (Section 3.2) not proposed previously.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusion and Future Work</HEADER>
+      <P>
+        <S ID="S-16642">We provided a detailed description of left-to-right Hiero decoding, many details of which were only implicit in (<REF ID="R-19" RPTR="35">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="50">Watanabe et al., 2006</REF>b).</S>
+        <S ID="S-16643">We presented an augmented LR decoding algorithm that builds on the original algorithm in (<REF ID="R-19" RPTR="36">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="51">Watanabe et al., 2006</REF>b) but unlike that algorithm, using experiments over multiple language pairs we showed two new results: (i) Our LR decoding algorithm provides demonstrably more efficient decoding than CKY Hiero and the original LR decoding algorithm in (<REF ID="R-19" RPTR="37">Watanabe et al., 2006</REF><REF ID="R-20" RPTR="52">Watanabe et al., 2006</REF>b).</S>
+        <S ID="S-16644">And, (ii) by introducing new distortion and reordering features for LR decoding we show that it maintains the BLEU scores obtained by phrasebased and CKY Hiero-GNF.</S>
+        <S ID="S-16645">CKY Hiero uses standard Hiero-style translation rules capturing better reordering model than prefix lexicalized target-side translation rules used in LR- Hiero.</S>
+        <S ID="S-16646">Our LR-decoding algorithm is 4 times faster in terms of LM calls while translation quality suffers by about 0.67 in BLEU score on average.</S>
+        <S ID="S-16647">Unlike <REF ID="R-19" RPTR="41">Watanabe et al. (2006</REF><REF ID="R-20" RPTR="56">Watanabe et al. (2006</REF>b), our new features can easily adapt to the reordering requirements of different language pairs.</S>
+        <S ID="S-16648">We also introduce the use 1097 of future cost in decoding algorithm which is an essential part in decoding.</S>
+        <S ID="S-16649">We have shown in this paper that left-to-right (LR) decoding can be considered as a potential faster alternative to CKY decoding for Hiero-style machine translation systems.</S>
+        <S ID="S-16650">In future work, we plan to apply lexicalized reordering models to LR-Hiero.</S>
+        <S ID="S-16651">It has been shown to be useful for Hiero in some languages therefore it is promising to improve translation quality in LR- Hiero which suffers from lack of modeling power of non-GNF target side rules.</S>
+        <S ID="S-16652">We also plan to extend the glue rules in LR-Hiero to provide a better reordering model.</S>
+        <S ID="S-16653">We believe such an extension would be very effective in reducing search errors and capturing better reordering models in language pairs involving complex reordering requirements like Chinese-English.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-16654">This research was partially supported by an NSERC, Canada (RGPIN: 264905) grant and a Google Faculty Award to the third author.</S>
+      <S ID="S-16655">The authors wish to thank Taro Watanabe and Marzieh Razavi for their valuable discussions and suggestions, and the anonymous reviewers for their helpful comments.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Chris Callison-Burch</RAUTHOR>
+      <REFTITLE>Findings of the 2012 workshop on statistical machine translation.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>A hierarchical phrase-based model for statistical machine translation. In</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Jonathan H Clark</RAUTHOR>
+      <REFTITLE>Better hypothesis testing for statistical machine translation: controlling for optimizer instability.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Jay Earley</RAUTHOR>
+      <REFTITLE>An efficient context-free parsing algorithm.</REFTITLE>
+      <DATE>1970</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Accurate non-hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Kenneth Heafield</RAUTHOR>
+      <REFTITLE>Left language model state for syntactic machine translation.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Kenneth Heafield</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Grouping language model boundary words to speed KBest extraction from hypergraphs.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Forest rescoring: Faster decoding with integrated language models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Efficient incremental decoding for tree-to-string translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Adam Lopez</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation with suffix arrays.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Robert C Moore</RAUTHOR>
+      <REFTITLE>Efficient bottom-up parsing.</REFTITLE>
+      <DATE>1991</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Thuylinh Nguyen</RAUTHOR>
+      <REFTITLE>Integrating phrase-based reordering features into chart-based decoder for machine translation.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Majid Razmara</RAUTHOR>
+      <REFTITLE>Kriya - the sfu system for translation task at wmt-12.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Baskaran Sankaran</RAUTHOR>
+      <REFTITLE>Incremental decoding for phrase-based statistical machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Baskaran Sankaran</RAUTHOR>
+      <REFTITLE>Kriya - an end-to-end hierarchical phrase-based mt system.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Taro Watanabe</RAUTHOR>
+      <REFTITLE>NTT statistical machine translation for iwslt</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Taro Watanabe</RAUTHOR>
+      <REFTITLE>Left-to-right target generation for hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

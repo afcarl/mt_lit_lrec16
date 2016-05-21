@@ -1,0 +1,709 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Adjoining Tree-to-String Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>Yang Liu</AUTHOR>
+    <AUTHOR>Qun Liu</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-32530">We introduce synchronous tree adjoining grammars (TAG) into tree-to-string translation, which converts a source tree to a target string.</A-S>
+    <A-S ID="S-32531">Without reconstructing TAG derivations explicitly, our rule extraction algorithm directly learns tree-to-string rules from aligned Treebank-style trees.</A-S>
+    <A-S ID="S-32532">As tree-to-string translation casts decoding as a tree parsing problem rather than parsing, the decoder still runs fast when adjoining is included.</A-S>
+    <A-S ID="S-32533">Less than 2 times slower, the adjoining tree-tostring system improves translation quality by +0.7 BLEU over the baseline system only allowing for tree substitution on NIST Chinese- English test sets.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-32534">Syntax-based translation models, which exploit hierarchical structures of natural languages to guide machine translation, have become increasingly popular in recent years.</S>
+        <S ID="S-32535">So far, most of them have been based on synchronous context-free grammars (CFG) (<REF ID="R-04" RPTR="4">Chiang, 2007</REF>), tree substitution grammars (TSG) (<REF ID="R-09" RPTR="14">Eisner, 2003</REF>; <REF ID="R-12" RPTR="20">Galley et al., 2006</REF>; <REF ID="R-20" RPTR="41">Liu et al., 2006</REF>; <REF ID="R-15" RPTR="26">Huang et al., 2006</REF>; Zhang et al., 2008), and inversion transduction grammars (ITG) (<REF ID="R-34" RPTR="68">Wu, 1997</REF>; <REF ID="R-36" RPTR="71">Xiong et al., 2006</REF>).</S>
+        <S ID="S-32536">Although these formalisms present simple and precise mechanisms for describing the basic recursive structure of sentences, they are not powerful enough to model some important features of natural language syntax.</S>
+        <S ID="S-32537">For example, <REF ID="R-03" RPTR="3">Chiang (2006)</REF><REF ID="R-16" RPTR="29">(2006)</REF><REF ID="R-21" RPTR="46">(2006)</REF><REF ID="R-26" RPTR="55">(2006)</REF> points out that the translation of languages that can stack an unbounded number of clauses in an &#8220;inside-out&#8221; way (<REF ID="R-34" RPTR="69">Wu, 1997</REF>) 1278</S>
+      </P>
+      <P>
+        <S ID="S-32538">provably goes beyond the expressive power of synchronous CFG and TSG.</S>
+        <S ID="S-32539">Therefore, it is necessary to find ways to take advantage of more powerful synchronous grammars to improve machine translation.</S>
+      </P>
+      <P>
+        <S ID="S-32540">Synchronous tree adjoining grammars (TAG) (<REF ID="R-31" RPTR="65">Shieber and Schabes, 1990</REF>) are a good candidate.</S>
+        <S ID="S-32541">As a formal tree rewriting system, TAG (<REF ID="R-17" RPTR="35">Joshi et al., 1975</REF>; <REF ID="R-18" RPTR="36">Joshi, 1985</REF>) provides a larger domain of locality than CFG to state linguistic dependencies that are far apart since the formalism treats trees as basic building blocks.</S>
+        <S ID="S-32542">As a mildly context-sensitive grammar, TAG is conjectured to be powerful enough to model natural languages.</S>
+        <S ID="S-32543">Synchronous TAG generalizes TAG by allowing the construction of a pair of trees using the TAG operations of substitution and adjoining on tree pairs.</S>
+        <S ID="S-32544">The idea of using synchronous TAG in machine translation has been pursued by several researchers (<REF ID="R-00" RPTR="0">Abeille et al., 1990</REF>; <REF ID="R-29" RPTR="63">Prigent, 1994</REF>; <REF ID="R-08" RPTR="13">Dras, 1999</REF>), but only recently in its probabilistic form (<REF ID="R-25" RPTR="54">Nesson et al., 2006</REF>; De- Neefe and Knight, 2009).</S>
+        <S ID="S-32545"><REF ID="R-32" RPTR="66">Shieber (2007)</REF> argues that probabilistic synchronous TAG possesses appealing properties such as expressivity and trainability for building a machine translation system.</S>
+      </P>
+      <P>
+        <S ID="S-32546">However, one major challenge for applying synchronous TAG to machine translation is computational complexity.</S>
+        <S ID="S-32547">While TAG requires O(n 6 ) time for monolingual parsing, synchronous TAG requires O(n 12 ) for bilingual parsing.</S>
+        <S ID="S-32548">One solution is to use tree insertion grammars (TIG) introduced by <REF ID="R-30" RPTR="64">Schabes and Waters (1995)</REF>.</S>
+        <S ID="S-32549">As a restricted form of TAG, TIG still allows for adjoining of unbounded trees but only requires O(n 3 ) time for monolingual parsing.</S>
+        <S ID="S-32550">Nesson et al. <REF ID="R-16" RPTR="30">(2006)</REF><REF ID="R-21" RPTR="47">(2006)</REF><REF ID="R-26" RPTR="56">(2006)</REF> firstly demonstrate</S>
+      </P>
+      <P>
+        <S ID="S-32551">the use of synchronous TIG for machine translation and report promising results.</S>
+        <S ID="S-32552"><REF ID="R-07" RPTR="10">DeNeefe and Knight (2009)</REF> prove that adjoining can improve translation quality significantly over a state-of-the-art stringto-tree system (<REF ID="R-12" RPTR="21">Galley et al., 2006</REF>) that uses synchronous TSG with tractable computational complexity.</S>
+      </P>
+      <P>
+        <S ID="S-32553">In this paper, we introduce synchronous TAG into tree-to-string translation (<REF ID="R-20" RPTR="42">Liu et al., 2006</REF>; <REF ID="R-15" RPTR="27">Huang et al., 2006</REF>), which is the simplest and fastest among syntax-based approaches (Section 2).</S>
+        <S ID="S-32554">We propose a new rule extraction algorithm based on GHKM (<REF ID="R-10" RPTR="17">Galley et al., 2004</REF>) that directly induces a synchronous TAG from an aligned and parsed bilingual corpus without converting Treebank-style trees to TAG derivations explicitly (Section 3).</S>
+        <S ID="S-32555">As tree-tostring translation takes a source parse tree as input, the decoding can be cast as a tree parsing problem (<REF ID="R-09" RPTR="15">Eisner, 2003</REF>): reconstructing TAG derivations from a derived tree using tree-to-string rules that allow for both substitution and adjoining.</S>
+        <S ID="S-32556">We describe how to convert TAG derivations to translation forest (Section 4).</S>
+        <S ID="S-32557">We evaluated the new tree-to-string system on NIST Chinese-English tests and obtained consistent improvements (+0.7 BLEU) over the STSGbased baseline system without significant loss in efficiency (1.6 times slower) (Section 5).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Model</HEADER>
+      <P>
+        <S ID="S-32558">A synchronous TAG consists of a set of linked elementary tree pairs: initial and auxiliary.</S>
+        <S ID="S-32559">An initial tree is a tree of which the interior nodes are all labeled with non-terminal symbols, and the nodes on the frontier are either words or non-terminal symbols marked with a down arrow (&#8595;).</S>
+        <S ID="S-32560">An auxiliary tree is defined as an initial tree, except that exactly one of its frontier nodes must be marked as foot node (&#8727;).</S>
+        <S ID="S-32561">The foot node must be labeled with a nonterminal symbol that is the same as the label of the root node.</S>
+      </P>
+      <P>
+        <S ID="S-32562">Synchronous TAG defines two operations to build derived tree pairs from elementary tree pairs: substitution and adjoining.</S>
+        <S ID="S-32563">Nodes in initial and auxiliary tree pairs are linked to indicate the correspondence between substitution and adjoining sites.</S>
+        <S ID="S-32564">Figure 1 shows three initial tree pairs (i.e., &#945; 1 , &#945; 2 , and &#945; 3 ) and two auxiliary tree pairs (i.e., &#946; 1 and &#946; 2 ).</S>
+        <S ID="S-32565">The dashed lines link substitution nodes (e.g., NP &#8595; and X &#8595; in &#946; 1 ) and adjoining sites (e.g., NP and X in &#945; 2 ) in tree pairs.</S>
+        <S ID="S-32566">Substituting the initial tree pair &#945; 1 at</S>
+      </P>
+      <P>
+        <S ID="S-32567">NP VP</S>
+      </P>
+      <P>
+        <S ID="S-32568">&#208;&#254; &#65533;&#65533; &#65533;&#65533; &#65533;&#193;</S>
+      </P>
+      <P>
+        <S ID="S-32569">NP PP VP</S>
+      </P>
+      <P>
+        <S ID="S-32570">NP NP NP NP NP</S>
+      </P>
+      <P>
+        <S ID="S-32571">NR NN NR P NN NN VV NN</S>
+      </P>
+      <P>
+        <S ID="S-32572">&#224;ob&#257;m&#462; &#65533;du&#236; qi&#257;ngj&#299; sh&#236;ji&#224;n y&#468;y&#464; qi&#462;nz&#233;</S>
+      </P>
+      <P>
+        <S ID="S-32573">0 1 2 3 4 5 6 7 8</S>
+      </P>
+      <P>
+        <S ID="S-32574">&#223;&#193;</S>
+      </P>
+      <P>
+        <S ID="S-32575">m&#283;igu&#243; z&#466;ngt&#466;ng&#210;&#65533; &#211;</S>
+      </P>
+      <P>
+        <S ID="S-32576">IP</S>
+      </P>
+      <P>
+        <S ID="S-32577">US President Obama has condemned the shooting incident</S>
+      </P>
+      <P>
+        <S ID="S-32578">the NP &#8595; -X &#8595; node pair in the auxiliary tree pair &#946; 1 yields a derived tree pair &#946; 2 , which can be adjoined at NN-X in &#945; 2 to generate &#945; 3 .</S>
+      </P>
+      <P>
+        <S ID="S-32579">For simplicity, we represent &#945; 2 as a tree-to-string rule:</S>
+      </P>
+      <P>
+        <S ID="S-32580">( NP 0:1 ( NR m&#283;igu&#243; ) ) &#8594; US</S>
+      </P>
+      <P>
+        <S ID="S-32581">where NP 0:1 indicates that the node is an adjoining site linked to a target node dominating the target string spanning from position 0 to position 1 (i.e., &#8220;US&#8221;).</S>
+        <S ID="S-32582">The target tree is hidden because treeto-string translation only considers the target surface string.</S>
+        <S ID="S-32583">Similarly, &#946; 1 can be written as</S>
+      </P>
+      <P>
+        <S ID="S-32584">( NP ( x 1 :NP &#8727; ) ( x 2 :NP &#8595; ) ) &#8594; x 1 x 2</S>
+      </P>
+      <P>
+        <S ID="S-32585">where x denotes a non-terminal and the subscripts indicate the correspondence between source and target non-terminals.</S>
+      </P>
+      <P>
+        <S ID="S-32586">The parameters of a probabilistic synchronous TAG are</S>
+      </P>
+      <P>
+        <S ID="S-32587">&#8721; P i (&#945;) = 1 (1)</S>
+      </P>
+      <P>
+        <S ID="S-32588">&#945;</S>
+      </P>
+      <P>
+        <S ID="S-32589">&#8721; P s (&#945;|&#951;) = 1 (2)</S>
+      </P>
+      <P>
+        <S ID="S-32590">&#945;</S>
+      </P>
+      <P>
+        <S ID="S-32591">&#8721; P a (&#946;|&#951;) + P a (NONE|&#951;) = 1 (3)</S>
+      </P>
+      <P>
+        <S ID="S-32592">&#946;</S>
+      </P>
+      <P>
+        <S ID="S-32593">where &#945; ranges over initial tree pairs, &#946; over auxiliary tree pairs, and &#951; over node pairs.</S>
+        <S ID="S-32594">P i (&#945;) is the probability of beginning a derivation with &#945;; P s (&#945;|&#951;) is the probability of substituting &#945; at &#951;; P a (&#946;|&#951;) is the probability of adjoining &#946; at &#951;; finally, P a (NONE|&#951;) is the probability of nothing adjoining at &#951;.</S>
+      </P>
+      <P>
+        <S ID="S-32595">For tree-to-string translation, these parameters can be treated as feature functions of a discriminative framework (<REF ID="R-28" RPTR="62">Och, 2003</REF>) combined with other conventional features such as relative frequency, lexical weight, rule count, language model, and word count (<REF ID="R-20" RPTR="43">Liu et al., 2006</REF>).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Rule Extraction</HEADER>
+      <P>
+        <S ID="S-32635">Inducing a synchronous TAG from training data often begins with converting Treebank-style parse trees to TAG derivations (<REF ID="R-35" RPTR="70">Xia, 1999</REF>; <REF ID="R-01" RPTR="1">Chen and Vijay-Shanker, 2000</REF>; <REF ID="R-02" RPTR="2">Chiang, 2003</REF>).</S>
+        <S ID="S-32636">DeNeefe and 1281</S>
+      </P>
+      <P>
+        <S ID="S-32637">Knight (2009) propose an algorithm to extract synchronous TIG rules from an aligned and parsed bilingual corpus.</S>
+        <S ID="S-32638">They first classify tree nodes into heads, arguments, and adjuncts using heuristics (<REF ID="R-06" RPTR="9">Collins, 2003</REF>), then transform a Treebank-style tree into a TIG derivation, and finally extract minimallysized rules from the derivation tree and the string on the other side, constrained by the alignments.</S>
+        <S ID="S-32639">Probabilistic models can be estimated by collecting counts over the derivation trees.</S>
+        <S ID="S-32640">However, one challenge is that there are many TAG derivations that can yield the same derived tree, even with respect to a single grammar.</S>
+        <S ID="S-32641">It is difficult to choose appropriate single derivations that enable the resulting grammar to translate unseen data well.</S>
+        <S ID="S-32642"><REF ID="R-07" RPTR="11">DeNeefe and Knight (2009)</REF> indicate that the way to reconstruct TIG derivations has a direct effect on final translation quality.</S>
+        <S ID="S-32643">They suggest that one possible solution is to use derivation forest rather than a single derivation tree for rule extraction.</S>
+        <S ID="S-32644">Alternatively, we extend the GHKM algorithm (<REF ID="R-10" RPTR="18">Galley et al., 2004</REF>) to directly extract tree-to-string rules that allow for both substitution and adjoining from aligned and parsed data.</S>
+        <S ID="S-32645">There is no need for transforming a parse tree into a TAG derivation explicitly before rule extraction and all derivations can be easily reconstructed using extracted rules.</S>
+        <S ID="S-32646">1 Our rule extraction algorithm involves two steps: (1) extracting minimal rules and (2) composition.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Extracting Minimal Rules</HEADER>
+        <P>
+          <S ID="S-32596">Figure 2 shows a training example, which consists of a Chinese parse tree, an English string, and the word alignment between them.</S>
+          <S ID="S-32597">By convention, shaded nodes are called frontier nodes from which tree-tostring rules can be extracted.</S>
+          <S ID="S-32598">Note that the source phrase dominated by a frontier node and its corresponding target phrase are consistent with the word alignment: all words in the source phrase are aligned to all words in the corresponding target phrase and vice versa.</S>
+          <S ID="S-32599">We distinguish between three categories of tree-</S>
+        </P>
+        <P>
+          <S ID="S-32600">1 Note that our algorithm does not take heads, complements,</S>
+        </P>
+        <P>
+          <S ID="S-32601">and adjuncts into consideration and extracts all possible rules with respect to word alignment.</S>
+          <S ID="S-32602">Our hope is that this treatment would make our system more robust in the presence of noisy data.</S>
+          <S ID="S-32603">It is possible to use the linguistic preferences as features.</S>
+          <S ID="S-32604">We leave this for future work.</S>
+        </P>
+        <P>
+          <S ID="S-32605">to-string rules:</S>
+        </P>
+        <P>
+          <S ID="S-32606">1. substitution rules, in which the source tree is an initial tree without adjoining sites.</S>
+        </P>
+        <P>
+          <S ID="S-32607">2. adjoining rules, in which the source tree is an initial tree with at least one adjoining site.</S>
+        </P>
+        <P>
+          <S ID="S-32608">Note that the source phrase &#8220;&#224;ob&#257;m&#462; .</S>
+          <S ID="S-32609">.</S>
+          <S ID="S-32610">.</S>
+          <S ID="S-32611">y&#468;y&#464; qi&#462;nz&#233;&#8221; is discontinuous.</S>
+          <S ID="S-32612">Our model allows both the source and target phrases of an initial rule with adjoining sites to be discontinuous, which goes beyond the expressive power of synchronous CFG and TSG.</S>
+        </P>
+        <P>
+          <S ID="S-32613">Similarly, the composition of two auxiliary rules r 8 and r 16 yields a new auxiliary rule:</S>
+        </P>
+        <P>
+          <S ID="S-32614">3. auxiliary rules, in which the source tree is an auxiliary tree.</S>
+        </P>
+        <P>
+          <S ID="S-32615">For example, in Figure 1, &#945; 1 is a substitution rule, &#945; 2 is an adjoining rule, and &#946; 1 is an auxiliary rule.</S>
+        </P>
+        <P>
+          <S ID="S-32616">Minimal substitution rules are the same with those in STSG (<REF ID="R-10" RPTR="19">Galley et al., 2004</REF>; <REF ID="R-20" RPTR="44">Liu et al., 2006</REF>) and therefore can be extracted directly using GHKM.</S>
+          <S ID="S-32617">By minimal, we mean that the interior nodes are not frontier and cannot be decomposed.</S>
+          <S ID="S-32618">For example, in Table 2, rule 1 (for short r 1 ) is a minimal substitution rule extracted from NR 0,1 .</S>
+          <S ID="S-32619">Minimal adjoining rules are defined as minimal substitution rules, except that each root node must be an adjoining site.</S>
+          <S ID="S-32620">In Table 2, r 2 is a minimal substitution rule extracted from NP 0,1 .</S>
+          <S ID="S-32621">As NP 0,1 is a descendant of NP 0,2 with the same label, NP 0,1 is a possible adjoining site.</S>
+          <S ID="S-32622">Therefore, r 6 can be derived from r 2 and licensed as a minimal adjoining rule extracted from NP 0,2 .</S>
+          <S ID="S-32623">Similarly, four minimal adjoining rules are extracted from NP 0,3 because it has four frontier descendants labeled with NP.</S>
+        </P>
+        <P>
+          <S ID="S-32624">Minimal auxiliary rules are derived from minimal substitution and adjoining rules.</S>
+          <S ID="S-32625">For example, in Table 2, r 7 and r 10 are derived from the minimal substitution rule r 5 while r 8 and r 11 are derived from r 15 .</S>
+          <S ID="S-32626">Note that a minimal auxiliary rule can have adjoining sites (e.g., r 8 ).</S>
+        </P>
+        <P>
+          <S ID="S-32627">Table 1 lists 17 minimal substitution rules, 7 minimal adjoining rules, and 7 minimal auxiliary rules extracted from Figure 2.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Composition</HEADER>
+        <P>
+          <S ID="S-32628">We can obtain composed rules that capture rich contexts by substituting and adjoining minimal initial and auxiliary rules.</S>
+          <S ID="S-32629">For example, the composition of r 12 , r 17 , r 25 , r 26 , r 29 , and r 31 yields an initial rule with two adjoining sites:</S>
+        </P>
+        <P>
+          <S ID="S-32630">( IP ( NP 0:1 ( NR &#224;ob&#257;m&#462; ) ) ( VP 2:3 ( VV y&#468;y&#464; ) ( NP ( NN qi&#462;nz&#233; ) ) ) ) &#8594; Obama has condemned 1282</S>
+        </P>
+        <P>
+          <S ID="S-32631">( NP ( NP ( x 1 :NP &#8727; ) ( x 2 :NP &#8595; ) ) ( x 3 :NP &#8595; ) ) &#8594; x 1 x 2 x 3</S>
+        </P>
+        <P>
+          <S ID="S-32632">We first compose initial rules and then compose auxiliary rules, both in a bottom-up way.</S>
+          <S ID="S-32633">To maintain a reasonable grammar size, we follow Liu <REF ID="R-16" RPTR="31">(2006)</REF><REF ID="R-21" RPTR="48">(2006)</REF><REF ID="R-26" RPTR="57">(2006)</REF> to restrict that the tree height of a rule is no greater than 3 and the source surface string is no longer than 7.</S>
+        </P>
+        <P>
+          <S ID="S-32634">To learn the probability models P i (&#945;), P s (&#945;|&#951;), P a (&#946;|&#951;), and P a (NONE|&#951;), we collect and normalize counts over these extracted rules following De- Neefe and Knight (2009).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Decoding</HEADER>
+      <P>
+        <S ID="S-32647">This is called tree parsing (<REF ID="R-09" RPTR="16">Eisner, 2003</REF>) as the decoder finds ways of decomposing &#960; into elementary trees.</S>
+      </P>
+      <P>
+        <S ID="S-32648">Tree-to-string decoding with STSG is usually treated as forest rescoring (<REF ID="R-13" RPTR="22">Huang and Chiang, 2007</REF><REF ID="R-04" RPTR="5">Chiang, 2007</REF>) that involves two steps.</S>
+        <S ID="S-32649">The decoder first converts the input tree into a translation forest using a translation rule set by pattern matching.</S>
+        <S ID="S-32650"><REF ID="R-15" RPTR="25">Huang et al. (2006)</REF><REF ID="R-16" RPTR="32">(2006)</REF><REF ID="R-21" RPTR="49">(2006)</REF><REF ID="R-26" RPTR="58">(2006)</REF> show that this step is a depth-first search with memorization in O(n) time.</S>
+        <S ID="S-32651">Then, the decoder searches for the best derivation in the translation forest intersected with n-gram language models and outputs the target string.</S>
+        <S ID="S-32652">2</S>
+      </P>
+      <P>
+        <S ID="S-32653">Decoding with STAG, however, poses one major challenge to forest rescoring.</S>
+        <S ID="S-32654">As translation forest only supports substitution, it is difficult to construct a translation forest for STAG derivations because of</S>
+      </P>
+      <P>
+        <S ID="S-32655">2 <REF ID="R-24" RPTR="52">Mi et al. (2008)</REF> give a detailed description of the two-step</S>
+      </P>
+      <P>
+        <S ID="S-32656">decoding process.</S>
+        <S ID="S-32657"><REF ID="R-14" RPTR="24">Huang and Mi (2010)</REF> systematically analyze the decoding complexity of tree-to-string translation.</S>
+      </P>
+      <P>
+        <S ID="S-32658">&#945; 1 IP 0,8</S>
+      </P>
+      <P>
+        <S ID="S-32659">NP 2,3 VP 3,8 &#8595;</S>
+      </P>
+      <P>
+        <S ID="S-32660">NR 2,3 &#8595;</S>
+      </P>
+      <P>
+        <S ID="S-32661">&#946; 2 NP 0,3</S>
+      </P>
+      <P>
+        <S ID="S-32662">NP 0,2 &#8595; NP&#8727; 2,3</S>
+      </P>
+      <P>
+        <S ID="S-32663">&#210;&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-32664">&#945; 2 NR 2,3</S>
+      </P>
+      <P>
+        <S ID="S-32665">&#224;ob&#257;m&#462;</S>
+      </P>
+      <P>
+        <S ID="S-32666">&#946; 3 NP 0,2</S>
+      </P>
+      <P>
+        <S ID="S-32667">NP 0,1 NP 1,2 &#8727;</S>
+      </P>
+      <P>
+        <S ID="S-32668">NR 0,1 &#8595; &#946; 1</S>
+      </P>
+      <P>
+        <S ID="S-32669">NP 0,3</S>
+      </P>
+      <P>
+        <S ID="S-32670">NP 1,2 NP 2,3 &#8727;</S>
+      </P>
+      <P>
+        <S ID="S-32671">&#211;</S>
+      </P>
+      <P>
+        <S ID="S-32672">NN 1,2 &#8595;</S>
+      </P>
+      <P>
+        <S ID="S-32673">&#945; 3</S>
+      </P>
+      <P>
+        <S ID="S-32674">NN 2,3</S>
+      </P>
+      <P>
+        <S ID="S-32675">z&#466;ngt&#466;ng</S>
+      </P>
+      <P>
+        <S ID="S-32676">&#945; 1</S>
+      </P>
+      <P>
+        <S ID="S-32677">&#945; 2 (1.1) &#946; 1 (1) &#946; 2 (1)</S>
+      </P>
+      <P>
+        <S ID="S-32678">&#946; 3 (1) &#945; 3 (1.1)</S>
+      </P>
+      <P>
+        <S ID="S-32679">IP 0,8 e 1 e 2</S>
+      </P>
+      <P>
+        <S ID="S-32680">NP 0,2 VP 3,8</S>
+      </P>
+      <P>
+        <S ID="S-32681">NR 0,1 NN 1,2 NR 2,3 e 3 e 4</S>
+      </P>
+      <P>
+        <S ID="S-32682">adjoining.</S>
+        <S ID="S-32683">Therefore, we divide forest rescoring for STAG into three steps:</S>
+      </P>
+      <P>
+        <S ID="S-32684">1. matching, matching STAG rules against the input tree to obtain a TAG derivation forest;</S>
+      </P>
+      <P>
+        <S ID="S-32685">2. conversion, converting the TAG derivation forest into a translation forest;</S>
+      </P>
+      <P>
+        <S ID="S-32686">3. intersection, intersecting the translation forest with an n-gram language model.</S>
+      </P>
+      <P>
+        <S ID="S-32687">Given a tree-to-string rule, rule matching is to find a subtree of the input tree that is identical to the source side of the rule.</S>
+        <S ID="S-32688">While matching STSG rules against a derived tree is straightforward, it is somewhat non-trivial for STAG rules that move beyond nodes of a local tree.</S>
+        <S ID="S-32689">We follow <REF ID="R-20" RPTR="39">Liu et al. (2006)</REF><REF ID="R-16" RPTR="33">(2006)</REF><REF ID="R-21" RPTR="50">(2006)</REF><REF ID="R-26" RPTR="59">(2006)</REF> to enumerate all elementary subtrees and match STAG rules against these subtrees.</S>
+        <S ID="S-32690">This can be done by first enumerating all minimal initial and auxiliary trees and then combining them to obtain composed trees, assuming that every node in the input tree is frontier (see Section 3).</S>
+        <S ID="S-32691">We impose the same restrictions on the tree height and length as in rule extraction.</S>
+        <S ID="S-32692">Figure 3 shows some matched trees and corresponding rules.</S>
+        <S ID="S-32693">Each node in a matched tree is annotated with a span as superscript to facilitate identification.</S>
+        <S ID="S-32694">For example, IP 0,8 in &#945; 1 means that IP 0,8 in Figure 2 is matched.</S>
+        <S ID="S-32695">Note that its left child NP 2,3 is not its direct descendant in Figure 2, suggesting that adjoining is required at this site.</S>
+        <S ID="S-32696">A TAG derivation tree specifies uniquely how a derived tree is constructed using elementary trees (<REF ID="R-18" RPTR="37">Joshi, 1985</REF>).</S>
+        <S ID="S-32697">A node in a derivation tree is an elementary tree and an edge corresponds to operations on related elementary trees: substitution or adjoining.</S>
+        <S ID="S-32698">We introduce TAG derivation forest, a compact representation of multiple TAG derivation trees, to encodes all matched TAG derivation trees of the input derived tree.</S>
+      </P>
+      <P>
+        <S ID="S-32699">Figure 4 shows part of a TAG derivation forest.</S>
+        <S ID="S-32700">The six matched elementary trees are nodes in the derivation forest.</S>
+        <S ID="S-32701">Dashed and solid lines represent substitution and adjoining, respectively.</S>
+        <S ID="S-32702">We use Gorn addresses as tree addresses: 0 is the address of the root node, p is the address of the p th child of the root node, and p &#183;q is the address of the q th child of the node at the address p.</S>
+        <S ID="S-32703">The derivation forest 1284</S>
+      </P>
+      <P>
+        <S ID="S-32704">should be interpreted as follows: &#945; 2 is substituted in the tree &#945; 1 at the node NR 2,3 &#8595; of address 1.1 (i.e., the first child of the first child of the root node) and &#946; 1 is adjoined in the tree &#945; 1 at the node NP 2,3 of address 1.</S>
+      </P>
+      <P>
+        <S ID="S-32705">To take advantage of existing decoding techniques, it is necessary to convert a derivation forest to a translation forest.</S>
+        <S ID="S-32706">A hyperedge in a translation forest corresponds to a translation rule.</S>
+        <S ID="S-32707"><REF ID="R-24" RPTR="53">Mi et al. (2008)</REF> describe how to convert a derived tree to a translation forest using tree-to-string rules only allowing for substitution.</S>
+        <S ID="S-32708">Unfortunately, it is not straightforward to convert a derivation forest including adjoining to a translation forest.</S>
+        <S ID="S-32709">To alleviate this problem, we combine initial rules with adjoining sites and associated auxiliary rules to form equivalent initial rules without adjoining sites on the fly during decoding.</S>
+      </P>
+      <P>
+        <S ID="S-32710">Consider &#945; 1 in Figure 3.</S>
+        <S ID="S-32711">It has an adjoining site NP 2,3 .</S>
+        <S ID="S-32712">Adjoining &#946; 2 in &#945; 1 at the node NP 2,3 produces an equivalent initial tree with only substitution sites:</S>
+      </P>
+      <P>
+        <S ID="S-32713">( IP 0,8 ( NP 0,3 ( NP 0,2 &#8595; ) ( NP 2,3 ( NR 2,3 &#8595; ) ) ) ( VP 3,8 &#8595; ) )</S>
+      </P>
+      <P>
+        <S ID="S-32714">The corresponding composed rule r 1 + r 4 has no adjoining sites and can be added to translation forest.</S>
+      </P>
+      <P>
+        <S ID="S-32715">We define that the elementary trees needed to be composed (e.g., &#945; 1 and &#946; 2 ) form a composition tree in a derivation forest.</S>
+        <S ID="S-32716">A node in a composition tree is a matched elementary tree and an edge corresponds to adjoining operations.</S>
+        <S ID="S-32717">The root node must be an initial tree with at least one adjoining site.</S>
+        <S ID="S-32718">The descendants of the root node must all be auxiliary trees.</S>
+        <S ID="S-32719">For example, ( &#945; 1 ( &#946; 2 ) ) and ( &#945; 1 ( &#946; 1 ( &#946; 3 ) ) ) are two composition trees in Figure 4.</S>
+        <S ID="S-32720">The number of children of a node in a composition tree depends on the number of adjoining sites in the node.</S>
+        <S ID="S-32721">We use composition forest to encode all possible composition trees.</S>
+      </P>
+      <P>
+        <S ID="S-32722">Often, a node in a composition tree may have multiple matched rules.</S>
+        <S ID="S-32723">As a large amount of composition trees and composed rules can be identified and constructed on the fly during forest conversion, we used cube pruning (<REF ID="R-04" RPTR="6">Chiang, 2007</REF>; <REF ID="R-13" RPTR="23">Huang and Chiang, 2007</REF><REF ID="R-04" RPTR="7">Chiang, 2007</REF>) to achieve a balance between translation quality and decoding efficiency.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Evaluation</HEADER>
+      <P>
+        <S ID="S-32724">We evaluated our adjoining tree-to-string translation system on Chinese-English translation.</S>
+        <S ID="S-32725">The bilingual corpus consists of 1.5M sentences with 42.1M Chinese words and 48.3M English words.</S>
+        <S ID="S-32726">The Chinese sentences in the bilingual corpus were parsed by an in-house parser.</S>
+        <S ID="S-32727">To maintain a reasonable grammar size, we follow <REF ID="R-20" RPTR="40">Liu et al. (2006)</REF><REF ID="R-16" RPTR="34">(2006)</REF><REF ID="R-21" RPTR="51">(2006)</REF><REF ID="R-26" RPTR="60">(2006)</REF> to restrict that the height of a rule tree is no greater than 3 and the surface string&#8217;s length is no greater than 7.</S>
+        <S ID="S-32728">After running GIZA++ (<REF ID="R-27" RPTR="61">Och and Ney, 2003</REF>) to obtain word alignment, our rule extraction algorithm extracted 23.0M initial rules without adjoining sites, 6.6M initial rules with adjoining sites, and 5.3M auxiliary rules.</S>
+        <S ID="S-32729">We used the SRILM toolkit (<REF ID="R-33" RPTR="67">Stolcke, 2002</REF>) to train a 4-gram language model on the Xinhua portion of the GIGAWORD corpus, which contains 238M English words.</S>
+        <S ID="S-32730">We used the 2002 NIST MT Chinese-English test set as the development set and the 2003-2005 NIST test sets as the test sets.</S>
+        <S ID="S-32731">We evaluated translation quality using the BLEU metric, as calculated by mteval-v11b.pl with case-insensitive matching of n-grams.</S>
+      </P>
+      <P>
+        <S ID="S-32732">Table 2 shows top-10 phrase categories of foot nodes and their average occurrences in training corpus.</S>
+        <S ID="S-32733">We find that VP (verb phrase) is most likely to be the label of a foot node in an auxiliary rule.</S>
+        <S ID="S-32734">On average, there are 12.4 nodes labeled with VP are identical to one of its ancestors per tree.</S>
+        <S ID="S-32735">NP and IP are also found to be foot node labels frequently.</S>
+        <S ID="S-32736">Figure 4 shows the average occurrences of foot node labels VP, NP, and IP over various distances.</S>
+        <S ID="S-32737">A distance is the difference of levels between a foot node 1285</S>
+      </P>
+      <P>
+        <S ID="S-32738">average occurrence 4.5</S>
+      </P>
+      <P>
+        <S ID="S-32739">4.0</S>
+      </P>
+      <P>
+        <S ID="S-32740">3.5</S>
+      </P>
+      <P>
+        <S ID="S-32741">3.0</S>
+      </P>
+      <P>
+        <S ID="S-32742">2.5</S>
+      </P>
+      <P>
+        <S ID="S-32743">2.0</S>
+      </P>
+      <P>
+        <S ID="S-32744">1.5</S>
+      </P>
+      <P>
+        <S ID="S-32745">1.0</S>
+      </P>
+      <P>
+        <S ID="S-32746">0.5</S>
+      </P>
+      <P>
+        <S ID="S-32747">0.0 0 1 2 3 4 5 6 7 8 9 10 11</S>
+      </P>
+      <P>
+        <S ID="S-32748">distance</S>
+      </P>
+      <P>
+        <S ID="S-32749">VP IP NP</S>
+      </P>
+      <P>
+        <S ID="S-32750">and the root node.</S>
+        <S ID="S-32751">For example, in Figure 2, the distance between NP 0,1 and NP 0,3 is 2 and the distance between VP 6,8 and VP 3,8 is 1.</S>
+        <S ID="S-32752">As most foot nodes are usually very close to the root nodes, we restrict that a foot node must be the direct descendant of the root node in our experiments.</S>
+      </P>
+      <P>
+        <S ID="S-32753">Table 3 shows the BLEU scores on the NIST Chinese-English test sets.</S>
+        <S ID="S-32754">Our baseline system is the tree-to-string system using STSG (<REF ID="R-20" RPTR="45">Liu et al., 2006</REF>; <REF ID="R-15" RPTR="28">Huang et al., 2006</REF>).</S>
+        <S ID="S-32755">The STAG system outperforms the STSG system significantly on the MT04 and MT05 test sets at pl.01 level.</S>
+        <S ID="S-32756">Table 3 also gives the results of Moses (<REF ID="R-19" RPTR="38">Koehn et al., 2007</REF>) and an in-house hierarchical phrase-based system (<REF ID="R-04" RPTR="8">Chiang, 2007</REF>).</S>
+        <S ID="S-32757">Our STAG system achieves comparable performance with the hierarchical system.</S>
+        <S ID="S-32758">The absolute improvement of +0.7 BLEU over STSG is close to the finding of <REF ID="R-07" RPTR="12">DeNeefe and Knight (2009)</REF> on string-to-tree translation.</S>
+        <S ID="S-32759">We feel that one major obstacle for achieving further improvement is that composed rules generated on the fly during decoding (e.g., r 1 + r 3 + r 5 in Figure 4) usually have too many non-terminals, making cube pruning in the in-</S>
+      </P>
+      <P>
+        <S ID="S-32760">tersection phase suffering from severe search errors (only a tiny fraction of the search space can be explored).</S>
+        <S ID="S-32761">To produce the 1-best translations on the MT05 test set that contains 1,082 sentences, while the STSG system used 40,169 initial rules without adjoining sites, the STAG system used 28,046 initial rules without adjoining sites, 1,057 initial rules with adjoining sites, and 1,527 auxiliary rules.</S>
+      </P>
+      <P>
+        <S ID="S-32762">Table 4 shows the average decoding time on the MT05 test set.</S>
+        <S ID="S-32763">While rule matching for STSG needs 0.086 second per sentence, the matching time for STAG only increases to 0.109 second.</S>
+        <S ID="S-32764">For STAG, the conversion of derivation forests to translation forests takes 0.562 second when we restrict that at most 200 rules can be generated on the fly for each node.</S>
+        <S ID="S-32765">As we use cube pruning, although the translation forest of STAG is bigger than that of STSG, the intersection time barely increases.</S>
+        <S ID="S-32766">In total, the STAG system runs in 1.763 seconds per sentence, only 1.6 times slower than the baseline system.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusion</HEADER>
+      <P>
+        <S ID="S-32767">We have presented a new tree-to-string translation system based on synchronous TAG.</S>
+        <S ID="S-32768">With translation rules learned from Treebank-style trees, the adjoining tree-to-string system outperforms the baseline system using STSG without significant loss in efficiency.</S>
+        <S ID="S-32769">We plan to introduce left-to-right target generation (Huang and Mi, 2010) into the STAG treeto-string system.</S>
+        <S ID="S-32770">Our work can also be extended to forest-based rule extraction and decoding (Mi et al., 2008; Mi and Huang, 2008).</S>
+        <S ID="S-32771">It is also interesting to introduce STAG into tree-to-tree translation (Zhang et al., 2008; Liu et al., 2009; Chiang, 2010).</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-32772">The authors were supported by National Natural Science Foundation of China Contracts 60736014, 60873167, and 60903138.</S>
+      <S ID="S-32773">We thank the anonymous</S>
+    </P>
+    <P>
+      <S ID="S-32774">reviewers for their insightful comments.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Anne Abeille</RAUTHOR>
+      <REFTITLE>Using lexicalized tags for machine translation.</REFTITLE>
+      <DATE>1990</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>John Chen</RAUTHOR>
+      <REFTITLE>Automated extraction of tags from the penn treebank.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Statistical parsing with an automatically extracted tree adjoining grammar. DataOriented Parsing.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>An introduction to synchronous grammars.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Learning to translate with source and target syntax.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Michael Collins</RAUTHOR>
+      <REFTITLE>Head-driven statistical models for natural language parsing.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Steve DeNeefe</RAUTHOR>
+      <REFTITLE>Synchronous tree adjoining machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Mark Dras</RAUTHOR>
+      <REFTITLE>A meta-level grammar: Redefining synchronous tag for translation and paraphrase.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Jason Eisner</RAUTHOR>
+      <REFTITLE>Learning non-isomorphic tree mappings for machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>What&#8217;s in a translation rule?</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>of NAACL</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Scalable inference and training of context-rich syntactic translation models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Forest rescoring: Faster decoding with integrated language models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Efficient incremental decoding for tree-to-string translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Statistical syntax-directed translation with extended domain of locality.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Aravind Joshi</RAUTHOR>
+      <REFTITLE>Tree adjunct grammars.</REFTITLE>
+      <DATE>1975</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Aravind Joshi</RAUTHOR>
+      <REFTITLE>How much contextsensitivity is necessary for characterizing structural descriptions&#181;tree adjoining grammars. Natural Language Computational, and Psychological Perspectives.</REFTITLE>
+      <DATE>1985</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: Open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Tree-tostring alignment template for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Improving tree-to-tree translation with packed forests.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Haitao Mi</RAUTHOR>
+      <REFTITLE>Forest-based translation rule extraction.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Haitao Mi</RAUTHOR>
+      <REFTITLE>Forestbased translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Rebecca Nesson</RAUTHOR>
+      <REFTITLE>Induction of probabilistic synchronous treeinsertion grammars for machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Franz Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR>Gilles Prigent</RAUTHOR>
+      <REFTITLE>Synchronous tags and machine translation.</REFTITLE>
+      <DATE>1994</DATE>
+    </REFERENCE>
+    <REFERENCE ID="30">
+      <RAUTHOR>Yves Schabes</RAUTHOR>
+      <REFTITLE>A cubic-time, parsable formalism that lexicalizes context-free grammar without changing the trees produced.</REFTITLE>
+      <DATE>1995</DATE>
+    </REFERENCE>
+    <REFERENCE ID="31">
+      <RAUTHOR>Stuart M Shieber</RAUTHOR>
+      <REFTITLE>Synchronous tree-adjoining grammars.</REFTITLE>
+      <DATE>1990</DATE>
+    </REFERENCE>
+    <REFERENCE ID="32">
+      <RAUTHOR>Stuart M Shieber</RAUTHOR>
+      <REFTITLE>Probabilistic synchronous treeadjoining grammars for machine translation: The argument from bilingual dictionaries.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="33">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>Srilm - an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="34">
+      <RAUTHOR>Dekai Wu</RAUTHOR>
+      <REFTITLE>Stochastic inversion transduction grammars and bilingual parsing of parallel corpora.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="35">
+      <RAUTHOR>Fei Xia</RAUTHOR>
+      <REFTITLE>Extracting tree adjoining grammars from bracketed corpora.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="36">
+      <RAUTHOR>Deyi Xiong</RAUTHOR>
+      <REFTITLE>Maximum entropy based phrase reordering model for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="37">
+      <RAUTHOR>Min Zhang</RAUTHOR>
+      <REFTITLE>Hongfei Jiang, Aiti Aw,</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

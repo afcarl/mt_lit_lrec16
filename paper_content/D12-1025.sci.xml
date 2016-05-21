@@ -1,0 +1,940 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Large Scale Decipherment for Out-of-Domain Machine Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>Qing Dou</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-12040">We apply slice sampling to Bayesian decipherment and use our new decipherment framework to improve out-of-domain machine translation.</A-S>
+    <A-S ID="S-12041">Compared with the state of the art algorithm, our approach is highly scalable and produces better results, which allows us to decipher ciphertext with billions of tokens and hundreds of thousands of word types with high accuracy.</A-S>
+    <A-S ID="S-12042">We decipher a large amount of monolingual data to improve out-of-domain translation and achieve significant gains of up to 3.8 BLEU points.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-12043">Nowadays, state of the art statistical machine translation (SMT) systems are built using large amounts of bilingual parallel corpora.</S>
+        <S ID="S-12044">Those corpora are used to estimate probabilities of word-to-word translation, word sequences rearrangement, and even syntactic transformation.</S>
+        <S ID="S-12045">Unfortunately, as parallel corpora are expensive and not available for every domain, performance of SMT systems drops significantly when translating out-of-domain texts (<REF ID="R-01" RPTR="2">Callison-Burch et al., 2008</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-12046">In general, it is easier to obtain in-domain monolingual corpora.</S>
+        <S ID="S-12047">Is it possible to use domain specific monolingual data to improve an MT system trained on parallel texts from a different domain?</S>
+        <S ID="S-12048">Some researchers have attempted to do this by adding a domain specific dictionary (Wu et al., 2008), or mining unseen words (<REF ID="R-02" RPTR="3">Daum&#233; and Jagarlamudi, 2011</REF>) using one of several translation lexicon induction techniques (<REF ID="R-04" RPTR="6">Haghighi et al., 2008</REF>; <REF ID="R-06" RPTR="8">Koehn and Knight, 2002</REF>; <REF ID="R-13" RPTR="20">Rapp, 1995</REF>).</S>
+        <S ID="S-12049">However, a dictionary is not always available, and it is difficult to assign probabilities to a translation lexicon.</S>
+      </P>
+      <P>
+        <S ID="S-12050">(<REF ID="R-15" RPTR="22">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="34">Ravi and Knight, 2011</REF>b) have shown that one can use decipherment to learn a full translation model from non-parallel data.</S>
+        <S ID="S-12051">Their approach is able to find translations, and assign probabilities to them.</S>
+        <S ID="S-12052">But their work also has certain limitations.</S>
+        <S ID="S-12053">First of all, the corpus they use to build the translation system has a very small vocabulary.</S>
+        <S ID="S-12054">Secondly, although their algorithm is able to handle word substitution ciphers with limited vocabulary, its deciphering accuracy is low.</S>
+      </P>
+      <P>
+        <S ID="S-12055">The contributions of this work are:</S>
+      </P>
+      <P>
+        <S ID="S-12056">&#8226; We improve previous decipherment work by introducing a more efficient sampling algorithm.</S>
+        <S ID="S-12057">In experiments, our new method improves deciphering accuracy from 82.5% to 88.1% on (<REF ID="R-15" RPTR="23">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="35">Ravi and Knight, 2011</REF>b)&#8217;s domain specific data set.</S>
+        <S ID="S-12058">Furthermore, we also solve a very large word substitution cipher built from the English Gigaword corpus and achieve 92.2% deciphering accuracy on news text.</S>
+      </P>
+      <P>
+        <S ID="S-12059">&#8226; With the ability to handle a much larger vocabulary, we learn a domain specific translation table from a large amount of monolingual data and use the translation table to improve out-ofdomain machine translation.</S>
+        <S ID="S-12060">In experiments, we observe significant gains of up to 3.8 BLEU points.</S>
+        <S ID="S-12061">Unlike previous works, the translation table we build from monolingual data do not only contain unseen words but also words seen in parallel data.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Word Substitution Ciphers</HEADER>
+      <P>
+        <S ID="S-12062">Before we present our new decipherment framework, we quickly review word substitution decipherment.</S>
+      </P>
+      <P>
+        <S ID="S-12063">Recently, there has been an increasing interest in decipherment work (<REF ID="R-15" RPTR="24">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="36">Ravi and Knight, 2011</REF>a; <REF ID="R-14" RPTR="21">Ravi and Knight, 2008</REF>).</S>
+        <S ID="S-12064">While letter substitution ciphers can be solved easily, nobody has been able to solve a word substitution cipher with high accuracy.</S>
+      </P>
+      <P>
+        <S ID="S-12065">As shown in Figure 1, a word substitution cipher is generated by replacing each word in a natural language (plaintext) sequence with a cipher token according to a substitution table.</S>
+        <S ID="S-12066">The mapping in the table is deterministic &#8211; each plaintext word type is only encoded with one unique cipher token.</S>
+        <S ID="S-12067">Solving a word substitution cipher means recovering the original plaintext from the ciphertext without knowing the substitution table.</S>
+        <S ID="S-12068">The only thing we rely on is knowledge about the underlying language.</S>
+      </P>
+      <P>
+        <S ID="S-12069">How can we solve a word substitution cipher?</S>
+        <S ID="S-12070">The approach is similar to those taken by cryptanalysts who try to recover keys that convert encrypted texts to readable texts.</S>
+        <S ID="S-12071">Suppose we observe a large cipher string f and want to decipher it into English e. We can follow the work in (<REF ID="R-15" RPTR="25">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="37">Ravi and Knight, 2011</REF>b) and assume that the cipher string f is generated in the following way:</S>
+      </P>
+      <P>
+        <S ID="S-12072">&#8226; Generate English plaintext sequence e = e 1 , e 2 ...e n with probability P(e).</S>
+      </P>
+      <P>
+        <S ID="S-12073">&#8226; Replace each English plaintext token e i with a cipher token f i with probability P (f i |e i ).</S>
+      </P>
+      <P>
+        <S ID="S-12074">Based on the above generative story, we write the probability of the cipher string f as:</S>
+      </P>
+      <P>
+        <S ID="S-12075">P (f) &#952; = &#8721; e P (e) &#183; n&#8719;</S>
+      </P>
+      <P>
+        <S ID="S-12076">P &#952; (f i |e i ) (1)</S>
+      </P>
+      <P>
+        <S ID="S-12077">We use this equation as an objective function for maximum likelihood training.</S>
+        <S ID="S-12078">In the equation, P (e) is given by an ngram language model, which is trained using a large amount of monolingual texts.</S>
+        <S ID="S-12079">The rest of the task is to manipulate channel probabilities P &#952; (f i |e i ) so that the probability of the observed texts P (f) &#952; is maximized.</S>
+      </P>
+      <P>
+        <S ID="S-12080">Theoretically, we can directly apply EM, as proposed in (<REF ID="R-05" RPTR="7">Knight et al., 2006</REF>), or Bayesian decipherment (<REF ID="R-15" RPTR="26">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="38">Ravi and Knight, 2011</REF>a) to solve the problem.</S>
+        <S ID="S-12081">However, unlike letter substitution ciphers, word substitution ciphers pose much greater challenges to algorithm scalability.</S>
+        <S ID="S-12082">To solve a word substitution cipher, the EM algorithm has a computational complexity of O(N &#183; V 2 &#183; R) and the complexity of Bayesian method is O(N &#183; V &#183; R), where V is the size of plaintext vocabulary, N is the length of ciphertext, and R is the number of iterations.</S>
+        <S ID="S-12083">In the world of word substitution ciphers, both V and N are very large, making these approaches impractical.</S>
+        <S ID="S-12084">(<REF ID="R-15" RPTR="27">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="39">Ravi and Knight, 2011</REF>b) propose several modifications to the existing algorithms.</S>
+        <S ID="S-12085">However, the modified algorithms are only an approximation of the original algorithms and produce poor deciphering accuracy, and they are still unable to handle very large scale ciphers.</S>
+        <S ID="S-12086">To address the above problems, we propose the following two new improvements to previous decipherment methods.</S>
+      </P>
+      <P>
+        <S ID="S-12087">&#8226; We apply slice sampling (<REF ID="R-09" RPTR="13">Neal, 2000</REF>) to scale up to ciphers with a very large vocabulary.</S>
+      </P>
+      <P>
+        <S ID="S-12088">&#8226; Instead of deciphering using the original ciphertext, we break the ciphertext into bigrams, collect their counts, and use the bigrams with their counts for decipherment.</S>
+      </P>
+      <P>
+        <S ID="S-12089">i</S>
+      </P>
+      <P>
+        <S ID="S-12090">The new improvements allow us to solve a word substitution cipher with billions of tokens and hundreds of thousands of word types.</S>
+        <S ID="S-12091">Through better approximation, we achieve a significant increase in deciphering accuracy.</S>
+        <S ID="S-12092">In the following section, we present details of our new approach.</S>
+      </P>
+      <P>
+        <S ID="S-12093">3 Slice Sampling for Bayesian Decipherment</S>
+      </P>
+      <P>
+        <S ID="S-12094">In this section, we first give an introduction to Bayesian decipherment and then describe how to use slice sampling for it.</S>
+      </P>
+      <P>
+        <S ID="S-12095">3.1 Bayesian Decipherment</S>
+      </P>
+      <P>
+        <S ID="S-12096">Bayesian inference has been widely used in natural language processing (<REF ID="R-03" RPTR="4">Goldwater and Griffiths, 2007</REF>; <REF ID="R-00" RPTR="0">Blunsom et al., 2009</REF>; <REF ID="R-15" RPTR="28">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="40">Ravi and Knight, 2011</REF>b).</S>
+        <S ID="S-12097">It is very attractive for problems like word substitution ciphers for the following reasons.</S>
+        <S ID="S-12098">First, there are no memory bottlenecks as compared to EM, which has an O(N &#183; V 2 ) space complexity.</S>
+        <S ID="S-12099">Second, priors encourage the model to learn a sparse distribution.</S>
+        <S ID="S-12100">The inference is usually performed using Gibbs sampling.</S>
+        <S ID="S-12101">For decipherment, a Gibbs sampler keeps drawing samples from plaintext sequences according to derivation probability P (d):</S>
+      </P>
+      <P>
+        <S ID="S-12102">P (d) = P (e) &#183; n&#8719;</S>
+      </P>
+      <P>
+        <S ID="S-12103">P (c i |e i ) (2)</S>
+      </P>
+      <P>
+        <S ID="S-12104">In Bayesian inference, P (e) is still given by an ngram language model, while the channel probability is modeled by the Chinese Restaurant Process (CRP):</S>
+      </P>
+      <P>
+        <S ID="S-12105">P (c i |e i ) = &#945; &#183; prior + count(c i, e i ) &#945; + count(e i )</S>
+      </P>
+      <P>
+        <S ID="S-12106">i</S>
+      </P>
+      <P>
+        <S ID="S-12107">(3)</S>
+      </P>
+      <P>
+        <S ID="S-12108">Where prior is the base distribution (we set prior to 1 C</S>
+      </P>
+      <P>
+        <S ID="S-12109">in all our experiments, where C is the number of word types in ciphertext), and count, also called &#8220;cache&#8221;, records events that occurred in the history.</S>
+        <S ID="S-12110">Each sampling operation involves changing a plaintext token e i , which has V possible choices, where V is the plaintext vocabulary size, and the final sample is chosen with</S>
+      </P>
+      <P>
+        <S ID="S-12111">P (d)</S>
+      </P>
+      <P>
+        <S ID="S-12112">probability</S>
+      </P>
+      <P>
+        <S ID="S-12113">&#8721; V</S>
+      </P>
+      <P>
+        <S ID="S-12114">n=1 P (d).</S>
+      </P>
+      <P>
+        <S ID="S-12115">3.2 Slice Sampling</S>
+      </P>
+      <P>
+        <S ID="S-12116">With Gibbs sampling, one has to evaluate all possible plaintext word types (10k&#8212;1M) for each sample decision.</S>
+        <S ID="S-12117">This become intractable when the vocabulary is large and the ciphertext is long.</S>
+        <S ID="S-12118">Slice sampling (<REF ID="R-09" RPTR="14">Neal, 2000</REF>) can solve this problem by automatically adjusting the number of samples to be considered for each sampling operation.</S>
+      </P>
+      <P>
+        <S ID="S-12119">Suppose the derivation probability for current sample is P (current s).</S>
+        <S ID="S-12120">Then slice sampling draws a sample in two steps:</S>
+      </P>
+      <P>
+        <S ID="S-12121">&#8226; Select a threshold T uniformly from the range {0, P (current s)}.</S>
+      </P>
+      <P>
+        <S ID="S-12122">&#8226; Draw a new sample new s uniformly from a pool of candidates: {new s|P (new s) &gt; T }.</S>
+      </P>
+      <P>
+        <S ID="S-12123">From the above two steps, we can see that given a threshold T , we only need to consider those samples whose probability is higher than the threshold.</S>
+        <S ID="S-12124">This will lead to a significant reduction on the number of samples to be considered, if probabilities of the most samples are below T .</S>
+        <S ID="S-12125">In practice, the first step is easy to implement, while it is difficult to make the second step efficient.</S>
+        <S ID="S-12126">An obvious way to collect candidate samples is to go over all possible samples and record those with probabilities higher than T .</S>
+        <S ID="S-12127">However, doing this will not save any time.</S>
+        <S ID="S-12128">Fortunately, for Bayesian decipherment, we are able to complete the second step efficiently.</S>
+        <S ID="S-12129">According to Equation 1, the probability of the current sample is given by a language model P (e) and a channel model P (c|e).</S>
+        <S ID="S-12130">The language model is usually an ngram language model.</S>
+        <S ID="S-12131">Suppose our current sample current s contains English tokens X, Y , and Z at position i &#8722; 1, i, and i + 1 respectively.</S>
+        <S ID="S-12132">Let c i be the cipher token at position i.</S>
+        <S ID="S-12133">To obtain a new sample, we just need to change token Y to Y &#8242; .</S>
+        <S ID="S-12134">Since the rest of the sample stays the same, we only need to calculate the probability of any trigram 1 : P (XY &#8242; Z) and the channel model probability: P (c i |Y &#8242; ), and multiply them together as shown in Equation 4.</S>
+      </P>
+      <P>
+        <S ID="S-12135">P (XY &#8242; Z) &#183; P (c i |Y &#8242; ) (4)</S>
+      </P>
+      <P>
+        <S ID="S-12136">1 The probability is given by a bigram language model.</S>
+      </P>
+      <P>
+        <S ID="S-12137">In slice sampling, each sampling operation has two steps.</S>
+        <S ID="S-12138">For the first step, we choose a threshold T uniformly between 0 and P (XY Z)&#183;P (c i |Y ).</S>
+        <S ID="S-12139">For the second step, there are two cases.</S>
+      </P>
+      <P>
+        <S ID="S-12140">First, we notice that two types of Y &#8242; are more likely to pass the threshold T : (1) Those that have a very high trigram probability , and (2) those that have high channel model probability.</S>
+        <S ID="S-12141">To find candidates that have high trigram probability, we build sorted lists ranked by P (XY &#8242; Z), which can be precomputed off-line.</S>
+        <S ID="S-12142">We only keep the top K English words for each of the sorted list.</S>
+        <S ID="S-12143">When the last item Y K in the list satisfies P (XY k Z) &#183; prior &lt; T , We draw a sample in the following way: set A = {Y &#8242; |P (XY &#8242; Z) &#183; prior &gt; T } and set B = {Y &#8242; |count(c i , Y &#8242; ) &gt; 0}, then we only need to sample Y &#8242; uniformly from A &#8746; B until Equation 4 is greater than T .</S>
+        <S ID="S-12144">2</S>
+      </P>
+      <P>
+        <S ID="S-12145">Second, what happens when the last item Y K in the list does not satisfy P (XY k Z) &#183; prior &lt; T ?</S>
+        <S ID="S-12146">Then we always choose a word Y &#8242; randomly and accept it as a new sample if Equation 4 is greater than T .</S>
+        <S ID="S-12147">Our algorithm alternates between the two cases.</S>
+        <S ID="S-12148">The actual number of choices the algorithm looks at depends on the K and the total number of possible choices.</S>
+        <S ID="S-12149">In different experiments, we find that when K = 500, the algorithm only looks at 0.06% of all possible choices.</S>
+        <S ID="S-12150">When K = 2000, this further reduces to 0.007%.</S>
+      </P>
+      <P>
+        <S ID="S-12151">3.3 Deciphering with Bigrams</S>
+      </P>
+      <P>
+        <S ID="S-12152">Since we can decipher with a bigram language model, we posit that a frequency list of ciphertext bigrams may contain enough information for decipherment.</S>
+        <S ID="S-12153">In our letter substitution experiments, we find that breaking ciphertext into bigrams doesn&#8217;t hurt decipherment accuracy.</S>
+        <S ID="S-12154">Table 1 shows how full English sentences in the original data are broken into bigrams and their counts.</S>
+      </P>
+      <P>
+        <S ID="S-12155">Instead of doing sampling on full sentences, we treat each bigram as a full &#8220;sentence&#8221;.</S>
+        <S ID="S-12156">There are</S>
+      </P>
+      <P>
+        <S ID="S-12157">2 It is easy to prove that all other candidates that are not in</S>
+      </P>
+      <P>
+        <S ID="S-12158">the sorted list and with count(c i , Y &#8242; ) = 0 have a upper bound probability: P (XY k Z) &#183; prior.</S>
+        <S ID="S-12159">Therefore, they are ignored when P (XY k Z) &#183; prior &lt; T .</S>
+      </P>
+      <P>
+        <S ID="S-12160">man they took our land .</S>
+        <S ID="S-12161">they took our arable land .</S>
+      </P>
+      <P>
+        <S ID="S-12162">two advantages to use bigrams and their counts for decipherment.</S>
+      </P>
+      <P>
+        <S ID="S-12163">First of all, the bigrams and counts are a much more compact representation of the original ciphertext with full sentences.</S>
+        <S ID="S-12164">For instance, after breaking a billion tokens from the English Gigaword corpus, we find only 29m bigrams and 58m tokens, which is only 1/17 of the original text.</S>
+        <S ID="S-12165">In practice, we further discard all bigrams with low frequency, which makes the ciphertext even shorter.</S>
+      </P>
+      <P>
+        <S ID="S-12166">Secondly, using bigrams significantly reduces the number of sorted lists (from |V | 2 to 2|V |) mentioned in the previous section.</S>
+        <S ID="S-12167">The number of lists reduces from |V | 2 to 2|V | because words in a bigram only have one neighbor.</S>
+        <S ID="S-12168">Therefore, for any word W in a bigram, we need only 2|V | lists (&#8220;words to the right of W&#8221; and &#8220;words to the left of W&#8221;) instead of |V | 2 lists (&#8220;pairs of words that surround W&#8221;).</S>
+      </P>
+      <P>
+        <S ID="S-12169">3.4 Iterative Sampling</S>
+      </P>
+      <P>
+        <S ID="S-12170">Although we can directly apply slice sampling on a large number of bigrams, we find that gradually including less frequent bigrams into a sampling process saves deciphering time &#8211; we call this iterative sampling:</S>
+      </P>
+      <P>
+        <S ID="S-12171">&#8226; Break the ciphertext into bigrams and collect their counts</S>
+      </P>
+      <P>
+        <S ID="S-12172">&#8226; Keep bigrams whose counts are greater than a threshold &#945;.</S>
+        <S ID="S-12173">Then initialize the first sample randomly and use slice sampling to perform maximum likelihood training.</S>
+        <S ID="S-12174">In the end, extract a translation table T according to the final sample.</S>
+      </P>
+      <P>
+        <S ID="S-12175">&#8226; Lower the threshold &#945; to include more bigrams into the sampling process.</S>
+        <S ID="S-12176">Initialize the first sample using the translation table obtained from the previous sampling run (for each ci-</S>
+      </P>
+      <P>
+        <S ID="S-12177">pher token f, choose a plaintext token e whose P (e|f) is the largest).</S>
+        <S ID="S-12178">Perform sampling again.</S>
+      </P>
+      <P>
+        <S ID="S-12179">&#8226; Repeat until &#945; = 1.</S>
+      </P>
+      <P>
+        <S ID="S-12180">3.5 Parallel Sampling</S>
+      </P>
+      <P>
+        <S ID="S-12181">Inspired by (<REF ID="R-10" RPTR="16">Newman et al., 2009</REF>), our parallel sampling procedure is described below:</S>
+      </P>
+      <P>
+        <S ID="S-12182">&#8226; Collect bigrams and their counts from ciphertext and split the bigrams into N parts.</S>
+      </P>
+      <P>
+        <S ID="S-12183">&#8226; Run slice sampling on each part for 5 iterations independently.</S>
+      </P>
+      <P>
+        <S ID="S-12184">&#8226; Combine counts from each part to form a new count table and run sampling again on each part using the new table.</S>
+        <S ID="S-12185">3</S>
+      </P>
+      <P>
+        <S ID="S-12186">4 Decipherment Experiments</S>
+      </P>
+      <P>
+        <S ID="S-12187">In this section, we evaluate our new sampling algorithm in two different experiments.</S>
+        <S ID="S-12188">In the first experiment, we compare our method with (<REF ID="R-15" RPTR="29">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="41">Ravi and Knight, 2011</REF>b) on their data set to prove correctness of our approach.</S>
+        <S ID="S-12189">In the second experiment, we scale up to the whole English Gigaword corpus and achieve a much higher deciphering accuracy.</S>
+      </P>
+      <P>
+        <S ID="S-12190">4.1 Deciphering Transtac Corpus</S>
+      </P>
+      <P>
+        <S ID="S-12191">4.1.1 Data</S>
+      </P>
+      <P>
+        <S ID="S-12192">We split the Transtac corpus the same way it was split in (<REF ID="R-15" RPTR="30">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="42">Ravi and Knight, 2011</REF>b).</S>
+        <S ID="S-12193">The data used to create ciphertext consists of 1 million tokens, and 3397 word types.</S>
+        <S ID="S-12194">The data for language model training contains 2.7 million tokens and 25761 word types.</S>
+        <S ID="S-12195">4 The ciphertext is created by replacing each English word with a cipher word.</S>
+        <S ID="S-12196">We use a bigram language model for decipherment training.</S>
+        <S ID="S-12197">When the training terminates, a translation table with probability P (c|e) is built based on the counts collected from the final sample.</S>
+        <S ID="S-12198">For decoding, we employ a trigram language model using full sentences.</S>
+        <S ID="S-12199">We use Moses (<REF ID="R-07" RPTR="9">Koehn et al., 2007</REF>)</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Except for combining the counts to form a new count table,</HEADER>
+      <P>
+        <S ID="S-12286"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Bayesian Decipherment</HEADER>
+        <P>
+          <S ID="S-12200">Bayesian inference has been widely used in natural language processing (<REF ID="R-03" RPTR="5">Goldwater and Griffiths, 2007</REF>; <REF ID="R-00" RPTR="1">Blunsom et al., 2009</REF>; <REF ID="R-15" RPTR="31">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="43">Ravi and Knight, 2011</REF>b).</S>
+          <S ID="S-12201">It is very attractive for problems like word substitution ciphers for the following reasons.</S>
+          <S ID="S-12202">First, there are no memory bottlenecks as compared to EM, which has an O(N &#183; V 2 ) space complexity.</S>
+          <S ID="S-12203">Second, priors encourage the model to learn a sparse distribution.</S>
+          <S ID="S-12204">The inference is usually performed using Gibbs sampling.</S>
+          <S ID="S-12205">For decipherment, a Gibbs sampler keeps drawing samples from plaintext sequences according to derivation probability P (d):</S>
+        </P>
+        <P>
+          <S ID="S-12206">P (d) = P (e) &#183; n&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-12207">P (c i |e i ) (2)</S>
+        </P>
+        <P>
+          <S ID="S-12208">In Bayesian inference, P (e) is still given by an ngram language model, while the channel probability is modeled by the Chinese Restaurant Process (CRP):</S>
+        </P>
+        <P>
+          <S ID="S-12209">P (c i |e i ) = &#945; &#183; prior + count(c i, e i ) &#945; + count(e i )</S>
+        </P>
+        <P>
+          <S ID="S-12210">i</S>
+        </P>
+        <P>
+          <S ID="S-12211">(3)</S>
+        </P>
+        <P>
+          <S ID="S-12212">Where prior is the base distribution (we set prior to 1 C</S>
+        </P>
+        <P>
+          <S ID="S-12213">in all our experiments, where C is the number of word types in ciphertext), and count, also called &#8220;cache&#8221;, records events that occurred in the history.</S>
+          <S ID="S-12214">Each sampling operation involves changing a plaintext token e i , which has V possible choices, where V is the plaintext vocabulary size, and the final sample is chosen with</S>
+        </P>
+        <P>
+          <S ID="S-12215">P (d)</S>
+        </P>
+        <P>
+          <S ID="S-12216">probability</S>
+        </P>
+        <P>
+          <S ID="S-12217">&#8721; V</S>
+        </P>
+        <P>
+          <S ID="S-12218">n=1 P (d).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Slice Sampling</HEADER>
+        <P>
+          <S ID="S-12219">With Gibbs sampling, one has to evaluate all possible plaintext word types (10k&#8212;1M) for each sample decision.</S>
+          <S ID="S-12220">This become intractable when the vocabulary is large and the ciphertext is long.</S>
+          <S ID="S-12221">Slice sampling (<REF ID="R-09" RPTR="15">Neal, 2000</REF>) can solve this problem by automatically adjusting the number of samples to be considered for each sampling operation.</S>
+        </P>
+        <P>
+          <S ID="S-12222">Suppose the derivation probability for current sample is P (current s).</S>
+          <S ID="S-12223">Then slice sampling draws a sample in two steps:</S>
+        </P>
+        <P>
+          <S ID="S-12224">&#8226; Select a threshold T uniformly from the range {0, P (current s)}.</S>
+        </P>
+        <P>
+          <S ID="S-12225">&#8226; Draw a new sample new s uniformly from a pool of candidates: {new s|P (new s) &gt; T }.</S>
+        </P>
+        <P>
+          <S ID="S-12226">From the above two steps, we can see that given a threshold T , we only need to consider those samples whose probability is higher than the threshold.</S>
+          <S ID="S-12227">This will lead to a significant reduction on the number of samples to be considered, if probabilities of the most samples are below T .</S>
+          <S ID="S-12228">In practice, the first step is easy to implement, while it is difficult to make the second step efficient.</S>
+          <S ID="S-12229">An obvious way to collect candidate samples is to go over all possible samples and record those with probabilities higher than T .</S>
+          <S ID="S-12230">However, doing this will not save any time.</S>
+          <S ID="S-12231">Fortunately, for Bayesian decipherment, we are able to complete the second step efficiently.</S>
+          <S ID="S-12232">According to Equation 1, the probability of the current sample is given by a language model P (e) and a channel model P (c|e).</S>
+          <S ID="S-12233">The language model is usually an ngram language model.</S>
+          <S ID="S-12234">Suppose our current sample current s contains English tokens X, Y , and Z at position i &#8722; 1, i, and i + 1 respectively.</S>
+          <S ID="S-12235">Let c i be the cipher token at position i.</S>
+          <S ID="S-12236">To obtain a new sample, we just need to change token Y to Y &#8242; .</S>
+          <S ID="S-12237">Since the rest of the sample stays the same, we only need to calculate the probability of any trigram 1 : P (XY &#8242; Z) and the channel model probability: P (c i |Y &#8242; ), and multiply them together as shown in Equation 4.</S>
+        </P>
+        <P>
+          <S ID="S-12238">P (XY &#8242; Z) &#183; P (c i |Y &#8242; ) (4)</S>
+        </P>
+        <P>
+          <S ID="S-12239">1 The probability is given by a bigram language model.</S>
+        </P>
+        <P>
+          <S ID="S-12240">In slice sampling, each sampling operation has two steps.</S>
+          <S ID="S-12241">For the first step, we choose a threshold T uniformly between 0 and P (XY Z)&#183;P (c i |Y ).</S>
+          <S ID="S-12242">For the second step, there are two cases.</S>
+        </P>
+        <P>
+          <S ID="S-12243">First, we notice that two types of Y &#8242; are more likely to pass the threshold T : (1) Those that have a very high trigram probability , and (2) those that have high channel model probability.</S>
+          <S ID="S-12244">To find candidates that have high trigram probability, we build sorted lists ranked by P (XY &#8242; Z), which can be precomputed off-line.</S>
+          <S ID="S-12245">We only keep the top K English words for each of the sorted list.</S>
+          <S ID="S-12246">When the last item Y K in the list satisfies P (XY k Z) &#183; prior &lt; T , We draw a sample in the following way: set A = {Y &#8242; |P (XY &#8242; Z) &#183; prior &gt; T } and set B = {Y &#8242; |count(c i , Y &#8242; ) &gt; 0}, then we only need to sample Y &#8242; uniformly from A &#8746; B until Equation 4 is greater than T .</S>
+          <S ID="S-12247">2</S>
+        </P>
+        <P>
+          <S ID="S-12248">Second, what happens when the last item Y K in the list does not satisfy P (XY k Z) &#183; prior &lt; T ?</S>
+          <S ID="S-12249">Then we always choose a word Y &#8242; randomly and accept it as a new sample if Equation 4 is greater than T .</S>
+          <S ID="S-12250">Our algorithm alternates between the two cases.</S>
+          <S ID="S-12251">The actual number of choices the algorithm looks at depends on the K and the total number of possible choices.</S>
+          <S ID="S-12252">In different experiments, we find that when K = 500, the algorithm only looks at 0.06% of all possible choices.</S>
+          <S ID="S-12253">When K = 2000, this further reduces to 0.007%.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Deciphering with Bigrams</HEADER>
+        <P>
+          <S ID="S-12254">Since we can decipher with a bigram language model, we posit that a frequency list of ciphertext bigrams may contain enough information for decipherment.</S>
+          <S ID="S-12255">In our letter substitution experiments, we find that breaking ciphertext into bigrams doesn&#8217;t hurt decipherment accuracy.</S>
+          <S ID="S-12256">Table 1 shows how full English sentences in the original data are broken into bigrams and their counts.</S>
+        </P>
+        <P>
+          <S ID="S-12257">Instead of doing sampling on full sentences, we treat each bigram as a full &#8220;sentence&#8221;.</S>
+          <S ID="S-12258">There are</S>
+        </P>
+        <P>
+          <S ID="S-12259">2 It is easy to prove that all other candidates that are not in</S>
+        </P>
+        <P>
+          <S ID="S-12260">the sorted list and with count(c i , Y &#8242; ) = 0 have a upper bound probability: P (XY k Z) &#183; prior.</S>
+          <S ID="S-12261">Therefore, they are ignored when P (XY k Z) &#183; prior &lt; T .</S>
+        </P>
+        <P>
+          <S ID="S-12262">man they took our land .</S>
+          <S ID="S-12263">they took our arable land .</S>
+        </P>
+        <P>
+          <S ID="S-12264">two advantages to use bigrams and their counts for decipherment.</S>
+        </P>
+        <P>
+          <S ID="S-12265">First of all, the bigrams and counts are a much more compact representation of the original ciphertext with full sentences.</S>
+          <S ID="S-12266">For instance, after breaking a billion tokens from the English Gigaword corpus, we find only 29m bigrams and 58m tokens, which is only 1/17 of the original text.</S>
+          <S ID="S-12267">In practice, we further discard all bigrams with low frequency, which makes the ciphertext even shorter.</S>
+        </P>
+        <P>
+          <S ID="S-12268">Secondly, using bigrams significantly reduces the number of sorted lists (from |V | 2 to 2|V |) mentioned in the previous section.</S>
+          <S ID="S-12269">The number of lists reduces from |V | 2 to 2|V | because words in a bigram only have one neighbor.</S>
+          <S ID="S-12270">Therefore, for any word W in a bigram, we need only 2|V | lists (&#8220;words to the right of W&#8221; and &#8220;words to the left of W&#8221;) instead of |V | 2 lists (&#8220;pairs of words that surround W&#8221;).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.4 Iterative Sampling</HEADER>
+        <P>
+          <S ID="S-12271">Although we can directly apply slice sampling on a large number of bigrams, we find that gradually including less frequent bigrams into a sampling process saves deciphering time &#8211; we call this iterative sampling:</S>
+        </P>
+        <P>
+          <S ID="S-12272">&#8226; Break the ciphertext into bigrams and collect their counts</S>
+        </P>
+        <P>
+          <S ID="S-12273">&#8226; Keep bigrams whose counts are greater than a threshold &#945;.</S>
+          <S ID="S-12274">Then initialize the first sample randomly and use slice sampling to perform maximum likelihood training.</S>
+          <S ID="S-12275">In the end, extract a translation table T according to the final sample.</S>
+        </P>
+        <P>
+          <S ID="S-12276">&#8226; Lower the threshold &#945; to include more bigrams into the sampling process.</S>
+          <S ID="S-12277">Initialize the first sample using the translation table obtained from the previous sampling run (for each ci-</S>
+        </P>
+        <P>
+          <S ID="S-12278">pher token f, choose a plaintext token e whose P (e|f) is the largest).</S>
+          <S ID="S-12279">Perform sampling again.</S>
+        </P>
+        <P>
+          <S ID="S-12280">&#8226; Repeat until &#945; = 1.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.5 Parallel Sampling</HEADER>
+        <P>
+          <S ID="S-12281">Inspired by (<REF ID="R-10" RPTR="17">Newman et al., 2009</REF>), our parallel sampling procedure is described below:</S>
+        </P>
+        <P>
+          <S ID="S-12282">&#8226; Collect bigrams and their counts from ciphertext and split the bigrams into N parts.</S>
+        </P>
+        <P>
+          <S ID="S-12283">&#8226; Run slice sampling on each part for 5 iterations independently.</S>
+        </P>
+        <P>
+          <S ID="S-12284">&#8226; Combine counts from each part to form a new count table and run sampling again on each part using the new table.</S>
+          <S ID="S-12285">3</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Decipherment Experiments</HEADER>
+      <P>
+        <S ID="S-12329">In this section, we evaluate our new sampling algorithm in two different experiments.</S>
+        <S ID="S-12330">In the first experiment, we compare our method with (<REF ID="R-15" RPTR="32">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="44">Ravi and Knight, 2011</REF>b) on their data set to prove correctness of our approach.</S>
+        <S ID="S-12331">In the second experiment, we scale up to the whole English Gigaword corpus and achieve a much higher deciphering accuracy.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Deciphering Transtac Corpus</HEADER>
+        <P>
+          <S ID="S-12287">4.1.1 Data</S>
+        </P>
+        <P>
+          <S ID="S-12288">We split the Transtac corpus the same way it was split in (<REF ID="R-15" RPTR="33">Ravi and Knight, 2011</REF><REF ID="R-16" RPTR="45">Ravi and Knight, 2011</REF>b).</S>
+          <S ID="S-12289">The data used to create ciphertext consists of 1 million tokens, and 3397 word types.</S>
+          <S ID="S-12290">The data for language model training contains 2.7 million tokens and 25761 word types.</S>
+          <S ID="S-12291">4 The ciphertext is created by replacing each English word with a cipher word.</S>
+          <S ID="S-12292">We use a bigram language model for decipherment training.</S>
+          <S ID="S-12293">When the training terminates, a translation table with probability P (c|e) is built based on the counts collected from the final sample.</S>
+          <S ID="S-12294">For decoding, we employ a trigram language model using full sentences.</S>
+          <S ID="S-12295">We use Moses (<REF ID="R-07" RPTR="10">Koehn et al., 2007</REF>)</S>
+        </P>
+        <P>
+          <S ID="S-12296">3 Except for combining the counts to form a new count table,</S>
+        </P>
+        <P>
+          <S ID="S-12297">other parameters remain the same.</S>
+          <S ID="S-12298">For instance, each part i has its own prior set to 1 C i , where C i is the number of word types in that part of ciphertext.</S>
+          <S ID="S-12299">4 In practice, we replaced singletons with a &#8220;UNK&#8221; symbol,</S>
+        </P>
+        <P>
+          <S ID="S-12300">leaving around 16904 word types.</S>
+        </P>
+        <P>
+          <S ID="S-12301">Method Ravi and Knight</S>
+        </P>
+        <P>
+          <S ID="S-12302">Slice Sampling</S>
+        </P>
+        <P>
+          <S ID="S-12303">Deciphering Accuracy 80.0 (with bigram LM) 82.5 (with trigram LM) 88.1 (with bigram LM)</S>
+        </P>
+        <P>
+          <S ID="S-12304">to perform the decoding.</S>
+          <S ID="S-12305">We set the distortion limit to 0 and cube the translation probabilities.</S>
+          <S ID="S-12306">Essentially, Moses tries to find an English sequence e that maximizes P (e) &#183; P (c|e) 3</S>
+        </P>
+        <P>
+          <S ID="S-12307">4.1.2 Results</S>
+        </P>
+        <P>
+          <S ID="S-12308">We evaluate the performance of our algorithm by decipherment accuracy, which measures the percentage of correctly deciphered cipher tokens.</S>
+          <S ID="S-12309">Table 2 compares the deciphering accuracy with the state of the art algorithm.</S>
+        </P>
+        <P>
+          <S ID="S-12310">Results show that our algorithm improves the deciphering accuracy to 88.1%, which amounts to 33% reduction in error rate.</S>
+          <S ID="S-12311">This justifies our claim: doing better approximation using slice sampling improves decipherment accuracy.</S>
+        </P>
+        <P>
+          <S ID="S-12312">Table 3 shows the first 5 decoding results and compares them with the gold plaintext.</S>
+          <S ID="S-12313">From the table we can see that the algorithm recovered the majority of the plaintext correctly.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Deciphering Gigaword Corpus</HEADER>
+        <P>
+          <S ID="S-12314">To prove the scalability of our new approach, we apply it to solve a much larger word substitution cipher built from English Gigaword corpus.</S>
+          <S ID="S-12315">The corpus contains news articles from different news agencies</S>
+        </P>
+        <P>
+          <S ID="S-12316">and has a much larger vocabulary compared with the Transtac corpus.</S>
+        </P>
+        <P>
+          <S ID="S-12317">4.2.1 Data</S>
+        </P>
+        <P>
+          <S ID="S-12318">We split the corpus into two parts chronologically.</S>
+          <S ID="S-12319">Each part contains approximately 1.2 billion tokens.</S>
+          <S ID="S-12320">We uses the first part to build a word substitution cipher, which is 10k times longer than the one in the previous experiment, and the second part to build a bigram language model.</S>
+          <S ID="S-12321">5</S>
+        </P>
+        <P>
+          <S ID="S-12322">4.2.2 Results</S>
+        </P>
+        <P>
+          <S ID="S-12323">We first use a single machine and apply iterative sampling to solve a 68 million token cipher.</S>
+          <S ID="S-12324">Then we use the result from the first step to initialize our parallel sampling process, which uses as many as 100 machines.</S>
+          <S ID="S-12325">For evaluation, we calculate deciphering accuracy over the first 1000 sentences (33k tokens).</S>
+        </P>
+        <P>
+          <S ID="S-12326">After 2000 iterations of the parallel sampling process, the deciphering accuracy reaches 92.2%.</S>
+          <S ID="S-12327">Figure 2 shows the learning curve of the algorithm.</S>
+          <S ID="S-12328">It can be seen from the graph that both token and type accuracy increase as more and more data becomes available.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Improving Out-of-Domain Machine Translation</HEADER>
+      <P>
+        <S ID="S-12378">Domain specific machine translation (MT) is a challenge for statistical machine translation (SMT) systems trained on parallel corpora.</S>
+        <S ID="S-12379">It is common to see a significant drop in translation quality when translating out-of-domain texts.</S>
+        <S ID="S-12380">Although it is hard to find parallel corpora for any specific domain, it is relatively easy to find domain specific monolingual corpora.</S>
+        <S ID="S-12381">In this section, we show how to use our new decipherment framework to learn a domain specific translation table and use it to improve out-of-domain translations.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Baseline SMT System</HEADER>
+        <P>
+          <S ID="S-12332">We build a state of the art phrase-based SMT system using Moses (<REF ID="R-07" RPTR="11">Koehn et al., 2007</REF>).</S>
+          <S ID="S-12333">The baseline system has 3 models: a translation model, a reordering model, and a language model.</S>
+          <S ID="S-12334">The language model can be trained on monolingual data, and the rest are trained on parallel data.</S>
+          <S ID="S-12335">By default, Moses uses the following 8 features to score a candidate translation:</S>
+        </P>
+        <P>
+          <S ID="S-12336">&#8226; direct and inverse translation probabilities</S>
+        </P>
+        <P>
+          <S ID="S-12337">&#8226; direct and inverse lexical weighting</S>
+        </P>
+        <P>
+          <S ID="S-12338">&#8226; phrase penalty</S>
+        </P>
+        <P>
+          <S ID="S-12339">&#8226; a language model</S>
+        </P>
+        <P>
+          <S ID="S-12340">&#8226; a re-ordering model</S>
+        </P>
+        <P>
+          <S ID="S-12341">&#8226; word penalty</S>
+        </P>
+        <P>
+          <S ID="S-12342">Each of the 8 features has its own weight, which can be tuned on a held-out set using minimum error rate training.</S>
+          <S ID="S-12343">(<REF ID="R-11" RPTR="18">Och, 2003</REF>).</S>
+          <S ID="S-12344">In the following sections, we describe how to use decipherment to learn domain specific translation probabilities, and use the new features to improve the baseline.</S>
+        </P>
+        <P>
+          <S ID="S-12345">5 Before building the language model, we replace low frequency word types with an &#8221;UNK&#8221; symbol, leaving 129k unique word types.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Learning a New Translation Table with Decipherment</HEADER>
+        <P>
+          <S ID="S-12346">From a decipherment perspective, machine translation is a much more complex task than solving a word substitution cipher and poses three major challenges:</S>
+        </P>
+        <P>
+          <S ID="S-12347">&#8226; Mappings between languages are nondeterministic, as words can have multiple translations</S>
+        </P>
+        <P>
+          <S ID="S-12348">&#8226; Re-ordering of words</S>
+        </P>
+        <P>
+          <S ID="S-12349">&#8226; Insertion and deletion of words</S>
+        </P>
+        <P>
+          <S ID="S-12350">Fortunately, our decipherment model does not assume deterministic mapping and is able to discover multiple translations.</S>
+          <S ID="S-12351">For the reordering problem, we treat Spanish as a simple word substitution for French.</S>
+          <S ID="S-12352">Despite the simplification in the assumption, we still expect to learn a useful word-to-word lexicon via decipherment and use the lexicon to improve our baseline.</S>
+        </P>
+        <P>
+          <S ID="S-12353">Problem formulation: By ignoring word reorderings, we can formulate MT decipherment problem as word substitution decipherment.</S>
+          <S ID="S-12354">We view source language f as ciphertext and target language e as plaintext.</S>
+          <S ID="S-12355">Our goal is to decipher f into e and estimate translation probabilities based on the decipherment.</S>
+        </P>
+        <P>
+          <S ID="S-12356">Probabilistic decipherment: Similar to solving a word substitution cipher, all we have to do here is to estimate the translation model parameters P &#952; (f|e) using a large amount of monolingual data in f and e respectively.</S>
+          <S ID="S-12357">According to Equation 5, our objective is to estimate the model parameters so that the probability of source text P(f) is maximized.</S>
+        </P>
+        <P>
+          <S ID="S-12358">arg max</S>
+        </P>
+        <P>
+          <S ID="S-12359">&#952;</S>
+        </P>
+        <P>
+          <S ID="S-12360">&#8721; P (e) &#183;</S>
+        </P>
+        <P>
+          <S ID="S-12361">e</S>
+        </P>
+        <P>
+          <S ID="S-12362">n&#8719; P &#952; (f i |e i ) (5)</S>
+        </P>
+        <P>
+          <S ID="S-12363">Building a translation table: Once the sampling process completes, we estimate translation probability P (f|e) from the final sample using maximum likelihood estimation.</S>
+          <S ID="S-12364">We also decipher from the reverse direction to estimate P (e|f).</S>
+          <S ID="S-12365">Finally, we build a phrase table by taking translation pairs seen in both decipherments.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Combining Phrase Tables</HEADER>
+        <P>
+          <S ID="S-12366">We now have two phrase tables: one learnt from parallel corpus and one learnt from non-parallel monolingual corpus through decipherment.</S>
+          <S ID="S-12367">The phrase table learnt through decipherment only contains word to word translations, and each translation option only has two scores.</S>
+          <S ID="S-12368">Moses has a function to decode with multiple phrase tables, so we just need to add the newly learnt phrase table and specify two more weights for the scores in it.</S>
+          <S ID="S-12369">During decoding, if a source word only appears in the decipherment table,</S>
+        </P>
+        <P>
+          <S ID="S-12370">i</S>
+        </P>
+        <P>
+          <S ID="S-12371">Train</S>
+        </P>
+        <P>
+          <S ID="S-12372">Tune</S>
+        </P>
+        <P>
+          <S ID="S-12373">Test</S>
+        </P>
+        <P>
+          <S ID="S-12374">French: 28.5 million tokens Spanish: 26.6 million tokens French: 28k tokens Spanish: 26k tokens French: 30k tokens Spanish: 28k tokens</S>
+        </P>
+        <P>
+          <S ID="S-12375">that table&#8217;s translation will be used.</S>
+          <S ID="S-12376">If a source word exists in both tables, Moses will create two separate decoding paths and choose the best one after taking other features into account.</S>
+          <S ID="S-12377">If a word is not seen in either of the tables, it is copied literally to the output.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 MT Experiments and Results</HEADER>
+      <P>
+        <S ID="S-12420"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Data</HEADER>
+        <P>
+          <S ID="S-12382">In our MT experiments, we translate French into Spanish and use the following corpora to learn our translation systems:</S>
+        </P>
+        <P>
+          <S ID="S-12383">&#8226; Europarl Corpus (<REF ID="R-08" RPTR="12">Koehn, 2005</REF>): The Europarl parallel corpus is extracted from the proceedings of the European Parliament and includes versions in 11 European languages.</S>
+          <S ID="S-12384">The corpus contains articles from the political domain and is used to train our baseline system.</S>
+          <S ID="S-12385">We use the 6th version of the corpus.</S>
+          <S ID="S-12386">After cleaning, there are 1.3 million lines left for training.</S>
+          <S ID="S-12387">We use the last 2k lines for tuning and testing (1k for each), and the rest for training.</S>
+          <S ID="S-12388">Details of training, tuning, and testing data are listed in Table 4.</S>
+        </P>
+        <P>
+          <S ID="S-12389">&#8226; EMEA Corpus (<REF ID="R-17" RPTR="46">Tiedemann, 2009</REF>): EMEA is a parallel corpus made out of PDF documents from the European Medicines Agency.</S>
+          <S ID="S-12390">It contains articles from the medical domain, which is a good test bed for out-of-domain tasks.</S>
+          <S ID="S-12391">We use the first 2k pairs of sentences for tuning and testing (1k for each), and use the rest (1.1 million lines) for decipherment training.</S>
+          <S ID="S-12392">We split the training corpus in ways that no parallel sentences are included in the training set.</S>
+          <S ID="S-12393">The splitting methods are listed in Table 5.</S>
+        </P>
+        <P>
+          <S ID="S-12394">For decipherment training, we use lexical translation tables learned from the Europarl corpus to ini-</S>
+        </P>
+        <P>
+          <S ID="S-12395">Comparable EMEA : French: Every odd line, 8.7 million tokens Spanish: Every even line, 8.1 million tokens Non-parallel EMEA: French: First 550k sentences, 9.1 million tokens Spanish: Last 550k sentences, 7.7 million tokens</S>
+        </P>
+        <P>
+          <S ID="S-12396">tialize our sampling process.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Results</HEADER>
+        <P>
+          <S ID="S-12397">BLEU (<REF ID="R-12" RPTR="19">Papineni et al., 2002</REF>) is used as a standard evaluation metric.</S>
+          <S ID="S-12398">We compare the following 3 systems in our experiments, and present the results in Table 6.</S>
+        </P>
+        <P>
+          <S ID="S-12399">&#8226; Baseline: Trained on Europarl</S>
+        </P>
+        <P>
+          <S ID="S-12400">&#8226; Decipher-CP: Trained on Europarl + Comparable EMEA</S>
+        </P>
+        <P>
+          <S ID="S-12401">&#8226; Decipher-NP: Trained on Europarl + Non- Parallel EMEA</S>
+        </P>
+        <P>
+          <S ID="S-12402">Our baseline system achieves 38.2 BLEU score on Europarl test set.</S>
+          <S ID="S-12403">In the second row of Table 6, the test set changes to EMEA, and the baseline BLEU score drops to 24.9.</S>
+          <S ID="S-12404">In the third row, the baseline score rises to 30.5 with a language model built from EMEA corpus.</S>
+          <S ID="S-12405">Although it is much higher than the previous baseline, we further improve it by including a new phrase table learnt from domain specific monolingual data.</S>
+          <S ID="S-12406">In a real out-of-domain task, we are unlikely to have any parallel data to tune weights for the new phrase table.</S>
+          <S ID="S-12407">Therefore, we can only set it manually.</S>
+          <S ID="S-12408">In experiments, each score in the new phrase table has a weight of 5, and the BLEU score rises up to 33.2.</S>
+          <S ID="S-12409">In the fourth row of the table, we assume that there is a small amount of domain specific parallel data for tuning.</S>
+          <S ID="S-12410">With better weights, our baseline BLEU score increases to 37.3, and our combined systems increase to 41.1 and 39.7 respectively.</S>
+          <S ID="S-12411">In the last row of the table, we compare the combined systems with an even better baseline.</S>
+          <S ID="S-12412">This time, the baseline is given half of the EMEA tuning set for training and uses the other half</S>
+        </P>
+        <P>
+          <S ID="S-12413">for weight tuning.</S>
+          <S ID="S-12414">Results show that our combined systems still outperform the baseline.</S>
+          <S ID="S-12415">The phrase table learnt from monolingual data consists of both observed and unknown words.</S>
+          <S ID="S-12416">Table 7 shows the top 10 most frequent OOV words in the table learnt from non-parallel EMEA corpus.</S>
+          <S ID="S-12417">Among the 10 words, 9 have correct translations.</S>
+          <S ID="S-12418">It is interesting to see that our algorithm finds multiple correct translations for the word &#8220;h&#233;patique&#8221;.</S>
+          <S ID="S-12419">The only mistake in the table is sensible as French word &#8220;pellicul&#233;s&#8221; is translated into &#8220;recubiertos con pel&#237;cula&#8221; in Spanish.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion and Future Work</HEADER>
+      <P>
+        <S ID="S-12421">We apply slice sampling to Bayesian Decipherment and show significant improvement in deciphering accuracy compared with the state of the art algorithm.</S>
+        <S ID="S-12422">Our method is not only accurate but also highly scalable.</S>
+        <S ID="S-12423">In experiments, we decipher at the scale of the English Gigaword corpus, which contains over billions of tokens and hundreds of thousands word types.</S>
+        <S ID="S-12424">We further show the value of our new decipherment algorithm by using it to improve out-of-domain translation.</S>
+        <S ID="S-12425">In the future, we will work with more language pairs, especially those with significant word re-orderings.</S>
+        <S ID="S-12426">Moreover, the monolingual corpora used in the experiments are far smaller than what our algorithm can handle.</S>
+        <S ID="S-12427">We will continue to work in scenarios where large amount of monolingual data is readily available.</S>
+      </P>
+      <P>
+        <S ID="S-12428">Train Data Tune Data Tune LM Test Data Test LM Baseline</S>
+      </P>
+      <P>
+        <S ID="S-12429">Europarl Europarl Europarl EMEA EMEA 30.5</S>
+      </P>
+      <P>
+        <S ID="S-12430">Europarl EMEA EMEA EMEA EMEA 37.3</S>
+      </P>
+      <P>
+        <S ID="S-12431">Europarl + EMEA EMEA EMEA EMEA EMEA 67.4</S>
+      </P>
+      <P>
+        <S ID="S-12432">Decipher- CP</S>
+      </P>
+      <P>
+        <S ID="S-12433">33.2 (+2.7) 41.1 (+3.8) 68.7 (+1.3) Decipher-</S>
+      </P>
+      <P>
+        <S ID="S-12434">NP</S>
+      </P>
+      <P>
+        <S ID="S-12435">32.4 (+1.9) 39.7 (+2.4) 68.7 (+1.3)</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-12436">This work was supported by NSF Grant 0904684.</S>
+      <S ID="S-12437">The authors would like to thank Philip Koehen, David Chiang, Jason Riesa, Ashish Vaswani, and Hui Zhang for their comments and suggestions.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Phil Blunsom</RAUTHOR>
+      <REFTITLE>A Gibbs sampler for phrasal synchronous grammar induction.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Chris Callison-Burch</RAUTHOR>
+      <REFTITLE>Further meta-evaluation of machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Hal Daum&#233;</RAUTHOR>
+      <REFTITLE>Domain adaptation for machine translation by mining unseen words.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Sharon Goldwater</RAUTHOR>
+      <REFTITLE>A fully Bayesian approach to unsupervised part-of-speech tagging.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Aria Haghighi</RAUTHOR>
+      <REFTITLE>Learning bilingual lexicons from monolingual corpora.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Kevin Knight</RAUTHOR>
+      <REFTITLE>Unsupervised analysis for decipherment problems.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Learning a translation lexicon from monolingual corpora.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Chris Dyer, Ond&#345;ej Bojar,</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Europarl: A parallel corpus for statistical machine translation. In</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Radford Neal</RAUTHOR>
+      <REFTITLE>Slice sampling.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>David Newman</RAUTHOR>
+      <REFTITLE>Distributed algorithms for topic models.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Salim Roukos Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Reinhard Rapp</RAUTHOR>
+      <REFTITLE>Identifying word translations in non-parallel texts.</REFTITLE>
+      <DATE>1995</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Sujith Ravi</RAUTHOR>
+      <REFTITLE>Attacking decipherment problems optimally with low-order n-gram models.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Sujith Ravi</RAUTHOR>
+      <REFTITLE>Bayesian inference for Zodiac and other homophonic ciphers.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Sujith Ravi</RAUTHOR>
+      <REFTITLE>Deciphering foreign language.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>J&#246;rg Tiedemann</RAUTHOR>
+      <REFTITLE>News from OPUS &#8211; a collection of multilingual parallel corpora with tools and interfaces.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

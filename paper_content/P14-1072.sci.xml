@@ -1,0 +1,980 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Kneser-Ney Smoothing on Expected Counts</TITLE>
+  <AUTHORS>
+    <AUTHOR>Hui Zhang</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-39029">Widely used in speech and language processing, Kneser-Ney (KN) smoothing has consistently been shown to be one of the best-performing smoothing methods.</A-S>
+    <A-S ID="S-39030">However, KN smoothing assumes integer counts, limiting its potential uses&#8212;for example, inside Expectation-Maximization.</A-S>
+    <A-S ID="S-39031">In this paper, we propose a generalization of KN smoothing that operates on fractional counts, or, more precisely, on distributions over counts.</A-S>
+    <A-S ID="S-39032">We rederive all the steps of KN smoothing to operate on count distributions instead of integral counts, and apply it to two tasks where KN smoothing was not applicable before: one in language model adaptation, and the other in word alignment.</A-S>
+    <A-S ID="S-39033">In both cases, our method improves performance significantly.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-39034">In speech and language processing, smoothing is essential to reduce overfitting, and Kneser-Ney (KN) smoothing (<REF ID="R-13" RPTR="15">Kneser and Ney, 1995</REF>; <REF ID="R-06" RPTR="6">Chen and Goodman, 1999</REF>) has consistently proven to be among the best-performing and most widely used methods.</S>
+        <S ID="S-39035">However, KN smoothing assumes integer counts, whereas in many NLP tasks, training instances appear with possibly fractional weights.</S>
+        <S ID="S-39036">Such cases have been noted for language modeling (<REF ID="R-09" RPTR="11">Goodman, 2001</REF>; <REF ID="R-10" RPTR="12">Goodman, 2004</REF>), domain adaptation (<REF ID="R-25" RPTR="32">Tam and Schultz, 2008</REF>), grapheme-tophoneme conversion (<REF ID="R-02" RPTR="2">Bisani and Ney, 2008</REF>), and phrase-based translation (<REF ID="R-00" RPTR="0">Andr&#233;s-Ferrer, 2010</REF>; <REF ID="R-15" RPTR="18">Wuebker et al., 2012</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-39037">For example, in Expectation-Maximization (<REF ID="R-07" RPTR="9">Dempster et al., 1977</REF>), the Expectation (E) step computes the posterior distribution over possible completions of the data, and the Maximization (M) step reestimates the model parameters as if that distribution had actually been observed.</S>
+        <S ID="S-39038">In most cases, the M step is identical to estimating the model from complete data, except that counts of observations from the E step are fractional.</S>
+        <S ID="S-39039">It is common to apply add-one smoothing to the M step, but we cannot apply KN smoothing.</S>
+        <S ID="S-39040">Another example is instance weighting.</S>
+        <S ID="S-39041">If we assign a weight to each training instance to indicate how important it is (say, its relevance to a particular domain), and the counts are not integral, then we again cannot train the model using KN smoothing.</S>
+      </P>
+      <P>
+        <S ID="S-39042">In this paper, we propose a generalization of KN smoothing (called expected KN smoothing) that operates on fractional counts, or, more precisely, on distributions over counts.</S>
+        <S ID="S-39043">We rederive all the steps of KN smoothing to operate on count distributions instead of integral counts.</S>
+        <S ID="S-39044">We demonstrate how to apply expected KN to two tasks where KN smoothing was not applicable before.</S>
+        <S ID="S-39045">One is language model domain adaptation, and the other is word alignment using the IBM models (Brown et al., 1993).</S>
+        <S ID="S-39046">In both tasks, expected KN smoothing improves performance significantly.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Smoothing on integral counts</HEADER>
+      <P>
+        <S ID="S-39125">Before presenting our method, we review KN smoothing on integer counts as applied to language models, although, as we will demonstrate in Section 7, KN smoothing is applicable to other tasks as well.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Maximum likelihood estimation</HEADER>
+        <P>
+          <S ID="S-39047">Let uw stand for an n-gram, where u stands for the (n &#8722; 1) context words and w, the predicted word.</S>
+          <S ID="S-39048">Let c(uw) be the number of occurrences of uw.</S>
+          <S ID="S-39049">We use a bullet (&#8226;) to indicate summation over words, that is, c(u&#8226;) = &#8721; w c(uw).</S>
+          <S ID="S-39050">Under maximum-likelihood estimation (MLE), we max-</S>
+        </P>
+        <P>
+          <S ID="S-39051">imize</S>
+        </P>
+        <P>
+          <S ID="S-39052">&#8721; L = c(uw) log p(w | u),</S>
+        </P>
+        <P>
+          <S ID="S-39053">uw</S>
+        </P>
+        <P>
+          <S ID="S-39054">obtaining the solution</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Absolute discounting</HEADER>
+        <P>
+          <S ID="S-39055">p mle (w | u) = c(uw) c(u&#8226;) .</S>
+          <S ID="S-39056">(1)</S>
+        </P>
+        <P>
+          <S ID="S-39057">Absolute discounting (<REF ID="R-19" RPTR="24">Ney et al., 1994</REF>) &#8211; on which KN smoothing is based &#8211; tries to generalize better to unseen data by subtracting a discount from each seen n-gram&#8217;s count and distributing the subtracted discounts to unseen n-grams.</S>
+          <S ID="S-39058">For now, we assume that the discount is a constant D, so that the smoothed counts are &#9127; &#9130;&#9128; c(uw) &#8722; D if c(uw) &gt; 0</S>
+        </P>
+        <P>
+          <S ID="S-39059">&#732;c(uw) = &#9130;&#9129; n 1+ (u&#8226;)Dq u (w) otherwise</S>
+        </P>
+        <P>
+          <S ID="S-39060">where n 1+ (u&#8226;) = |{w | c(uw) &gt; 0}| is the number of word types observed after context u, and q u (w) specifies how to distribute the subtracted discounts among unseen n-gram types.</S>
+          <S ID="S-39061">Maximizing the likelihood of the smoothed counts &#732;c, we get</S>
+        </P>
+        <P>
+          <S ID="S-39062">&#9127;</S>
+        </P>
+        <P>
+          <S ID="S-39063">&#9130;&#9128; p(w | u) =</S>
+        </P>
+        <P>
+          <S ID="S-39064">&#9130;&#9129;</S>
+        </P>
+        <P>
+          <S ID="S-39065">c(uw) &#8722; D c(u&#8226;)</S>
+        </P>
+        <P>
+          <S ID="S-39066">n 1+ (u&#8226;)Dq u (w) c(u&#8226;)</S>
+        </P>
+        <P>
+          <S ID="S-39067">if c(uw) &gt; 0</S>
+        </P>
+        <P>
+          <S ID="S-39068">otherwise.</S>
+        </P>
+        <P>
+          <S ID="S-39069">(2)</S>
+        </P>
+        <P>
+          <S ID="S-39070">How to choose D and q u (w) are described in the next two sections.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Estimating D by leaving-one-out</HEADER>
+        <P>
+          <S ID="S-39071">The discount D can be chosen by various means; in absolute discounting, it is chosen by the method of leaving one out.</S>
+          <S ID="S-39072">Given N training instances, we form the probability of each instance under the MLE using the other (N &#8722; 1) instances as training data; then we maximize the log-likelihood of all those instances.</S>
+          <S ID="S-39073">The probability of an n-gram token uw using the other tokens as training data is</S>
+        </P>
+        <P>
+          <S ID="S-39074">&#9127;</S>
+        </P>
+        <P>
+          <S ID="S-39075">&#9130;&#9128; p loo (w | u) =</S>
+        </P>
+        <P>
+          <S ID="S-39076">&#9130;&#9129;</S>
+        </P>
+        <P>
+          <S ID="S-39077">c(uw) &#8722; 1 &#8722; D c(u&#8226;) &#8722; 1</S>
+        </P>
+        <P>
+          <S ID="S-39078">(n 1+ (u&#8226;) &#8722; 1)Dq u (w) c(u&#8226;) &#8722; 1</S>
+        </P>
+        <P>
+          <S ID="S-39079">c(uw) &gt; 1</S>
+        </P>
+        <P>
+          <S ID="S-39080">c(uw) = 1.</S>
+        </P>
+        <P>
+          <S ID="S-39081">We want to find the D that maximizes the</S>
+        </P>
+        <P>
+          <S ID="S-39082">leaving-one-out log-likelihood &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-39083">L loo = c(uw) log p loo (w | u)</S>
+        </P>
+        <P>
+          <S ID="S-39084">uw</S>
+        </P>
+        <P>
+          <S ID="S-39085">&#8721; = c(uw) log c(uw) &#8722; 1 &#8722; D c(u&#8226;) &#8722; 1</S>
+        </P>
+        <P>
+          <S ID="S-39086">uw|c(uw)&gt;1</S>
+        </P>
+        <P>
+          <S ID="S-39087">&#8721; + log (n 1+(u&#8226;) &#8722; 1)Dq u (w) c(u&#8226;) &#8722; 1</S>
+        </P>
+        <P>
+          <S ID="S-39088">uw|c(uw)=1</S>
+        </P>
+        <P>
+          <S ID="S-39089">&#8721; = rn r log(r &#8722; 1 &#8722; D) + n 1 log D + C, (3)</S>
+        </P>
+        <P>
+          <S ID="S-39090">r&gt;1</S>
+        </P>
+        <P>
+          <S ID="S-39091">where n r = |{uw | c(uw) = r}| is the number of n- gram types appearing r times, and C is a constant not depending on D.</S>
+          <S ID="S-39092">Setting the partial derivative with respect to D to zero, we have &#8721; = &#8722; &#8706;L loo &#8706;D</S>
+        </P>
+        <P>
+          <S ID="S-39093">r&gt;1</S>
+        </P>
+        <P>
+          <S ID="S-39094">rn r r &#8722; 1 &#8722; D + n 1 D</S>
+        </P>
+        <P>
+          <S ID="S-39095">n 1</S>
+        </P>
+        <P>
+          <S ID="S-39096">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-39097">D = rn r r &#8722; 1 &#8722; D &#8805; 2n 2 1 &#8722; D .</S>
+        </P>
+        <P>
+          <S ID="S-39098">r&gt;1</S>
+        </P>
+        <P>
+          <S ID="S-39099">Solving for D, we have</S>
+        </P>
+        <P>
+          <S ID="S-39100">D &#8804;</S>
+        </P>
+        <P>
+          <S ID="S-39101">n 1 n 1 + 2n 2 .</S>
+          <S ID="S-39102">(4)</S>
+        </P>
+        <P>
+          <S ID="S-39103">Theoretically, we can use iterative methods to optimize D.</S>
+          <S ID="S-39104">But in practice, setting D to this upper bound is effective and simple (<REF ID="R-19" RPTR="25">Ney et al., 1994</REF>; <REF ID="R-06" RPTR="7">Chen and Goodman, 1999</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.4 Estimating the lower-order distribution</HEADER>
+        <P>
+          <S ID="S-39105">Finally, q u (w) is defined to be proportional to an (n &#8722; 1)-gram model p &#8242; (w | u &#8242; ), where u &#8242; is the (n &#8722; 2)-gram suffix of u.</S>
+          <S ID="S-39106">That is,</S>
+        </P>
+        <P>
+          <S ID="S-39107">q u (w) = &#947;(u)p &#8242; (w | u &#8242; ),</S>
+        </P>
+        <P>
+          <S ID="S-39108">where &#947;(u) is an auxiliary function chosen to make the distribution p(w | u) in (2) sum to one.</S>
+        </P>
+        <P>
+          <S ID="S-39109">Absolute discounting chooses p &#8242; (w | u &#8242; ) to be the maximum-likelihood unigram distribution; under KN smoothing (<REF ID="R-13" RPTR="16">Kneser and Ney, 1995</REF>), it is chosen to make p in (2) satisfy the following constraint for all (n &#8722; 1)-grams u &#8242; w: &#8721; p mle (u &#8242; w) = p(w | vu &#8242; )p mle (vu &#8242; ).</S>
+          <S ID="S-39110">(5)</S>
+        </P>
+        <P>
+          <S ID="S-39111">v</S>
+        </P>
+        <P>
+          <S ID="S-39112">Substituting in the definition of p mle from (1) and p from (2) and canceling terms, we get &#8721; c(u &#8242; w) = (c(vu &#8242; w) &#8722; D)</S>
+        </P>
+        <P>
+          <S ID="S-39113">v|c(vu &#8242; w)&gt;0</S>
+        </P>
+        <P>
+          <S ID="S-39114">+</S>
+        </P>
+        <P>
+          <S ID="S-39115">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-39116">v|c(vu &#8242; w)=0</S>
+        </P>
+        <P>
+          <S ID="S-39117">n 1+ (vu &#8242; &#8226;)D&#947;(vu &#8242; )p &#8242; (w | u &#8242; ).</S>
+        </P>
+        <P>
+          <S ID="S-39118">Solving for p &#8242; (w | u &#8242; ), we have &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-39119">p &#8242; (w | u &#8242; v|c(vu ) = &#8242; w)&gt;0 1</S>
+        </P>
+        <P>
+          <S ID="S-39120">&#8721;v|c(vu &#8242; w)=0 n 1+ (vu &#8242; &#8226;)&#947;(vu &#8242; ) .</S>
+        </P>
+        <P>
+          <S ID="S-39121">Kneser and Ney assume the denominator is constant in w and renormalize to get an approximation</S>
+        </P>
+        <P>
+          <S ID="S-39122">where</S>
+        </P>
+        <P>
+          <S ID="S-39123">p &#8242; (w | u &#8242; ) &#8776; n 1+(&#8226;u &#8242; w) n 1+ (&#8226;u &#8242; &#8226;) , (6)</S>
+        </P>
+        <P>
+          <S ID="S-39124">n 1+ (&#8226;u &#8242; w) = |{v | c(vu &#8242; w) &gt; 0}| &#8721; n 1+ (&#8226;u &#8242; &#8226;) = n 1+ (&#8226;u &#8242; w).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Count distributions</HEADER>
+      <P>
+        <S ID="S-39152">w</S>
+      </P>
+      <P>
+        <S ID="S-39153">The computation of D and p &#8242; above made use of n r and n r+ , which presupposes integer counts.</S>
+        <S ID="S-39154">But in many applications, the counts are not integral, but fractional.</S>
+        <S ID="S-39155">How do we apply KN smoothing in such cases?</S>
+        <S ID="S-39156">In this section, we introduce count distributions as a way of circumventing this problem.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Definition</HEADER>
+        <P>
+          <S ID="S-39126">In the E step of EM, we compute a probability distribution (according to the current model) over all possible completions of the observed data, and the expected counts of all types, which may be fractional.</S>
+          <S ID="S-39127">However, note that in each completion of the data, the counts are integral.</S>
+          <S ID="S-39128">Although it does not make sense to compute n r or n r+ on fractional counts, it does make sense to compute them on possible completions.</S>
+        </P>
+        <P>
+          <S ID="S-39129">In other situations where fractional counts arise, we can still think of the counts as expectations under some distribution over possible &#8220;realizations&#8221; of the data.</S>
+          <S ID="S-39130">For example, if we assign a weight between zero and one to every instance in a corpus, we can interpret each instance&#8217;s weight as the probability of that instance occurring or not, yielding a distribution over possible subsets of the data.</S>
+        </P>
+        <P>
+          <S ID="S-39131">Let X be a random variable ranging over possible realizations of the data, and let c X (uw) be the count of uw in realization X.</S>
+          <S ID="S-39132">The expectation E[c X (uw)] is the familiar fractional expected count of uw, but we can also compute the probabilities p(c X (uw) = r) for any r.</S>
+          <S ID="S-39133">From now on, for brevity, we drop the subscript X and understand c(uw) to be a random variable depending on X.</S>
+          <S ID="S-39134">The n r (u&#8226;) and n r+ (u&#8226;) and related quantities also become random variables depending on X.</S>
+        </P>
+        <P>
+          <S ID="S-39135">For example, suppose that our data consists of the following bigrams, with their weights:</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Efficient computation</HEADER>
+        <P>
+          <S ID="S-39136">How to compute these probabilities and expectations depends in general on the structure of the model.</S>
+          <S ID="S-39137">If we assume that all occurrences of uw are independent (although in fact they are not always), the computation is very easy.</S>
+          <S ID="S-39138">If there are k occurrences of uw, each occurring with probability p i , the count c(uw) is distributed according to the Poisson-binomial distribution (<REF ID="R-11" RPTR="13">Hong, 2013</REF>).</S>
+          <S ID="S-39139">The expected count E[c(uw)] is just &#8721; i p i , and the distribution of c(uw) can be computed as follows:</S>
+        </P>
+        <P>
+          <S ID="S-39140">p(c(uw) = r) = s(k, r)</S>
+        </P>
+        <P>
+          <S ID="S-39141">where s(k, r) is defined by the recurrence &#9127; s(k &#8722; 1, r)(1 &#8722; p k ) &#9130;&#9128; + s(k &#8722; 1, r &#8722; 1)p k if 0 &#8804; r &#8804; k</S>
+        </P>
+        <P>
+          <S ID="S-39142">s(k, r) = 1 if k = r = 0 &#9130;&#9129; 0 otherwise.</S>
+        </P>
+        <P>
+          <S ID="S-39143">We can also compute { &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-39144">p(c(uw) &#8805; r) = max s(m, r), 1 &#8722;</S>
+        </P>
+        <P>
+          <S ID="S-39145">r &#8242; &lt;r</S>
+        </P>
+        <P>
+          <S ID="S-39146">} s(m, r &#8242; ) ,</S>
+        </P>
+        <P>
+          <S ID="S-39147">the floor operation being needed to protect against rounding errors, and we can compute &#8721; E[n r (u&#8226;)] = p(c(uw) = r)</S>
+        </P>
+        <P>
+          <S ID="S-39148">w</S>
+        </P>
+        <P>
+          <S ID="S-39149">&#8721; E[n r+ (u&#8226;)] = p(c(uw) &#8805; r).</S>
+        </P>
+        <P>
+          <S ID="S-39150">w</S>
+        </P>
+        <P>
+          <S ID="S-39151">Since, as we shall see, we only need to compute these quantities up to a small value of r (2 or 4), this takes time linear in k.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Smoothing on count distributions</HEADER>
+      <P>
+        <S ID="S-39240">We are now ready to describe how to apply KN smoothing to count distributions.</S>
+        <S ID="S-39241">Below, we recapitulate the derivation of KN smoothing presented in Section 2, using the expected log-likelihood in place of the log-likelihood and applying KN smoothing to each possible realization of the data.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Maximum likelihood estimation</HEADER>
+        <P>
+          <S ID="S-39157">The MLE objective function is the expected loglikelihood, &#9121; &#9124; &#8721; E[L] = E &#9122;&#9123; c(uw) log p(w | u) &#9125;&#9126;</S>
+        </P>
+        <P>
+          <S ID="S-39158">uw</S>
+        </P>
+        <P>
+          <S ID="S-39159">&#8721; = E[c(uw)] log p(w | u)</S>
+        </P>
+        <P>
+          <S ID="S-39160">uw</S>
+        </P>
+        <P>
+          <S ID="S-39161">whose maximum is</S>
+        </P>
+        <P>
+          <S ID="S-39162">p mle (w | u) = E[c(uw)] E[c(u&#8226;)] .</S>
+          <S ID="S-39163">(7)</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Absolute discounting</HEADER>
+        <P>
+          <S ID="S-39164">If we apply absolute discounting to every realization of the data, the expected smoothed counts are &#8721; E[&#732;c(uw)] = p(c(uw) = r)(r &#8722; D)</S>
+        </P>
+        <P>
+          <S ID="S-39165">r&gt;0</S>
+        </P>
+        <P>
+          <S ID="S-39166">+ p(c(uw) = 0)E[n 1+ (u&#8226;)]Dq u (w)</S>
+        </P>
+        <P>
+          <S ID="S-39167">= E[c(uw)] &#8722; p(c(uw) &gt; 0)D</S>
+        </P>
+        <P>
+          <S ID="S-39168">+ p(c(uw) = 0)E[n 1+ (u&#8226;)]Dq u (w) (8)</S>
+        </P>
+        <P>
+          <S ID="S-39169">where, to be precise, the expectation E[n 1+ (u&#8226;)] should be conditioned on c(uw) = 0; in practice, it seems safe to ignore this.</S>
+          <S ID="S-39170">The MLE is then</S>
+        </P>
+        <P>
+          <S ID="S-39171">p(w | u) = E[&#732;c(uw)] E[&#732;c(u&#8226;)] .</S>
+          <S ID="S-39172">(9)</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Estimating D by leaving-one-out</HEADER>
+        <P>
+          <S ID="S-39173">It would not be clear how to perform leavingone-out estimation on fractional counts, but here we have a distribution over realizations of the data, each with integral counts, and we can perform leaving-one-out estimation on each of these.</S>
+          <S ID="S-39174">In other words, our goal is to find the D that maximizes the expected leaving-one-out loglikelihood, which is just the expected value of (3):</S>
+        </P>
+        <P>
+          <S ID="S-39175">E[L loo ] = E [ &#8721; n 1 log D + rn r log(r &#8722; 1 &#8722; D) + C ]</S>
+        </P>
+        <P>
+          <S ID="S-39176">r&gt;1</S>
+        </P>
+        <P>
+          <S ID="S-39177">= E[n 1 ] log D</S>
+        </P>
+        <P>
+          <S ID="S-39178">&#8721; + rE[n r ] log(r &#8722; 1 &#8722; D) + C,</S>
+        </P>
+        <P>
+          <S ID="S-39179">r&gt;1</S>
+        </P>
+        <P>
+          <S ID="S-39180">where C is a constant not depending on D.</S>
+          <S ID="S-39181">We have made the assumption that the n r are independent.</S>
+        </P>
+        <P>
+          <S ID="S-39182">By exactly the same reasoning as before, we obtain an upper bound for D:</S>
+        </P>
+        <P>
+          <S ID="S-39183">D &#8804;</S>
+        </P>
+        <P>
+          <S ID="S-39184">E[n 1 ] E[n 1 ] + 2E[n 2 ] .</S>
+          <S ID="S-39185">(10)</S>
+        </P>
+        <P>
+          <S ID="S-39186">In our example above, D =</S>
+        </P>
+        <P>
+          <S ID="S-39187">1.52 1.52+2&#183;0.24 = 0.76.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.4 Estimating the lower-order distribution</HEADER>
+        <P>
+          <S ID="S-39188">We again require p &#8242; to satisfy the marginal constraint (5).</S>
+          <S ID="S-39189">Substituting in (7) and solving for p &#8242; as in Section 2.4, we obtain the solution</S>
+        </P>
+        <P>
+          <S ID="S-39190">p &#8242; (w | u &#8242; ) = E[n 1+(&#8226;u &#8242; w)] E[n 1+ (&#8226;u &#8242; &#8226;)] .</S>
+          <S ID="S-39191">(11)</S>
+        </P>
+        <P>
+          <S ID="S-39192">For the example above, the estimates for the unigram model p &#8242; (w) are</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.5 Extensions</HEADER>
+        <P>
+          <S ID="S-39193">p &#8242; (cat) = 0.86 0.86+0.9 &#8776; 0.489</S>
+        </P>
+        <P>
+          <S ID="S-39194">p &#8242; (dog) = 0.9 0.86+0.9 &#8776; 0.511.</S>
+        </P>
+        <P>
+          <S ID="S-39195"><REF ID="R-06" RPTR="8">Chen and Goodman (1999)</REF> introduce three extensions to Kneser-Ney smoothing which are now standard.</S>
+          <S ID="S-39196">For our experiments, we used all three, for both integral counts and count distributions.</S>
+        </P>
+        <P>
+          <S ID="S-39197">4.5.1 Interpolation In interpolated KN smoothing, the subtracted discounts are redistributed not only among unseen events but also seen events.</S>
+          <S ID="S-39198">That is,</S>
+        </P>
+        <P>
+          <S ID="S-39199">&#732;c(uw) = max{0, c(uw) &#8722; D} + n 1+ (u&#8226;)Dp &#8242; (w | u &#8242; ).</S>
+        </P>
+        <P>
+          <S ID="S-39200">In this case, &#947;(u) is always equal to one, so that q u (w) = p &#8242; (w | u &#8242; ).</S>
+          <S ID="S-39201">(Also note that (6) becomes an exact solution to the marginal constraint.</S>
+          <S ID="S-39202">) Theoretically, this requires us to derive a new estimate for D.</S>
+          <S ID="S-39203">However, as this is not trivial, nearly all implementations simply use the original estimate (4).</S>
+        </P>
+        <P>
+          <S ID="S-39204">On count distributions, the smoothed counts become</S>
+        </P>
+        <P>
+          <S ID="S-39205">E[&#732;c(uw)] = E[c(uw)] &#8722; p(c(uw) &gt; 0)D</S>
+        </P>
+        <P>
+          <S ID="S-39206">+ E[n 1+ (u&#8226;)]Dp &#8242; (w | u &#8242; ).</S>
+          <S ID="S-39207">(12)</S>
+        </P>
+        <P>
+          <S ID="S-39208">In our example, the smoothed counts are:</S>
+        </P>
+        <P>
+          <S ID="S-39209">which give the smoothed probability estimates: p(cat | fat) =</S>
+        </P>
+        <P>
+          <S ID="S-39210">0.766 0.766+0.334 = 0.696</S>
+        </P>
+        <P>
+          <S ID="S-39211">p(dog | fat) =</S>
+        </P>
+        <P>
+          <S ID="S-39212">0.334 0.766+0.334 = 0.304</S>
+        </P>
+        <P>
+          <S ID="S-39213">p(dog | big) =</S>
+        </P>
+        <P>
+          <S ID="S-39214">0.334 0.334+0.556 = 0.371</S>
+        </P>
+        <P>
+          <S ID="S-39215">p(cat | big) =</S>
+        </P>
+        <P>
+          <S ID="S-39216">0.556 0.334+0.556 = 0.629.</S>
+        </P>
+        <P>
+          <S ID="S-39217">4.5.2 Modified discounts Modified KN smoothing uses a different discount D r for each count r &lt; 3, and a discount D 3+ for counts r &#8805; 3.</S>
+          <S ID="S-39218">On count distributions, a similar argument to the above leads to the estimates:</S>
+        </P>
+        <P>
+          <S ID="S-39219">D 1 &#8804; 1 &#8722; 2Y E[n 2] E[n 1 ]</S>
+        </P>
+        <P>
+          <S ID="S-39220">D 2 &#8804; 2 &#8722; 3Y E[n 3] E[n 2 ]</S>
+        </P>
+        <P>
+          <S ID="S-39221">D 3+ &#8776; 3 &#8722; 4Y E[n 4] E[n 3 ]</S>
+        </P>
+        <P>
+          <S ID="S-39222">Y =</S>
+        </P>
+        <P>
+          <S ID="S-39223">E[n 1 ] E[n 1 ] + 2E[n 2 ] .</S>
+          <S ID="S-39224">(13)</S>
+        </P>
+        <P>
+          <S ID="S-39225">One side-effect of this change is that (6) is no longer the correct solution to the marginal constraint (<REF ID="R-26" RPTR="33">Teh, 2006</REF>; <REF ID="R-24" RPTR="30">Sundermeyer et al., 2011</REF>).</S>
+          <S ID="S-39226">Although this problem can be fixed, standard implementations simply use (6).</S>
+        </P>
+        <P>
+          <S ID="S-39227">4.5.3 Recursive smoothing In the original KN method, the lower-order model p &#8242; was estimated using (6); recursive KN smoothing applies KN smoothing to p &#8242; .</S>
+          <S ID="S-39228">To do this, we need to reconstruct counts whose MLE is (6).</S>
+          <S ID="S-39229">On integral counts, this is simple: we generate, for each n-gram type vu &#8242; w, an (n&#8722;1)-gram token u &#8242; w, for a total of n 1+ (&#8226;u &#8242; w) tokens.</S>
+          <S ID="S-39230">We then apply KN smoothing to these counts.</S>
+        </P>
+        <P>
+          <S ID="S-39231">Analogously, on count distributions, for each n- gram type vu &#8242; w, we generate an (n &#8722; 1)-gram token u &#8242; w with probability p(c(vu &#8242; w) &gt; 0).</S>
+          <S ID="S-39232">Since &#8721; E[c(u &#8242; w)] = p(c(vu &#8242; w) &gt; 0) = E[n 1+ (&#8226;u &#8242; w)],</S>
+        </P>
+        <P>
+          <S ID="S-39233">v</S>
+        </P>
+        <P>
+          <S ID="S-39234">this has (11) as its MLE and therefore satisfies the marginal constraint.</S>
+          <S ID="S-39235">We then apply expected KN smoothing to these count distributions.</S>
+        </P>
+        <P>
+          <S ID="S-39236">For the example above, the count distributions used for the unigram distribution would be:</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.6 Summary</HEADER>
+        <P>
+          <S ID="S-39237">The computational complexity of expected KN is almost identical to KN on integral counts.</S>
+          <S ID="S-39238">The main addition is computing and storing the count distributions.</S>
+          <S ID="S-39239">Using the dynamic program in Section 3.2, computing the distributions for each r is linear in the number of n-gram types, and we only need to compute the distributions up to r = 2 (or r = 4 for modified KN), and store them for r = 0 (or up to r = 2 for modified KN).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Related Work</HEADER>
+      <P>
+        <S ID="S-39242">Witten-Bell (WB) smoothing is somewhat easier than KN to adapt to fractional counts.</S>
+        <S ID="S-39243">The SRI- LM toolkit (<REF ID="R-23" RPTR="29">Stolcke, 2002</REF>) implements a method which we call fractional WB:</S>
+      </P>
+      <P>
+        <S ID="S-39244">p(w | u) = &#955;(u)p mle (w | u) + (1 &#8722; &#955;(u))p &#8242; (w | u &#8242; ) E[c(u)]</S>
+      </P>
+      <P>
+        <S ID="S-39245">&#955;(u) = E[c(u)] + n 1+ (u&#8226;) ,</S>
+      </P>
+      <P>
+        <S ID="S-39246">where n 1+ (u&#8226;) is the number of word types observed after context u, computed by ignoring all weights.</S>
+        <S ID="S-39247">This method, although simple, inconsistently uses weights for counting tokens but not types.</S>
+        <S ID="S-39248">Moreover, as we will see below, it does not perform as well as expected KN.</S>
+      </P>
+      <P>
+        <S ID="S-39249">The only previous adaptation of KN smoothing to fractional counts that we are aware of is that of <REF ID="R-25" RPTR="31">Tam and Schultz (2008)</REF> and <REF ID="R-02" RPTR="4">Bisani and Ney (2008)</REF>, called fractional KN.</S>
+        <S ID="S-39250">This method subtracts D directly from the fractional counts, zeroing out counts that are smaller than D.</S>
+        <S ID="S-39251">The discount D must be set by minimizing an error metric on held-out data using a line search (Tam, p.</S>
+        <S ID="S-39252">c.</S>
+        <S ID="S-39253">) or Powell&#8217;s method (<REF ID="R-02" RPTR="3">Bisani and Ney, 2008</REF>), requiring repeated estimation and evaluation of the language model.</S>
+        <S ID="S-39254">By contrast, we choose D by leaving-oneout.</S>
+        <S ID="S-39255">Like KN on integral counts, our method has a closed-form approximation and requires neither held-out data nor trial and error.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Language model adaptation</HEADER>
+      <P>
+        <S ID="S-39292">N-gram language models are widely used in applications like machine translation and speech recognition to select fluent output sentences.</S>
+        <S ID="S-39293">Although they can easily be trained on large amounts of data, in order to perform well, they should be trained on data containing the right kind of language.</S>
+        <S ID="S-39294">For example, if we want to model spoken language, then we should train on spoken language data.</S>
+        <S ID="S-39295">If we train on newswire, then a spoken sentence might be regarded as ill-formed, because the distribution of sentences in these two domains are very different.</S>
+        <S ID="S-39296">In practice, we often have limited-size training data from a specific domain, and large amounts of data consisting of language from a variety of domains (we call this general-domain data).</S>
+        <S ID="S-39297">How can we utilize the large general-domain dataset to help us train a model on a specific domain?</S>
+      </P>
+      <P>
+        <S ID="S-39298">Many methods (<REF ID="R-17" RPTR="20">Lin et al., 1997</REF>; <REF ID="R-08" RPTR="10">Gao et al., 2002</REF>; <REF ID="R-12" RPTR="14">Klakow, 2000</REF>; <REF ID="R-18" RPTR="23">Moore and Lewis, 2010</REF>; <REF ID="R-01" RPTR="1">Axelrod et al., 2011</REF>) rank sentences in the generaldomain data according to their similarity to the in-domain data and select only those with score higher than some threshold.</S>
+        <S ID="S-39299">Such methods are effective and widely used.</S>
+        <S ID="S-39300">However, sometimes it is hard to say whether a sentence is totally in-domain or out-of-domain; for example, quoted speech in a news report might be partly in-domain if the domain of interest is broadcast conversation.</S>
+        <S ID="S-39301">Here, we propose to assign each sentence a probability to indicate how likely it is to belong to the domain of interest, and train a language model using expected KN smoothing.</S>
+        <S ID="S-39302">We show that this approach yields models with much better perplexity than the original sentence-selection approach.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Method</HEADER>
+        <P>
+          <S ID="S-39256">One of the most widely used sentence-selection approaches is that of <REF ID="R-18" RPTR="21">Moore and Lewis (2010)</REF>.</S>
+          <S ID="S-39257">They first train two language models, p in on a set of in-domain data, and p out on a set of generaldomain data.</S>
+          <S ID="S-39258">Then each sentence w is assigned a score</S>
+        </P>
+        <P>
+          <S ID="S-39259">H(w) = log(p in(w)) &#8722; log(p out (w)) .</S>
+          <S ID="S-39260">|w| They set a threshold on the score to select a subset.</S>
+        </P>
+        <P>
+          <S ID="S-39261">We adapt this approach as follows.</S>
+          <S ID="S-39262">After selection, for each sentence in the subset, we use a sigmoid function to map the scores into probabilities:</S>
+        </P>
+        <P>
+          <S ID="S-39263">p(w is in-domain) = 1 1 + exp(&#8722;H(w)) .</S>
+        </P>
+        <P>
+          <S ID="S-39264">perplexity 260</S>
+        </P>
+        <P>
+          <S ID="S-39265">160 .</S>
+        </P>
+        <P>
+          <S ID="S-39266">140 .</S>
+          <S ID="S-39267">0</S>
+        </P>
+        <P>
+          <S ID="S-39268">.</S>
+          <S ID="S-39269">.</S>
+          <S ID="S-39270">fractional KN .</S>
+          <S ID="S-39271">.</S>
+          <S ID="S-39272">fractional WB .</S>
+          <S ID="S-39273">.</S>
+          <S ID="S-39274">integral KN .</S>
+          <S ID="S-39275">.</S>
+          <S ID="S-39276">expected KN</S>
+        </P>
+        <P>
+          <S ID="S-39277">0.2 0.4 0.6 0.8</S>
+        </P>
+        <P>
+          <S ID="S-39278">sentences selected (&#215;10 7 )</S>
+        </P>
+        <P>
+          <S ID="S-39279">1.2 1.4</S>
+        </P>
+        <P>
+          <S ID="S-39280">Then we use the weighted subset to train a language model with expected KN smoothing.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Experiments</HEADER>
+        <P>
+          <S ID="S-39281"><REF ID="R-18" RPTR="22">Moore and Lewis (2010)</REF> test their method by partitioning the in-domain data into training data and test data, both of which are disjoint from the general-domain data.</S>
+          <S ID="S-39282">They use the in-domain training data to select a subset of the generaldomain data, build a language model on the selected subset, and evaluate its perplexity on the indomain test data.</S>
+          <S ID="S-39283">Here, we follow this experimental framework and compare Moore and Lewis&#8217;s unweighted method to our weighted method.</S>
+          <S ID="S-39284">For our experiments, we used all the English data allowed for the BOLT Phase 1 Chinese- English evaluation.</S>
+          <S ID="S-39285">We took 60k sentences (1.7M words) of web forum data as in-domain data, further subdividing it into 54k sentences (1.5M words) for training, 3k sentences (100k words) for testing, and 3k sentences (100k words) for future use.</S>
+          <S ID="S-39286">The remaining 12.7M sentences (268M words) we treated as general-domain data.</S>
+        </P>
+        <P>
+          <S ID="S-39287">We trained trigram language models and compared expected KN smoothing against integral KN smoothing, fractional WB smoothing, and fractional KN smoothing, measuring perplexity across various subset sizes (Figure 1).</S>
+          <S ID="S-39288">For fractional KN, for each subset size, we optimized D to mini-</S>
+        </P>
+        <P>
+          <S ID="S-39289">mize perplexity on the test set to give it the greatest possible advantage; nevertheless, it is clearly the worst performer.</S>
+          <S ID="S-39290">Expected KN consistently gives the best perplexity, and, at the optimal subset size, obtains better perplexity (148) than the other methods (156 for integral KN, 162 for fractional WB and 197 for fractional KN).</S>
+          <S ID="S-39291">Finally, we note that integral KN is very sensitive to the subset size, whereas expected KN and the other methods are more robust.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Word Alignment</HEADER>
+      <P>
+        <S ID="S-39374">In this section, we show how to apply expected KN to the IBM word alignment models (Brown et al., 1993).</S>
+        <S ID="S-39375">This illustrates both how to use expected KN inside EM and how to use it beyond language modeling.</S>
+        <S ID="S-39376">Of course, expected KN can be applied to other instances of EM besides word alignment.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>7.1 Problem</HEADER>
+        <P>
+          <S ID="S-39303">Given a French sentence f = f 1 f 2 &#183; &#183; &#183; f m and its English translation e = e 1 e 2 &#183; &#183; &#183; e n , an alignment a is a sequence a 1 , a 2 , .</S>
+          <S ID="S-39304">.</S>
+          <S ID="S-39305">.</S>
+          <S ID="S-39306">, a m , where a i is the index of the English word which generates the French word f i , or NULL.</S>
+          <S ID="S-39307">As is common, we assume that each French word can only be generated from one English word or from NULL (Brown et al., 1993; <REF ID="R-20" RPTR="26">Och and Ney, 2003</REF>; Vogel et al., 1996).</S>
+        </P>
+        <P>
+          <S ID="S-39308">The IBM models and related models define probability distributions p(a, f | e, &#952;), which model how likely a French sentence f is to be generated from an English sentence e with word alignment a.</S>
+          <S ID="S-39309">Different models parameterize this probability distribution in different ways.</S>
+          <S ID="S-39310">For example, Model 1 only models the lexical translation probabilities:</S>
+        </P>
+        <P>
+          <S ID="S-39311">p(a, f | e, &#952;) &#8733; m&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-39312">p( f j | e a j ).</S>
+        </P>
+        <P>
+          <S ID="S-39313">j=1</S>
+        </P>
+        <P>
+          <S ID="S-39314">Models 2&#8211;5 and the HMM model introduce additional components to model word order and fertility.</S>
+          <S ID="S-39315">All, however, have the lexical translation model p( f j | e i ) in common.</S>
+          <S ID="S-39316">It also contains most of the model&#8217;s parameters and is where overfitting occurs most.</S>
+          <S ID="S-39317">Thus, here we only apply KN smoothing to the lexical translation probabilities, leaving the other model components for future work.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>7.2 Method</HEADER>
+        <P>
+          <S ID="S-39318">The f and e are observed, while a is a latent variable.</S>
+          <S ID="S-39319">Normally, in the E step, we collect expected counts E[c(e, f )] for each e and f .</S>
+          <S ID="S-39320">Then, in the M step, we find the parameter values that maximize their likelihood.</S>
+          <S ID="S-39321">However, MLE is prone to overfitting, one symptom of which is the &#8220;garbage collection&#8221; phenomenon where a rare English word is wrongly aligned to many French words.</S>
+        </P>
+        <P>
+          <S ID="S-39322">To reduce overfitting, we use expected KN smoothing during the M step.</S>
+          <S ID="S-39323">That is, during the E step, we calculate the distribution of c(e, f ) for each e and f , and during the M step, we train a language model on bigrams e f using expected KN smoothing (that is, with u = e and w = f ).</S>
+          <S ID="S-39324">This gives a smoothed probability estimate for p( f | e).</S>
+        </P>
+        <P>
+          <S ID="S-39325">One question that arises is: what distribution to use as the lower-order distribution p &#8242; ?</S>
+          <S ID="S-39326">Following common practice in language modeling, we use the unigram distribution p( f ) as the lower-order distribution.</S>
+          <S ID="S-39327">We could also use the uniform distribution over word types, or a distribution that assigns zero probability to all known word types.</S>
+          <S ID="S-39328">(The latter case is equivalent to a backoff language model, where, since all bigrams are known, the lower-order model is never used.</S>
+          <S ID="S-39329">) Below, we compare the performance of all three choices.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>7.3 Alignment experiments</HEADER>
+        <P>
+          <S ID="S-39330">We modified GIZA++ (<REF ID="R-20" RPTR="27">Och and Ney, 2003</REF>) to perform expected KN smoothing as described above.</S>
+          <S ID="S-39331">Smoothing is enabled or disabled with a command-line switch, making direct comparisons simple.</S>
+          <S ID="S-39332">Our implementation is publicly available as open-source software.</S>
+          <S ID="S-39333">1 We carried out experiments on two language pairs: Arabic to English and Czech to English.</S>
+          <S ID="S-39334">For Arabic-English, we used 5.4+4.3 million words of parallel text from the NIST 2009 constrained task, 2 and 346 word-aligned sentence pairs (LDC2006E86) for evaluation.</S>
+          <S ID="S-39335">For Czech- English, we used all 2.0+2.2 million words of training data from the WMT 2009 shared task, and 515 word-aligned sentence pairs (<REF ID="R-03" RPTR="5">Bojar and Prokopov&#225;, 2006</REF>) for evaluation.</S>
+        </P>
+        <P>
+          <S ID="S-39336">For all methods, we used five iterations of IBM Models 1, 2, and HMM, followed by three iterations of IBM Models 3 and 4.</S>
+          <S ID="S-39337">We applied expected KN smoothing to all iterations of all models.</S>
+          <S ID="S-39338">We aligned in both the foreign-to-English</S>
+        </P>
+        <P>
+          <S ID="S-39339">1 https://github.com/hznlp/giza-kn 2 All data was used except for: United Nations proceedings (LDC2004E13), ISI Automatically Extracted Parallel Text (LDC2007E08), and Ummah newswire text (LDC2004T18).</S>
+        </P>
+        <P>
+          <S ID="S-39340">and English-to-foreign directions and then used the grow-diag-final method to symmetrize them (<REF ID="R-14" RPTR="17">Koehn et al., 2003</REF>), and evaluated the alignments using F-measure against gold word alignments.</S>
+        </P>
+        <P>
+          <S ID="S-39341">As shown in Table 1, for KN smoothing, interpolation with the unigram distribution performs the best, while for WB smoothing, interestingly, interpolation with the uniform distribution performs the best.</S>
+          <S ID="S-39342">The difference can be explained by the way the two smoothing methods estimate p &#8242; .</S>
+          <S ID="S-39343">Consider again a training example with a word e that occurs nowhere else in the training data.</S>
+          <S ID="S-39344">In WB smoothing, p &#8242; ( f ) is the empirical unigram distribution.</S>
+          <S ID="S-39345">If f contains a word that is much more frequent than the correct translation of e, then smoothing may actually encourage the model to wrongly align e with the frequent word.</S>
+          <S ID="S-39346">This is much less of a problem in KN smoothing, where p &#8242; is estimated from bigram types rather than bigram tokens.</S>
+          <S ID="S-39347">We also compared with variational Bayes (Riley and Gildea, 2012) and fractional KN.</S>
+          <S ID="S-39348">Overall, expected KN performs the best.</S>
+          <S ID="S-39349">Variational Bayes is not consistent across different language pairs.</S>
+          <S ID="S-39350">While fractional KN does beat the baseline for both language pairs, the value of D, which we optimized D to maximize F1, is not consistent across language pairs: as shown in Figure 2, on Arabic- English, a smaller D is better, while for Czech- English, a larger D is better.</S>
+          <S ID="S-39351">By contrast, expected KN uses a closed-form expression for D that outperforms the best performance of fractional KN.</S>
+        </P>
+        <P>
+          <S ID="S-39352">Table 2 shows that, if we apply expected KN smoothing to only selected stages of training, adding smoothing always brings an improvement,</S>
+        </P>
+        <P>
+          <S ID="S-39353">alignment F1 72</S>
+        </P>
+        <P>
+          <S ID="S-39354">64 .</S>
+        </P>
+        <P>
+          <S ID="S-39355">0</S>
+        </P>
+        <P>
+          <S ID="S-39356">.</S>
+          <S ID="S-39357">.</S>
+          <S ID="S-39358">Cze-Eng .</S>
+          <S ID="S-39359">.</S>
+          <S ID="S-39360">Ara-Eng</S>
+        </P>
+        <P>
+          <S ID="S-39361">0.2 0.4</S>
+        </P>
+        <P>
+          <S ID="S-39362">D</S>
+        </P>
+        <P>
+          <S ID="S-39363">0.6 0.8</S>
+        </P>
+        <P>
+          <S ID="S-39364">with the best setting being to smooth all stages.</S>
+          <S ID="S-39365">This shows that expected KN smoothing is consistently effective.</S>
+          <S ID="S-39366">It is also interesting to note that smoothing is less helpful for the fertility-based Models 3 and 4.</S>
+          <S ID="S-39367">Whether this is because modeling fertility makes them less susceptible to &#8220;garbage collection,&#8221; or the way they approximate the E step makes them less amenable to smoothing, or another reason, would require further investigation.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>7.4 Translation experiments</HEADER>
+        <P>
+          <S ID="S-39368">Finally, we ran MT experiments to see whether the improved alignments also lead to improved translations.</S>
+          <S ID="S-39369">We used the same training data as before.</S>
+          <S ID="S-39370">For the Arabic-English tasks, we used the NIST 2008 test set as development data and the NIST 2009 test set as test data; for the Czech-English tasks, we used the WMT 2008 test set as development data and the WMT 2009 test set as test data.</S>
+        </P>
+        <P>
+          <S ID="S-39371">We used the Moses toolkit (<REF ID="R-16" RPTR="19">Koehn et al., 2007</REF>) to build MT systems using various alignments (for expected KN, we used the one interpolated with the unigram distribution, and for fractional WB, we used the one interpolated with the uniform distribution).</S>
+          <S ID="S-39372">We used a trigram language model trained on Gigaword (AFP, AP Worldstream, CNA, and Xinhua portions), and minimum error-rate training (<REF ID="R-21" RPTR="28">Och, 2003</REF>) to tune the feature weights.</S>
+        </P>
+        <P>
+          <S ID="S-39373">Table 1 shows that, although the relationship between alignment F1 and Bleu is not very consistent, expected KN smoothing achieves the best Bleu among all these methods and is significantly better than the baseline (p &lt; 0.01).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>8 Conclusion</HEADER>
+      <P>
+        <S ID="S-39377">For a long time, and as noted by many authors, the usage of KN smoothing has been limited by its restriction to integer counts.</S>
+        <S ID="S-39378">In this paper, we addressed this issue by treating fractional counts as distributions over integer counts and generalizing KN smoothing to operate on these distributions.</S>
+        <S ID="S-39379">This generalization makes KN smoothing, widely considered to be the best-performing smoothing method, applicable to many new areas.</S>
+        <S ID="S-39380">We have demonstrated the effectiveness of our method in two such areas and showed significant improvements in both.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-39381">We thank Qing Dou, Ashish Vaswani, Wilson Yik- Cheung Tam, and the anonymous reviewers for their input to this work.</S>
+      <S ID="S-39382">This research was supported in part by DOI IBC grant D12AP00225.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Jes&#250;s Andr&#233;s-Ferrer</RAUTHOR>
+      <REFTITLE>Statistical approaches for natural language modelling and monotone statistical machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Amittai Axelrod</RAUTHOR>
+      <REFTITLE>Domain adaptation via pseudo in-domain data selection.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Maximilian Bisani</RAUTHOR>
+      <REFTITLE>Jointsequence models for grapheme-to-phoneme conversion.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Ondr&#283;j Bojar</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>F Brown</RAUTHOR>
+      <REFTITLE>Czech-English word alignment. In</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Della Pietra</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: Parameter estimation. Computational Linguistics,</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Stanley F Chen</RAUTHOR>
+      <REFTITLE>An empirical study of smoothing techniques for language modeling. Computer Speech and Language,</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>A P Dempster</RAUTHOR>
+      <REFTITLE>Maximum likelihood from incomplete data via the EM algorithm.</REFTITLE>
+      <DATE>1977</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Jianfeng Gao</RAUTHOR>
+      <REFTITLE>Toward a unified approach to statistical language modeling for Chinese.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Joshua T Goodman</RAUTHOR>
+      <REFTITLE>A bit of progress in language modeling: Extended version.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Joshua Goodman</RAUTHOR>
+      <REFTITLE>Exponential priors for maximum entropy models.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Yili Hong</RAUTHOR>
+      <REFTITLE>On computing the distribution function for the Poisson binomial distribution.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Dietrich Klakow</RAUTHOR>
+      <REFTITLE>Selecting articles from the language model training corpus.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Kneser</RAUTHOR>
+      <REFTITLE>Improved backing-off for M-gram language modeling.</REFTITLE>
+      <DATE>1995</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Joern Wuebker</RAUTHOR>
+      <REFTITLE>Leave-one-out phrase model training for large-scale deployment.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: Open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Sung-Chien Lin</RAUTHOR>
+      <REFTITLE>Chinese language model adaptation based on document classification and multiple domain-specific language models.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Robert Moore</RAUTHOR>
+      <REFTITLE>Intelligent selection of language model training data. In</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Hermann Ney</RAUTHOR>
+      <REFTITLE>On structuring probabilistic dependencies in stochastic language modelling.</REFTITLE>
+      <DATE>1994</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Darcey Riley</RAUTHOR>
+      <REFTITLE>Improving the IBM alignment models using variational Bayes.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>SRILM &#8211; an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Martin Sundermeyer</RAUTHOR>
+      <REFTITLE>On the estimation of discount parameters for language model smoothing. In</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Yik-Cheung Tam</RAUTHOR>
+      <REFTITLE>Correlated bigram LSA for unsupervised language model adaptation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Yee Whye Teh</RAUTHOR>
+      <REFTITLE>A hierarchical Bayesian language model based on Pitman-Yor processes.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

@@ -1,0 +1,2336 @@
+<document>
+  <filename>P08-1045</filename>
+  <authors>
+    <author>Ulf Hermjakob</author>
+    <author>Kevin Knight</author>
+  </authors>
+  <title>Name Translation in Statistical Machine Translation Learning When to Transliterate</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>We present a method to transliterate names in the framework of end-to-end statistical machine translation. The system is trained to learn when to transliterate. For Arabic to English MT, we developed and trained a transliterator on a bitext of 7 million sentences and Google&#8217;s English terabyte ngrams and achieved better name translation accuracy than 3 out of 4 professional translators. The paper also includes a discussion of challenges in name translation evaluation.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We present a method to transliterate names in the framework of end-to-end statistical machine translation.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The system is trained to learn when to transliterate.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For Arabic to English MT, we developed and trained a transliterator on a bitext of 7 million sentences and Google&#8217;s English terabyte ngrams and achieved better name translation accuracy than 3 out of 4 professional translators.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The paper also includes a discussion of challenges in name translation evaluation.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>State-of-the-art statistical machine translation (SMT) is bad at translating names that are not very common, particularly across languages with different character sets and sound systems. For example, consider the following automatic translation: 1
+Arabic input &#224;A&#7730;&#241;&#402;&#240;  P@ P&#241;&#211;&#240; pA&#7730; &#201;  J&#211; &#225;JJ &#174;J&#402;&#241;&#211;
+&#201;J&#175;@P&#240; &#172;&#241; JJKA&#210;kP&#240; &#224;A&#211;&#241; &#402;&#240; &#225; &#175;&#241;&#234;  JJ&#7730;&#240; &#173;JJ&#175;&#241;&#187;&#240;Q&#7730;&#240;
+SMT output musicians such as Bach
+Correct translation composers such as Bach, Mozart, Chopin, Beethoven, Schumann, Rachmaninoff, Ravel and Prokofiev
+The SMT system drops most names in this example. &#8220;Name dropping&#8221; and mis-translation happens when the system encounters an unknown word, mistakes a name for a common noun, or trains on noisy parallel data. The state-of-the-art is poor for
+1 taken from NIST02-05 corpora
+two reasons. First, although names are important to human readers, automatic MT scoring metrics (such as BLEU) do not encourage researchers to improve name translation in the context of MT. Names are vastly outnumbered by prepositions, articles, adjectives, common nouns, etc. Second, name translation is a hard problem &#8212; even professional human translators have trouble with names. Here are four reference translations taken from the same corpus, with mistakes underlined:
+Ref1 composers such as Bach, missing name Chopin, Beethoven, Shumann, Rakmaninov, Ravel and Prokoviev
+Ref2 musicians such as Bach, Mozart, Chopin, Bethoven, Shuman, Rachmaninoff, Rafael and Brokoviev
+Ref3 composers including Bach, Mozart, Schopen, Beethoven, missing name Raphael, Rahmaniev and Brokofien
+Ref4 composers such as Bach, Mozart, missing name Beethoven, Schumann, Rachmaninov, Raphael and Prokofiev
+The task of transliterating names (independent of end-to-end MT) has received a significant amount of research, e.g., (Knight and Graehl, 1997; Chen et al., 1998; Al-Onaizan, 2002). One approach is to &#8220;sound out&#8221; words and create new, plausible targetlanguage spellings that preserve the sounds of the source-language name as much as possible. Another approach is to phonetically match source-language names against a large list of target-language words
+and phrases. Most of this work has been disconnected from end-to-end MT, a problem which we address head-on in this paper.
+The simplest way to integrate name handling into SMT is: (1) run a named-entity identification system on the source sentence, (2) transliterate identified entities with a special-purpose transliteration component, and (3) run the SMT system on the source sentence, as usual, but when looking up phrasal translations for the words identified in step 1, instead use the transliterations from step 2.
+Many researchers have attempted this, and it does not work. Typically, translation quality is degraded rather than improved, for the following reasons:
+Automatic named-entity identification makes errors. Some words and phrases that should not be transliterated are nonetheless sent to the transliteration component, which returns a bad translation.
+Not all named entities should be transliterated. Many named entities require a mix of transliteration and translation. For example, in the pair
+AJKP&#241; &#174;J&#203;A&#187; &#7716;&#241; Jk. /jnub kalyfurnya/Southern
+California, the first Arabic word is translated, and the second word is transliterated.
+Transliteration components make errors. The base SMT system may translate a commonlyoccurring name just fine, due to the bitext it was trained on, while the transliteration component can easily supply a worse answer.
+Integration hobbles SMT&#8217;s use of longer phrases. Even if the named-entity identification and transliteration components operate perfectly, adopting their translations means that the SMT system may no longer have access to longer phrases that include the name. For example, our base SMT system translates &#65533;J KP
+&#169; J&#7730; &#249;&#203; Z@P P&#241;&#203;@ (as a whole phrase) to &#8220;Premier Li Peng&#8221;, based on its bitext knowledge. However, if we force &#169; J &#7730; &#249; &#203; to translate as a separate phrase to &#8220;Li Peng&#8221;, then the term
+Z@P P&#241;&#203;@ &#65533;J KP  becomes ambiguous (with translations including &#8220;Prime Minister&#8221;, &#8220;Premier&#8221;, etc.), and we observe incorrect choices being subsequently made.
+To spur better work in name handling, an ACE entity-translation pilot evaluation was recently developed (Day, 2007). This evaluation involves a mixture of entity identification and translation concerns&#8212;for example, the scoring system asks for coreference determination, which may or may not be of interest for improving machine translation output.
+In this paper, we adopt a simpler metric. We ask: what percentage of source-language named entities are translated correctly? This is a precision metric. We can readily apply it to any base SMT system, and to human translations as well. Our goal in augmenting a base SMT system is to increase this percentage. A secondary goal is to make sure that our overall translation quality (as measured by BLEU) does not degrade as a result of the name-handling techniques we introduce. We make all our measurements on an Arabic/English newswire translation task.
+Our overall technical approach is summarized here, along with references to sections of this paper:
+We build a component for transliterating between Arabic and English (Section 3).
+We automatically learn to tag those words and phrases in Arabic text, which we believe the transliteration component will translate correctly (Section 4).
+We integrate suggested transliterations into the base SMT search space, with their use controlled by a feature function (Section 5).
+We evaluate both the base SMT system and the augmented system in terms of entity translation accuracy and BLEU (Sections 2 and 6).</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>State-of-the-art statistical machine translation (SMT) is bad at translating names that are not very common, particularly across languages with different character sets and sound systems.</text>
+              <doc_id>4</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, consider the following automatic translation: 1</text>
+              <doc_id>5</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Arabic input &#224;A&#7730;&#241;&#402;&#240;  P@ P&#241;&#211;&#240; pA&#7730; &#201;  J&#211; &#225;JJ &#174;J&#402;&#241;&#211;</text>
+              <doc_id>6</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#201;J&#175;@P&#240; &#172;&#241; JJKA&#210;kP&#240; &#224;A&#211;&#241; &#402;&#240; &#225; &#175;&#241;&#234;  JJ&#7730;&#240; &#173;JJ&#175;&#241;&#187;&#240;Q&#7730;&#240;</text>
+              <doc_id>7</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>SMT output musicians such as Bach</text>
+              <doc_id>8</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Correct translation composers such as Bach, Mozart, Chopin, Beethoven, Schumann, Rachmaninoff, Ravel and Prokofiev</text>
+              <doc_id>9</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The SMT system drops most names in this example.</text>
+              <doc_id>10</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>&#8220;Name dropping&#8221; and mis-translation happens when the system encounters an unknown word, mistakes a name for a common noun, or trains on noisy parallel data.</text>
+              <doc_id>11</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The state-of-the-art is poor for</text>
+              <doc_id>12</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 taken from NIST02-05 corpora</text>
+              <doc_id>13</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>two reasons.</text>
+              <doc_id>14</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>First, although names are important to human readers, automatic MT scoring metrics (such as BLEU) do not encourage researchers to improve name translation in the context of MT.</text>
+              <doc_id>15</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Names are vastly outnumbered by prepositions, articles, adjectives, common nouns, etc. Second, name translation is a hard problem &#8212; even professional human translators have trouble with names.</text>
+              <doc_id>16</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Here are four reference translations taken from the same corpus, with mistakes underlined:</text>
+              <doc_id>17</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Ref1 composers such as Bach, missing name Chopin, Beethoven, Shumann, Rakmaninov, Ravel and Prokoviev</text>
+              <doc_id>18</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Ref2 musicians such as Bach, Mozart, Chopin, Bethoven, Shuman, Rachmaninoff, Rafael and Brokoviev</text>
+              <doc_id>19</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Ref3 composers including Bach, Mozart, Schopen, Beethoven, missing name Raphael, Rahmaniev and Brokofien</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Ref4 composers such as Bach, Mozart, missing name Beethoven, Schumann, Rachmaninov, Raphael and Prokofiev</text>
+              <doc_id>21</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The task of transliterating names (independent of end-to-end MT) has received a significant amount of research, e.g., (Knight and Graehl, 1997; Chen et al., 1998; Al-Onaizan, 2002).</text>
+              <doc_id>22</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>One approach is to &#8220;sound out&#8221; words and create new, plausible targetlanguage spellings that preserve the sounds of the source-language name as much as possible.</text>
+              <doc_id>23</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Another approach is to phonetically match source-language names against a large list of target-language words</text>
+              <doc_id>24</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>and phrases.</text>
+              <doc_id>25</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Most of this work has been disconnected from end-to-end MT, a problem which we address head-on in this paper.</text>
+              <doc_id>26</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The simplest way to integrate name handling into SMT is: (1) run a named-entity identification system on the source sentence, (2) transliterate identified entities with a special-purpose transliteration component, and (3) run the SMT system on the source sentence, as usual, but when looking up phrasal translations for the words identified in step 1, instead use the transliterations from step 2.</text>
+              <doc_id>27</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Many researchers have attempted this, and it does not work.</text>
+              <doc_id>28</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Typically, translation quality is degraded rather than improved, for the following reasons:</text>
+              <doc_id>29</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Automatic named-entity identification makes errors.</text>
+              <doc_id>30</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Some words and phrases that should not be transliterated are nonetheless sent to the transliteration component, which returns a bad translation.</text>
+              <doc_id>31</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Not all named entities should be transliterated.</text>
+              <doc_id>32</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Many named entities require a mix of transliteration and translation.</text>
+              <doc_id>33</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, in the pair</text>
+              <doc_id>34</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>AJKP&#241; &#174;J&#203;A&#187; &#7716;&#241; Jk.</text>
+              <doc_id>35</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>/jnub kalyfurnya/Southern</text>
+              <doc_id>36</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>California, the first Arabic word is translated, and the second word is transliterated.</text>
+              <doc_id>37</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Transliteration components make errors.</text>
+              <doc_id>38</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The base SMT system may translate a commonlyoccurring name just fine, due to the bitext it was trained on, while the transliteration component can easily supply a worse answer.</text>
+              <doc_id>39</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Integration hobbles SMT&#8217;s use of longer phrases.</text>
+              <doc_id>40</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Even if the named-entity identification and transliteration components operate perfectly, adopting their translations means that the SMT system may no longer have access to longer phrases that include the name.</text>
+              <doc_id>41</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, our base SMT system translates &#65533;J KP</text>
+              <doc_id>42</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#169; J&#7730; &#249;&#203; Z@P P&#241;&#203;@ (as a whole phrase) to &#8220;Premier Li Peng&#8221;, based on its bitext knowledge.</text>
+              <doc_id>43</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, if we force &#169; J &#7730; &#249; &#203; to translate as a separate phrase to &#8220;Li Peng&#8221;, then the term</text>
+              <doc_id>44</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Z@P P&#241;&#203;@ &#65533;J KP  becomes ambiguous (with translations including &#8220;Prime Minister&#8221;, &#8220;Premier&#8221;, etc.), and we observe incorrect choices being subsequently made.</text>
+              <doc_id>45</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>To spur better work in name handling, an ACE entity-translation pilot evaluation was recently developed (Day, 2007).</text>
+              <doc_id>46</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This evaluation involves a mixture of entity identification and translation concerns&#8212;for example, the scoring system asks for coreference determination, which may or may not be of interest for improving machine translation output.</text>
+              <doc_id>47</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we adopt a simpler metric.</text>
+              <doc_id>48</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We ask: what percentage of source-language named entities are translated correctly?</text>
+              <doc_id>49</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is a precision metric.</text>
+              <doc_id>50</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We can readily apply it to any base SMT system, and to human translations as well.</text>
+              <doc_id>51</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our goal in augmenting a base SMT system is to increase this percentage.</text>
+              <doc_id>52</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>A secondary goal is to make sure that our overall translation quality (as measured by BLEU) does not degrade as a result of the name-handling techniques we introduce.</text>
+              <doc_id>53</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>We make all our measurements on an Arabic/English newswire translation task.</text>
+              <doc_id>54</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our overall technical approach is summarized here, along with references to sections of this paper:</text>
+              <doc_id>55</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We build a component for transliterating between Arabic and English (Section 3).</text>
+              <doc_id>56</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We automatically learn to tag those words and phrases in Arabic text, which we believe the transliteration component will translate correctly (Section 4).</text>
+              <doc_id>57</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We integrate suggested transliterations into the base SMT search space, with their use controlled by a feature function (Section 5).</text>
+              <doc_id>58</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We evaluate both the base SMT system and the augmented system in terms of entity translation accuracy and BLEU (Sections 2 and 6).</text>
+              <doc_id>59</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Evaluation</title>
+        <text>In this section we present the evaluation method that we use to measure our system and also discuss challenges in name transliteration evaluation.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this section we present the evaluation method that we use to measure our system and also discuss challenges in name transliteration evaluation.</text>
+              <doc_id>60</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 NEWA Evaluation Metric</title>
+            <text>General MT metrics such as BLEU, TER, METEOR are not suitable for evaluating named entity translationand transliteration, because they are not focused on named entities (NEs). Dropping a comma or a the is penalized as much as dropping a name. We therefore use another metric, jointly developed with BBN and LanguageWeaver.
+The general idea of the Named Entity Weak Accuracy (NEWA) metric is to
+Count number of NEs in source text: N  Count number of correctly translated NEs: C  Divide C/N to get an accuracy figure
+In NEWA, an NE is counted as correctly translated if the target reference NE is found in the MT output. The metric has the advantage that it is easy to compute, has no special requirements on an MT system (such as depending on source-target word alignment) and is tokenization independent.
+In the result section of this paper, we will use the NEWA metric to measure and compare the accuracy of NE translations in our end-to-end SMT translations and four human reference translations.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>General MT metrics such as BLEU, TER, METEOR are not suitable for evaluating named entity translationand transliteration, because they are not focused on named entities (NEs).</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Dropping a comma or a the is penalized as much as dropping a name.</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We therefore use another metric, jointly developed with BBN and LanguageWeaver.</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The general idea of the Named Entity Weak Accuracy (NEWA) metric is to</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Count number of NEs in source text: N  Count number of correctly translated NEs: C  Divide C/N to get an accuracy figure</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In NEWA, an NE is counted as correctly translated if the target reference NE is found in the MT output.</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The metric has the advantage that it is easy to compute, has no special requirements on an MT system (such as depending on source-target word alignment) and is tokenization independent.</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In the result section of this paper, we will use the NEWA metric to measure and compare the accuracy of NE translations in our end-to-end SMT translations and four human reference translations.</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 Annotated Corpus</title>
+            <text>BBN kindly provided us with an annotated Arabic text corpus, in which named entities were marked up with their type (e.g. GPE for Geopolitical Entity) and one or more English translations. Example:
+&#249; &#175; &lt;GPE alt=&#8221;Termoli&#8221;&gt;&#249;&#203;&#241;&#211;QJ  K&lt;/GPE&gt;
+&lt;PER alt=&#8221;Abdullah II j Abdallah II&#8221;&gt; &#233;&#202;&#203;@ YJ. &#171;
+&#249; KA  J&#203;@&lt;/PER&gt;
+The BBN annotations exhibit a number of issues. For the English translations of the NEs, BBN annotators looked at human reference translations, which may introduce a bias towards those human translations. Specifically, the BBN annotations are sometimes wrong, because the reference translations were wrong. Consider for example the Arabic phrase
+&#249; &#203;&#241; &#211;Q J  K &#249; &#175; &#224;@Q  KP&#241; &#7730; &#169; J &#8217; &#211; (mSn&#8216; burtran
+fY tyrmulY), which means Powertrain plant in Termoli. The mapping from tyrmulY to Termoli is not obvious, and even less the one from burtran to Powertrain. The human reference translations for this phrase are
+1. Portran site in Tremolo 2. Termoli plant (one name dropped) 3. Portran in Tirnoli 4. Portran assembly plant, in Tirmoli
+The BBN annotators adopted the correct translation Termoli, but also the incorrect Portran. In other cases the BBN annotators adopted both a correct (Khatami) and an incorrect translation (Khatimi) when referring to the former Iranian president, which would reward a translation with such an incorrect spelling.
+&lt;PER alt=&#8221;KhatamijKhatimi&#8221;&gt;&#249;&#210;  KA k&lt;/PER&gt;
+&lt;GPE alt=&#8221;the American&#8221;&gt;  &#233;J&#187;QJ&#211;A&#203;@&lt;/GPE&gt; In other cases, all translations are correct, but additional correct translations are missing, as for &#8220;the American&#8221; above, for which &#8220;the US&#8221; is an equally valid alternative in the specific sentence it was annotated in.
+All this raises the question of what is a correct answer. For most Western names, there is normally only one correct spelling. We follow the same conventions as standard media, paying attention to how an organization or individual spells its own name, e.g. Senator Jon Kyl, not Senator John Kyle. For Arabic names, variation is generally acceptable if there is no one clearly dominant spelling in English, e.g. GaddafijGadhafijQaddafijQadhafi, as long as a given variant is not radically rarer than the most conventional or popular form.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>BBN kindly provided us with an annotated Arabic text corpus, in which named entities were marked up with their type (e.g. GPE for Geopolitical Entity) and one or more English translations.</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Example:</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#249; &#175; &lt;GPE alt=&#8221;Termoli&#8221;&gt;&#249;&#203;&#241;&#211;QJ  K&lt;/GPE&gt;</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&lt;PER alt=&#8221;Abdullah II j Abdallah II&#8221;&gt; &#233;&#202;&#203;@ YJ.</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#171;</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#249; KA  J&#203;@&lt;/PER&gt;</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The BBN annotations exhibit a number of issues.</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the English translations of the NEs, BBN annotators looked at human reference translations, which may introduce a bias towards those human translations.</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Specifically, the BBN annotations are sometimes wrong, because the reference translations were wrong.</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Consider for example the Arabic phrase</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#249; &#203;&#241; &#211;Q J  K &#249; &#175; &#224;@Q  KP&#241; &#7730; &#169; J &#8217; &#211; (mSn&#8216; burtran</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>fY tyrmulY), which means Powertrain plant in Termoli.</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The mapping from tyrmulY to Termoli is not obvious, and even less the one from burtran to Powertrain.</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The human reference translations for this phrase are</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1.</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Portran site in Tremolo 2.</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Termoli plant (one name dropped) 3.</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Portran in Tirnoli 4.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Portran assembly plant, in Tirmoli</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The BBN annotators adopted the correct translation Termoli, but also the incorrect Portran.</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In other cases the BBN annotators adopted both a correct (Khatami) and an incorrect translation (Khatimi) when referring to the former Iranian president, which would reward a translation with such an incorrect spelling.</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&lt;PER alt=&#8221;KhatamijKhatimi&#8221;&gt;&#249;&#210;  KA k&lt;/PER&gt;</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&lt;GPE alt=&#8221;the American&#8221;&gt;  &#233;J&#187;QJ&#211;A&#203;@&lt;/GPE&gt; In other cases, all translations are correct, but additional correct translations are missing, as for &#8220;the American&#8221; above, for which &#8220;the US&#8221; is an equally valid alternative in the specific sentence it was annotated in.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>All this raises the question of what is a correct answer.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For most Western names, there is normally only one correct spelling.</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We follow the same conventions as standard media, paying attention to how an organization or individual spells its own name, e.g. Senator Jon Kyl, not Senator John Kyle.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For Arabic names, variation is generally acceptable if there is no one clearly dominant spelling in English, e.g. GaddafijGadhafijQaddafijQadhafi, as long as a given variant is not radically rarer than the most conventional or popular form.</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>2.3 Re-Annotation</title>
+            <text>Based on the issues we found with the BBN annotations, we re-annotated a sub-corpus of 637 sentences of the BBN gold standard.
+We based this re-annotation on detailed annotation guidelines and sample annotations that had previously been developed in cooperation with LanguageWeaver, building on three iterations of test annotations with three annotators. We checked each NE in every sentence, using human reference translations, automatic transliterator output, performing substantial Web research for many rare names, and checked Google ngrams and counts for the general Web and news archives to determine whether a variant form met our threshold of occurring at least 20% as often as the most dominant form.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Based on the issues we found with the BBN annotations, we re-annotated a sub-corpus of 637 sentences of the BBN gold standard.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We based this re-annotation on detailed annotation guidelines and sample annotations that had previously been developed in cooperation with LanguageWeaver, building on three iterations of test annotations with three annotators.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We checked each NE in every sentence, using human reference translations, automatic transliterator output, performing substantial Web research for many rare names, and checked Google ngrams and counts for the general Web and news archives to determine whether a variant form met our threshold of occurring at least 20% as often as the most dominant form.</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Transliterator</title>
+        <text>This section describes how we transliterate Arabic words or phrases. Given a word such as &#172;&#241; JJKA&#210;kP or a phrase such as &#201;J&#175;@P &#65533;KP&#241;&#211;, wewanttofind the English transliteration for it. This is not just a
+romanization like rHmanynuf and murys rafyl for the examples above, but a properly spelled English name such as Rachmaninoff and Maurice Ravel. The transliteration result can contain several alternatives, e.g. RachmaninoffjRachmaninov. Unlike various generative approaches (Knight and Graehl, 1997; Stalls and Knight, 1998; Li et al., 2004; Matthews, 2007; Sherif and Kondrak, 2007; Kashani et al., 2007), we do not synthesize an English spelling from scratch, but rather find a translation in very large lists of English words (3.4 million) and phrases (47 million).
+We develop a similarity metric for Arabic and English words. Since matching against millions of candidates is computationally prohibitive, we store the English words and phrases in an index, such that given an Arabic word or phrase, we quickly retrieve a much smaller set of likely candidates and apply our similarity metric to that smaller list.
+We divide the task of transliteration into two steps: given an Arabic word or phrase to transliterate, we (1) identify a list of English transliteration candidates from indexed lists of English words and phrases with counts (section 3.1) and (2) compute for each English name candidate the cost for the Arabic/English name pair (transliteration scoring model, section 3.2).
+We then combine the count information with the transliteration cost according to the formula:
+score(e) = log(count(e))/20 - translit cost(e,f)</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>This section describes how we transliterate Arabic words or phrases.</text>
+              <doc_id>99</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Given a word such as &#172;&#241; JJKA&#210;kP or a phrase such as &#201;J&#175;@P &#65533;KP&#241;&#211;, wewanttofind the English transliteration for it.</text>
+              <doc_id>100</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is not just a</text>
+              <doc_id>101</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>romanization like rHmanynuf and murys rafyl for the examples above, but a properly spelled English name such as Rachmaninoff and Maurice Ravel.</text>
+              <doc_id>102</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The transliteration result can contain several alternatives, e.g. RachmaninoffjRachmaninov.</text>
+              <doc_id>103</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Unlike various generative approaches (Knight and Graehl, 1997; Stalls and Knight, 1998; Li et al., 2004; Matthews, 2007; Sherif and Kondrak, 2007; Kashani et al., 2007), we do not synthesize an English spelling from scratch, but rather find a translation in very large lists of English words (3.4 million) and phrases (47 million).</text>
+              <doc_id>104</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We develop a similarity metric for Arabic and English words.</text>
+              <doc_id>105</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since matching against millions of candidates is computationally prohibitive, we store the English words and phrases in an index, such that given an Arabic word or phrase, we quickly retrieve a much smaller set of likely candidates and apply our similarity metric to that smaller list.</text>
+              <doc_id>106</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We divide the task of transliteration into two steps: given an Arabic word or phrase to transliterate, we (1) identify a list of English transliteration candidates from indexed lists of English words and phrases with counts (section 3.1) and (2) compute for each English name candidate the cost for the Arabic/English name pair (transliteration scoring model, section 3.2).</text>
+              <doc_id>107</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We then combine the count information with the transliteration cost according to the formula:</text>
+              <doc_id>108</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>score(e) = log(count(e))/20 - translit cost(e,f)</text>
+              <doc_id>109</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Indexing with consonant skeletons</title>
+            <text>We identify a list of English transliteration candidates through what we call a consonant skeleton index. Arabic consonants are divided into 11 classes, represented by letters b,f,g,j,k,l,m,n,r,s,t. In a onetime pre-processing step, all 3,420,339 (unique) English words from our English unigram language model (based on Google&#8217;s Web terabyte ngram collection) that might be names or part of names (mostly based on capitalization) are mapped to one or more skeletons, e.g.
+Rachmaninoff ! rkmnnf, rmnnf, rsmnnf, rtsmnnf
+This yields 10,381,377 skeletons (average of 3.0 per word) for which a reverse index is created (with counts). At run time, an Arabic word to be transliterated is mapped to its skeleton, e.g.
+&#172;&#241; JJKA&#210;kP ! rmnnf
+This skeleton serves as a key for the previously built reverse index, which then yields the list of English candidates with counts: rmnnf ! Rachmaninov (186,216), Rachmaninoff (179,666), Armenonville (3,445), Rachmaninow (1,636), plus 8 others. Shorter words tend to produce more candidates, resulting in slower transliteration, but since there are relatively few unique short words, this can be addressed by caching transliteration results.
+The same consonant skeleton indexing process is applied to name bigrams (47,700,548 unique with 167,398,054 skeletons) and trigrams (46,543,712 unique with 165,536,451 skeletons).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We identify a list of English transliteration candidates through what we call a consonant skeleton index.</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Arabic consonants are divided into 11 classes, represented by letters b,f,g,j,k,l,m,n,r,s,t.</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In a onetime pre-processing step, all 3,420,339 (unique) English words from our English unigram language model (based on Google&#8217;s Web terabyte ngram collection) that might be names or part of names (mostly based on capitalization) are mapped to one or more skeletons, e.g.</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Rachmaninoff !</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>rkmnnf, rmnnf, rsmnnf, rtsmnnf</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>This yields 10,381,377 skeletons (average of 3.0 per word) for which a reverse index is created (with counts).</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At run time, an Arabic word to be transliterated is mapped to its skeleton, e.g.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#172;&#241; JJKA&#210;kP !</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>rmnnf</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>This skeleton serves as a key for the previously built reverse index, which then yields the list of English candidates with counts: rmnnf !</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Rachmaninov (186,216), Rachmaninoff (179,666), Armenonville (3,445), Rachmaninow (1,636), plus 8 others.</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Shorter words tend to produce more candidates, resulting in slower transliteration, but since there are relatively few unique short words, this can be addressed by caching transliteration results.</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The same consonant skeleton indexing process is applied to name bigrams (47,700,548 unique with 167,398,054 skeletons) and trigrams (46,543,712 unique with 165,536,451 skeletons).</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Transliteration scoring model</title>
+            <text>The cost of an Arabic/English name pair is computed based on 732 rules that assign a cost to a pair of Arabic and English substrings, allowing for one or more context restrictions.
+1.
+&#8224;::q == ::0
+2. &#172;&#240;::ough == ::0 3. h::ch == :[aou],::0.1 4.
+&#8224;::k == ,$:,$::0.1 ; ::0.2
+5. Z:: == :,EC::0.1
+The first example  rule above assigns to the straightforward pair &#8224;/q a cost of 0. The second rule includes 2 letters on the Arabic and 4 on the English side. The third rule restricts application to substring pairs where the English side is preceded by the letters a, o, or u. The fourth rule specifies a cost of 0.1 if the substrings occur at the end of (both) names, 0.2 otherwise. According to the fifth rule, the Arabic letter Z may match an empty string on the English side, if there is an English consonant (EC) in the right context of the English side.
+The total cost is computed by always applying the longest applicable rule, without branching, resulting in a linear complexity with respect to word-pair length. Rules may include left and/or right context for both Arabic and English. The match fails if no rule applies or the accumulated cost exceeds a preset limit.
+Names may have n words on the English and m on the Arabic side. For example, New York is one word in Arabic and Abdullah is two words in Arabic. The
+rules handle spaces (as well as digits, apostrophes and other non-alphabetic material) just like regular alphabetic characters, so that our system can handle cases like where words in English and Arabic names do not match one to one.
+The French name Beaujolais (&#233;J&#203;&#241;k. &#241;&#7730;/bujulyh) deviates from standard English spelling conventions in several places. The accumulative cost from the rules handling these deviations could become prohibitive, with each cost element penalizing the same underlying offense &#8212; being French. We solve this problem by allowing for additional context in the form of style flags. The rule for matching eau/&#240; specifies, in addition to a cost, an (output) style flag +fr (as in French), which in turn serves as an additional context for the rule that matches ais/&#233;K at a much reduced cost. Style flags are also used for some Arabic dialects. Extended characters such as &#233;, &#246;, and &#351; and spelling idiosyncrasies in names on the English side of the bitext that come from various third languages account for a significant portion of theruleset.
+Casting the transliteration model as a scoring problem thus allows for very powerful rules with strong contexts. The current set of rules has been built by hand based on a bitext development corpus; future work might include deriving such rules automatically from a training set of transliterated names.
+This transliteration scoring model described in this section is used in two ways: (1) to transliterate names at SMT decoding time, and (2) to identify transliteration pairs in a bitext.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The cost of an Arabic/English name pair is computed based on 732 rules that assign a cost to a pair of Arabic and English substrings, allowing for one or more context restrictions.</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1.</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8224;::q == ::0</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#172;&#240;::ough == ::0 3. h::ch == :[aou],::0.1 4.</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8224;::k == ,$:,$::0.1 ; ::0.2</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5.</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Z:: == :,EC::0.1</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The first example  rule above assigns to the straightforward pair &#8224;/q a cost of 0.</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The second rule includes 2 letters on the Arabic and 4 on the English side.</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The third rule restricts application to substring pairs where the English side is preceded by the letters a, o, or u.</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The fourth rule specifies a cost of 0.1 if the substrings occur at the end of (both) names, 0.2 otherwise.</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>According to the fifth rule, the Arabic letter Z may match an empty string on the English side, if there is an English consonant (EC) in the right context of the English side.</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The total cost is computed by always applying the longest applicable rule, without branching, resulting in a linear complexity with respect to word-pair length.</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Rules may include left and/or right context for both Arabic and English.</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The match fails if no rule applies or the accumulated cost exceeds a preset limit.</text>
+                  <doc_id>138</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Names may have n words on the English and m on the Arabic side.</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, New York is one word in Arabic and Abdullah is two words in Arabic.</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>rules handle spaces (as well as digits, apostrophes and other non-alphabetic material) just like regular alphabetic characters, so that our system can handle cases like where words in English and Arabic names do not match one to one.</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The French name Beaujolais (&#233;J&#203;&#241;k.</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#241;&#7730;/bujulyh) deviates from standard English spelling conventions in several places.</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The accumulative cost from the rules handling these deviations could become prohibitive, with each cost element penalizing the same underlying offense &#8212; being French.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We solve this problem by allowing for additional context in the form of style flags.</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The rule for matching eau/&#240; specifies, in addition to a cost, an (output) style flag +fr (as in French), which in turn serves as an additional context for the rule that matches ais/&#233;K at a much reduced cost.</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Style flags are also used for some Arabic dialects.</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Extended characters such as &#233;, &#246;, and &#351; and spelling idiosyncrasies in names on the English side of the bitext that come from various third languages account for a significant portion of theruleset.</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Casting the transliteration model as a scoring problem thus allows for very powerful rules with strong contexts.</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The current set of rules has been built by hand based on a bitext development corpus; future work might include deriving such rules automatically from a training set of transliterated names.</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>This transliteration scoring model described in this section is used in two ways: (1) to transliterate names at SMT decoding time, and (2) to identify transliteration pairs in a bitext.</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Learning what to transliterate</title>
+        <text>As already mentioned in the introduction, named entity (NE) identification followed by MT is a bad idea. We don&#8217;t want to identify NEs per se anyway &#8212; we want to identify things that our transliterator will be good at handling, i.e., things that should be transliterated. This might even include loanwords like bnk (bank) and brlman (parliament), but would exclude names such as National Basketball Association that are often translated rather transliterated.
+Our method follows these steps:
+1. Take a bitext. 2. Mark the Arabic words and phrases that have a
+recognizable transliteration on the English side.
+3. Remove the English side of the bitext. 4. Divide the annotated Arabic corpus into a training and test corpus. 5. Train a monolingual Arabic tagger to identify
+which words and phrases (in running Arabic) are good candidates for transliteration (section 4.2)
+6. Apply the tagger to test data and evaluate its
+accuracy.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>As already mentioned in the introduction, named entity (NE) identification followed by MT is a bad idea.</text>
+              <doc_id>153</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We don&#8217;t want to identify NEs per se anyway &#8212; we want to identify things that our transliterator will be good at handling, i.e., things that should be transliterated.</text>
+              <doc_id>154</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This might even include loanwords like bnk (bank) and brlman (parliament), but would exclude names such as National Basketball Association that are often translated rather transliterated.</text>
+              <doc_id>155</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our method follows these steps:</text>
+              <doc_id>156</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.</text>
+              <doc_id>157</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Take a bitext.</text>
+              <doc_id>158</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>2.</text>
+              <doc_id>159</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Mark the Arabic words and phrases that have a</text>
+              <doc_id>160</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>recognizable transliteration on the English side.</text>
+              <doc_id>161</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>3.</text>
+              <doc_id>162</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Remove the English side of the bitext.</text>
+              <doc_id>163</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>4.</text>
+              <doc_id>164</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Divide the annotated Arabic corpus into a training and test corpus.</text>
+              <doc_id>165</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>5.</text>
+              <doc_id>166</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Train a monolingual Arabic tagger to identify</text>
+              <doc_id>167</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>which words and phrases (in running Arabic) are good candidates for transliteration (section 4.2)</text>
+              <doc_id>168</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>6.</text>
+              <doc_id>169</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Apply the tagger to test data and evaluate its</text>
+              <doc_id>170</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>accuracy.</text>
+              <doc_id>171</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 Mark-up of bitext</title>
+            <text>Given a tokenized (but unaligned and mixed-case) bitext, we mark up that bitext with links between Arabic and English words that appear to be transliterations. In the following example, linked words are underlined, with numbers indicating what is linked.
+English The meeting was attended by Omani (1) Secretary of State for Foreign Affairs Yusif (2) bin (3) Alawi (6) bin (8) Abdallah (10) and Special Advisor to Sultan (12) Qabus (13) for Foreign Affairs Umar (14) bin (17) Abdul Munim (19) al-Zawawi (21).
+Arabic (translit.) uHDr allqa&#8217; uzyr aldule al&#8216;manY (1) llsh&#8217;uun alkharjye yusf (2) bn (3) &#8216;luY (6) bn (8) &#8216;bd allh (10) ualmstshar alkhaS llslTan (12) qabus (13) ll&#8216;laqat alkharjye &#8216;mr (14) bn (17) &#8216;bd almn&#8216;m (19) alzuauY (21) .
+For each Arabic word, the linking algorithm tries to find a matching word on the English side, using the transliteration scoring model described in section 3. If the matcher reaches the end of an Arabic or English word before reaching the end of the other, it continues to &#8220;consume&#8221; additional words until a word-boundary observing match is found or the cost threshold exceeded.
+When there are several viable linking alternatives, the algorithm considers the cost provided by the transliteration scoring model, as well as context to eliminate inferior alternatives, so that for example the different occurrences of the name particle bin in the example above are linked to the proper Arabic words, based on the names next to them. The number of links depends, of course, on the specific corpus, but we typically identify about 3.0 links per sentence.
+The algorithm is enhanced by a number of heuristics:
+English match candidates are restricted to capitalized words (with a few exceptions).
+We use a list of about 200 Arabic and English stopwords and stopword pairs.
+We use lists of countries and their adjective forms to bridge cross-POS translations such as Italy&#8217;s president on the English and &#65533;J  KP
+&#249;&#203;A&#162;KA&#203;@ (&#8221;Italian president&#8221;) on the Arabic side.
+Arabic prefixes such as &#200;/l- (&#8221;to&#8221;) are treated in a special way, because they are translated, not transliterated like the rest of the word. Link (12) above is an example.
+In this bitext mark-up process, we achieve 99.5% precision and 95% recall based on a manual visualization-tool based evaluation. Of the 5% recall error, 3% are due to noisy data in the bitext such as typos, incorrect translations, or names missing on one side of the bitext.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Given a tokenized (but unaligned and mixed-case) bitext, we mark up that bitext with links between Arabic and English words that appear to be transliterations.</text>
+                  <doc_id>172</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the following example, linked words are underlined, with numbers indicating what is linked.</text>
+                  <doc_id>173</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>English The meeting was attended by Omani (1) Secretary of State for Foreign Affairs Yusif (2) bin (3) Alawi (6) bin (8) Abdallah (10) and Special Advisor to Sultan (12) Qabus (13) for Foreign Affairs Umar (14) bin (17) Abdul Munim (19) al-Zawawi (21).</text>
+                  <doc_id>174</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Arabic (translit.</text>
+                  <doc_id>175</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>) uHDr allqa&#8217; uzyr aldule al&#8216;manY (1) llsh&#8217;uun alkharjye yusf (2) bn (3) &#8216;luY (6) bn (8) &#8216;bd allh (10) ualmstshar alkhaS llslTan (12) qabus (13) ll&#8216;laqat alkharjye &#8216;mr (14) bn (17) &#8216;bd almn&#8216;m (19) alzuauY (21) .</text>
+                  <doc_id>176</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For each Arabic word, the linking algorithm tries to find a matching word on the English side, using the transliteration scoring model described in section 3.</text>
+                  <doc_id>177</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If the matcher reaches the end of an Arabic or English word before reaching the end of the other, it continues to &#8220;consume&#8221; additional words until a word-boundary observing match is found or the cost threshold exceeded.</text>
+                  <doc_id>178</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>When there are several viable linking alternatives, the algorithm considers the cost provided by the transliteration scoring model, as well as context to eliminate inferior alternatives, so that for example the different occurrences of the name particle bin in the example above are linked to the proper Arabic words, based on the names next to them.</text>
+                  <doc_id>179</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The number of links depends, of course, on the specific corpus, but we typically identify about 3.0 links per sentence.</text>
+                  <doc_id>180</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The algorithm is enhanced by a number of heuristics:</text>
+                  <doc_id>181</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>English match candidates are restricted to capitalized words (with a few exceptions).</text>
+                  <doc_id>182</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We use a list of about 200 Arabic and English stopwords and stopword pairs.</text>
+                  <doc_id>183</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We use lists of countries and their adjective forms to bridge cross-POS translations such as Italy&#8217;s president on the English and &#65533;J  KP</text>
+                  <doc_id>184</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#249;&#203;A&#162;KA&#203;@ (&#8221;Italian president&#8221;) on the Arabic side.</text>
+                  <doc_id>185</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Arabic prefixes such as &#200;/l- (&#8221;to&#8221;) are treated in a special way, because they are translated, not transliterated like the rest of the word.</text>
+                  <doc_id>186</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Link (12) above is an example.</text>
+                  <doc_id>187</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In this bitext mark-up process, we achieve 99.5% precision and 95% recall based on a manual visualization-tool based evaluation.</text>
+                  <doc_id>188</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Of the 5% recall error, 3% are due to noisy data in the bitext such as typos, incorrect translations, or names missing on one side of the bitext.</text>
+                  <doc_id>189</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 Training of Arabic name tagger</title>
+            <text>The task of the Arabic name tagger (or more precisely, &#8220;transliterate-me&#8221; tagger) is to predict whether or not a word in an Arabic text should be transliterated, and if so, whether it includes a prefix. Prefixes such as &#240;/u- (&#8220;and&#8221;) have to be translated rather than transliterated, so it is important to split off any prefix from a name before transliterating that name. This monolingual tagging task is not trivial, as many Arabic words can be both a name and a non-
+name. For example, &#232;QK Qj. &#203;@ (aljzyre) can mean both
+Al-Jazeera and the island (or peninsula). Features include the word itself plus two words to the left and right, along with various prefixes, suffixes and other characteristics of all of them, totalling about 250 features.
+Some of our features depend on large corpus statistics. For this, we divide the tagged Arabic side of our training corpus into a stat section and a core training section. From the stat section we collect statistics as to how often every word, bigram or trigram occurs, and what distribution of name/nonname patterns these ngrams have. The name distribution bigram
+&#233;KP&#241;&#186;&#203;@  &#232;QK  Qj. &#203;@ 3327 00:133 01:3193 11:1
+(aljzyre alkurye/&#8220;peninsula Korean&#8221;) for example tells us that in 3193 out of 3327 occurrences in the stat corpus bitext, the first word is a marked up as a non-name (&#8221;0&#8221;) and the second as a name (&#8221;1&#8221;), which strongly suggests that in such a bigram context, aljzyre better be translated as island or peninsula, and not be transliterated as Al-Jazeera.
+We train our system on a corpus of 6 million stat sentences, and 500; 000 core training sentences. We employ a sequential tagger trained using the SEARN algorithm (Daum&#233; III et al., 2006) with aggressive updates ( = 1). Our base learning algorithm is an averaged perceptron, as implemented in the
+MEGAM package 2 .
+Testing on 10,000 sentences, we achieve precision of 87.4% and a recall of 95.7% with respect to the automatically marked-up Gold Standard as described in section 4.1. A manual error analysis of 500 sentences shows that a large portion are not errors after all, but have been marked as errors because of noise in the bitext and errors in the bitext markup. After adjusting for these deficiencies in the gold standard, we achieve precision of 92.1% and recall of 95.9% in the name tagging task.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The task of the Arabic name tagger (or more precisely, &#8220;transliterate-me&#8221; tagger) is to predict whether or not a word in an Arabic text should be transliterated, and if so, whether it includes a prefix.</text>
+                  <doc_id>190</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Prefixes such as &#240;/u- (&#8220;and&#8221;) have to be translated rather than transliterated, so it is important to split off any prefix from a name before transliterating that name.</text>
+                  <doc_id>191</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This monolingual tagging task is not trivial, as many Arabic words can be both a name and a non-</text>
+                  <doc_id>192</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>name.</text>
+                  <doc_id>193</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, &#232;QK Qj.</text>
+                  <doc_id>194</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#203;@ (aljzyre) can mean both</text>
+                  <doc_id>195</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Al-Jazeera and the island (or peninsula).</text>
+                  <doc_id>196</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Features include the word itself plus two words to the left and right, along with various prefixes, suffixes and other characteristics of all of them, totalling about 250 features.</text>
+                  <doc_id>197</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Some of our features depend on large corpus statistics.</text>
+                  <doc_id>198</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For this, we divide the tagged Arabic side of our training corpus into a stat section and a core training section.</text>
+                  <doc_id>199</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>From the stat section we collect statistics as to how often every word, bigram or trigram occurs, and what distribution of name/nonname patterns these ngrams have.</text>
+                  <doc_id>200</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The name distribution bigram</text>
+                  <doc_id>201</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#233;KP&#241;&#186;&#203;@  &#232;QK  Qj.</text>
+                  <doc_id>202</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#203;@ 3327 00:133 01:3193 11:1</text>
+                  <doc_id>203</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(aljzyre alkurye/&#8220;peninsula Korean&#8221;) for example tells us that in 3193 out of 3327 occurrences in the stat corpus bitext, the first word is a marked up as a non-name (&#8221;0&#8221;) and the second as a name (&#8221;1&#8221;), which strongly suggests that in such a bigram context, aljzyre better be translated as island or peninsula, and not be transliterated as Al-Jazeera.</text>
+                  <doc_id>204</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We train our system on a corpus of 6 million stat sentences, and 500; 000 core training sentences.</text>
+                  <doc_id>205</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We employ a sequential tagger trained using the SEARN algorithm (Daum&#233; III et al., 2006) with aggressive updates ( = 1).</text>
+                  <doc_id>206</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our base learning algorithm is an averaged perceptron, as implemented in the</text>
+                  <doc_id>207</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>MEGAM package 2 .</text>
+                  <doc_id>208</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Testing on 10,000 sentences, we achieve precision of 87.4% and a recall of 95.7% with respect to the automatically marked-up Gold Standard as described in section 4.1.</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>A manual error analysis of 500 sentences shows that a large portion are not errors after all, but have been marked as errors because of noise in the bitext and errors in the bitext markup.</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>After adjusting for these deficiencies in the gold standard, we achieve precision of 92.1% and recall of 95.9% in the name tagging task.</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Integration with SMT</title>
+        <text>We use the following method to integrate our transliterator into the overall SMT system:
+1. We tag the Arabic source text using the tagger described in the previous section.
+2. We apply the transliterator described in section 3 to the tagged items. We limit this transliteration to words that occur up to 50 times in the training corpus for single token names (or up to 100 and 150 times for two and three-word names). We do this because the general SMT mechanism tends to do well on more common names, but does poorly on rare names (and will
+2 Freely available at http://hal3.name/megam
+always drop names it has never seen in the training bitext).
+3. On the fly, we add transliterations to SMT phrase table. Instead of a phrasal probability, the transliterations have a special binary feature set to 1. In a tuning step, the Minimim Error Rate Training component of our SMT system iteratively adjusts the set of rule weights, including the weight associated with the transliteration feature, such that the English translations are optimized with respect to a set of known reference translations according to the
+BLEU translation metric.
+4. At run-time, the transliterations then compete with the translations generated by the general SMT system. This means that the MT system will not always use the transliterator suggestions, depending on the combination of language model, translation model, and other component scores.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We use the following method to integrate our transliterator into the overall SMT system:</text>
+              <doc_id>212</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.</text>
+              <doc_id>213</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We tag the Arabic source text using the tagger described in the previous section.</text>
+              <doc_id>214</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2.</text>
+              <doc_id>215</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We apply the transliterator described in section 3 to the tagged items.</text>
+              <doc_id>216</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We limit this transliteration to words that occur up to 50 times in the training corpus for single token names (or up to 100 and 150 times for two and three-word names).</text>
+              <doc_id>217</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We do this because the general SMT mechanism tends to do well on more common names, but does poorly on rare names (and will</text>
+              <doc_id>218</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2 Freely available at http://hal3.name/megam</text>
+              <doc_id>219</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>always drop names it has never seen in the training bitext).</text>
+              <doc_id>220</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>3.</text>
+              <doc_id>221</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>On the fly, we add transliterations to SMT phrase table.</text>
+              <doc_id>222</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Instead of a phrasal probability, the transliterations have a special binary feature set to 1.</text>
+              <doc_id>223</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In a tuning step, the Minimim Error Rate Training component of our SMT system iteratively adjusts the set of rule weights, including the weight associated with the transliteration feature, such that the English translations are optimized with respect to a set of known reference translations according to the</text>
+              <doc_id>224</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>BLEU translation metric.</text>
+              <doc_id>225</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>4.</text>
+              <doc_id>226</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>At run-time, the transliterations then compete with the translations generated by the general SMT system.</text>
+              <doc_id>227</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This means that the MT system will not always use the transliterator suggestions, depending on the combination of language model, translation model, and other component scores.</text>
+              <doc_id>228</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>5.1 Multi-token names</title>
+            <text>We try to transliterate names as much as possible in context. Consider for example the Arabic name:
+&#233;J&#174;&#8220; &#241;&#7730;@ &#173;&#402;&#241;K (&#8221;yusf abu Sfye&#8221;)
+If transliterated as single words without context, the top results would be JosephjJosefjYusufjYosefj Youssef, AbujAbojIvojApojIbo, and SephiajSofiaj SophiajSafiehjSafia respectively. However, when transliterating the three words together against our list of 47 million English trigrams (section 3), the transliterator will select the (correct) translation Yousef Abu Safieh. Note that Yousef was not among the top 5 choices, and that Safieh was only choice 4.
+Similarly, when transliterating &#224;A&#7730;&#241;  &#402;&#240;
+P@ P&#241;&#211;&#240;
+/umuzar ushuban (&#8221;and Mozart and Chopin&#8221;) without context, the top results would be MoserjMauserj MozerjMozartjMouser and ShuppanjShoppingj SchwabenjSchuppanjShobana (with Chopin way down on place 22). Checking our large English lists for a matching name, name pattern, the transliterator identifies the correct translation &#8220;, Mozart, Chopin&#8221;. Note that the transliteration module provides the overall SMT system with up to 5 alternatives, augmented with a choice of English translations for the Arabic prefixes like the comma and the conjunction and in the last example.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We try to transliterate names as much as possible in context.</text>
+                  <doc_id>229</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Consider for example the Arabic name:</text>
+                  <doc_id>230</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#233;J&#174;&#8220; &#241;&#7730;@ &#173;&#402;&#241;K (&#8221;yusf abu Sfye&#8221;)</text>
+                  <doc_id>231</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>If transliterated as single words without context, the top results would be JosephjJosefjYusufjYosefj Youssef, AbujAbojIvojApojIbo, and SephiajSofiaj SophiajSafiehjSafia respectively.</text>
+                  <doc_id>232</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, when transliterating the three words together against our list of 47 million English trigrams (section 3), the transliterator will select the (correct) translation Yousef Abu Safieh.</text>
+                  <doc_id>233</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that Yousef was not among the top 5 choices, and that Safieh was only choice 4.</text>
+                  <doc_id>234</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Similarly, when transliterating &#224;A&#7730;&#241;  &#402;&#240;</text>
+                  <doc_id>235</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>P@ P&#241;&#211;&#240;</text>
+                  <doc_id>236</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>/umuzar ushuban (&#8221;and Mozart and Chopin&#8221;) without context, the top results would be MoserjMauserj MozerjMozartjMouser and ShuppanjShoppingj SchwabenjSchuppanjShobana (with Chopin way down on place 22).</text>
+                  <doc_id>237</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Checking our large English lists for a matching name, name pattern, the transliterator identifies the correct translation &#8220;, Mozart, Chopin&#8221;.</text>
+                  <doc_id>238</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that the transliteration module provides the overall SMT system with up to 5 alternatives, augmented with a choice of English translations for the Arabic prefixes like the comma and the conjunction and in the last example.</text>
+                  <doc_id>239</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 End-to-End results</title>
+        <text>We applied the NEWA metric (section 2) to both our SMT translations as well as the four human reference translations, using both the original namedentity translation annotation and the re-annotation:
+Almost all scores went up with re-annotations, because the re-annotations more properly reward correct answers.
+Based on the original annotations, all human name translations were much better than our SMT system. However, based on our re-annotation, the results are quite different: our system has a higher NEWA score and better name translations than 3 out of 4 human annotators.
+The evaluation results confirm that the original annotation method produced a relative bias towards the human translation its annotations were largely based on, compared to other translations.
+Table 3 provides more detailed NEWA results. The addition of the transliteration module improves our overall NEWA score from 87.8% to 89.7%, a relative gain of 16% over base SMT system. For names of persons (PER) and facilities (FAC), our system outperforms all human translators. Humans performed much better on Person Nominals (PER.Nom) such as Swede, Dutchmen, Americans. Note that name translation quality varies greatly between human translators, with error rates ranging from 8.2-15.0% (absolute).
+To make sure our name transliterator does not degrade the overall translation quality, we evaluated our base SMT system with BLEU, as well as our transliteration-augmented SMT system. Our standard newswire training set consists of 10.5 million words of bitext (English side) and 1491 test sen-
+tences. The BLEU scores for the two systems were 50.70 and 50.96 respectively.
+Finally, here are end-to-end machine translation results for three sentences, with and without the transliteration module, along with a human reference translation.
+Old: Al-Basha leads a broad list of musicians such as Bach. New: Al-Basha leads a broad list of musical acts such as Bach, Mozart, Beethoven, Chopin, Schumann, Rachmaninoff, Ravel and Prokofiev. Ref: Al-Bacha performs a long list of works by composers such as Bach, Chopin, Beethoven, Shumann, Rakmaninov, Ravel and Prokoviev.
+Old: Earlier Israeli military correspondent turn introduction programme &#8221;Entertainment Bui&#8221; New: Earlier Israeli military correspondent turn to introduction of the programme &#8221;Play Boy&#8221; Ref: Former Israeli military correspondent turns host for &#8221;Playboy&#8221; program
+Old: The Nikkei president company De Beers said that ... New: The company De Beers chairman Nicky Oppenheimer said that ... Ref: Nicky Oppenheimer, chairman of the De Beers company, stated that ...</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We applied the NEWA metric (section 2) to both our SMT translations as well as the four human reference translations, using both the original namedentity translation annotation and the re-annotation:</text>
+              <doc_id>240</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Almost all scores went up with re-annotations, because the re-annotations more properly reward correct answers.</text>
+              <doc_id>241</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Based on the original annotations, all human name translations were much better than our SMT system.</text>
+              <doc_id>242</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, based on our re-annotation, the results are quite different: our system has a higher NEWA score and better name translations than 3 out of 4 human annotators.</text>
+              <doc_id>243</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The evaluation results confirm that the original annotation method produced a relative bias towards the human translation its annotations were largely based on, compared to other translations.</text>
+              <doc_id>244</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Table 3 provides more detailed NEWA results.</text>
+              <doc_id>245</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The addition of the transliteration module improves our overall NEWA score from 87.8% to 89.7%, a relative gain of 16% over base SMT system.</text>
+              <doc_id>246</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For names of persons (PER) and facilities (FAC), our system outperforms all human translators.</text>
+              <doc_id>247</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Humans performed much better on Person Nominals (PER.Nom) such as Swede, Dutchmen, Americans.</text>
+              <doc_id>248</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Note that name translation quality varies greatly between human translators, with error rates ranging from 8.2-15.0% (absolute).</text>
+              <doc_id>249</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>To make sure our name transliterator does not degrade the overall translation quality, we evaluated our base SMT system with BLEU, as well as our transliteration-augmented SMT system.</text>
+              <doc_id>250</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our standard newswire training set consists of 10.5 million words of bitext (English side) and 1491 test sen-</text>
+              <doc_id>251</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>tences.</text>
+              <doc_id>252</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The BLEU scores for the two systems were 50.70 and 50.96 respectively.</text>
+              <doc_id>253</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Finally, here are end-to-end machine translation results for three sentences, with and without the transliteration module, along with a human reference translation.</text>
+              <doc_id>254</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Old: Al-Basha leads a broad list of musicians such as Bach.</text>
+              <doc_id>255</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>New: Al-Basha leads a broad list of musical acts such as Bach, Mozart, Beethoven, Chopin, Schumann, Rachmaninoff, Ravel and Prokofiev.</text>
+              <doc_id>256</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Ref: Al-Bacha performs a long list of works by composers such as Bach, Chopin, Beethoven, Shumann, Rakmaninov, Ravel and Prokoviev.</text>
+              <doc_id>257</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Old: Earlier Israeli military correspondent turn introduction programme &#8221;Entertainment Bui&#8221; New: Earlier Israeli military correspondent turn to introduction of the programme &#8221;Play Boy&#8221; Ref: Former Israeli military correspondent turns host for &#8221;Playboy&#8221; program</text>
+              <doc_id>258</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Old: The Nikkei president company De Beers said that ... New: The company De Beers chairman Nicky Oppenheimer said that ... Ref: Nicky Oppenheimer, chairman of the De Beers company, stated that ...</text>
+              <doc_id>259</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>7</index>
+        <title>7 Discussion</title>
+        <text>We have shown that a state-of-the-art statistical machine translation system can benefit from a dedicated transliteration module to improve the translation of rare names. Improved named entity translation accuracy as measured by the NEWA metric in general, and a reduction in dropped names in particular is clearly valuable to the human reader of machine translated documents as well as for systems using machine translation for further information processing. At the same time, there has been no negative impact on overall quality as measured by BLEU. We believe that all components can be further improved, e.g. Automatically retune the weights in the transliteration scoring model. Improve robustness with respect to typos, incorrect or missing translations, and badly aligned sentences when marking up bitexts. Add more features for learning whether or not a word should be transliterated, possibly using source language morphology to better identify non-name words never or rarely seen during training. Additionally, our transliteration method could be applied to other language pairs. We find it encouraging that we already outperform some professional translators in name translation accuracy. The potential to exceed human translator performance arises from the patience required to translate names right.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We have shown that a state-of-the-art statistical machine translation system can benefit from a dedicated transliteration module to improve the translation of rare names.</text>
+              <doc_id>260</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Improved named entity translation accuracy as measured by the NEWA metric in general, and a reduction in dropped names in particular is clearly valuable to the human reader of machine translated documents as well as for systems using machine translation for further information processing.</text>
+              <doc_id>261</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>At the same time, there has been no negative impact on overall quality as measured by BLEU.</text>
+              <doc_id>262</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We believe that all components can be further improved, e.g. Automatically retune the weights in the transliteration scoring model.</text>
+              <doc_id>263</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Improve robustness with respect to typos, incorrect or missing translations, and badly aligned sentences when marking up bitexts.</text>
+              <doc_id>264</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Add more features for learning whether or not a word should be transliterated, possibly using source language morphology to better identify non-name words never or rarely seen during training.</text>
+              <doc_id>265</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Additionally, our transliteration method could be applied to other language pairs.</text>
+              <doc_id>266</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>We find it encouraging that we already outperform some professional translators in name translation accuracy.</text>
+              <doc_id>267</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>The potential to exceed human translator performance arises from the patience required to translate names right.</text>
+              <doc_id>268</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>8</index>
+        <title>Acknowledgment</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>269</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 1: Accuracy of &#8220;transliterate-me&#8221; tagger</caption>
+        <reference_text>None</reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>MEGAM package2.</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell></cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Reference</cell>
+              <cell>Precision</cell>
+              <cell>Recall</cell>
+              <cell>F-meas.</cell>
+            </row>
+            <row>
+              <cell>Raw test corpus</cell>
+              <cell>87.4%</cell>
+              <cell>95.7%</cell>
+              <cell>91.4%</cell>
+            </row>
+            <row>
+              <cell>Adjusted for GS</cell>
+              <cell>92.1%</cell>
+              <cell>95.9%</cell>
+              <cell>94.0%</cell>
+            </row>
+            <row>
+              <cell>d</cell>
+              <cell>e</cell>
+              <cell>f</cell>
+              <cell>i</cell>
+              <cell>c</cell>
+              <cell>i</cell>
+              <cell>e</cell>
+              <cell>n</cell>
+              <cell>c</cell>
+              <cell>i</cell>
+              <cell>e</cell>
+              <cell>s</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TableSeer</source>
+        <caption>Table 2: Name translation accuracy with respect to BBN and re-annotated Gold Standard on 1730 named entities in 637 sentences.</caption>
+        <reference_text>None</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Gold Standard</cell>
+              <cell>BBN GS</cell>
+              <cell>Re-annotated GS</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Human 1</cell>
+              <cell>87.0%</cell>
+              <cell>85.0%</cell>
+            </row>
+            <row>
+              <cell>Human 2</cell>
+              <cell>85.3%</cell>
+              <cell>86.9%</cell>
+            </row>
+            <row>
+              <cell>Human 3</cell>
+              <cell>90.4%</cell>
+              <cell>91.8%</cell>
+            </row>
+            <row>
+              <cell>Human 4</cell>
+              <cell>86.5%</cell>
+              <cell>88.3%</cell>
+            </row>
+            <row>
+              <cell>SMT System</cell>
+              <cell>80.4%</cell>
+              <cell>89.7%</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TableSeer</source>
+        <caption>Table 3: Name translation accuracy in end-to-end statistical machine translation (SMT) system for different named entity (NE) types: Person (PER), Geopolitical Entity, which includes countries, provinces and towns (GPE), Organization (ORG), Facility (FAC), Nominal Person, e.g. Swede (PER.Nom), other location (LOC).</caption>
+        <reference_text>In PAGE 7: ... The evaluation results confirm that the original annotation method produced a relative bias towards the human translation its annotations were largely based on, compared to other translations.  Table3  provides more detailed NEWA results. The addition of the transliteration module improves our overall NEWA score from 87....</reference_text>
+        <page_num>8</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>NE Type</cell>
+              <cell>Count</cell>
+              <cell>Baseline</cell>
+              <cell>SMT with</cell>
+              <cell>Human 1</cell>
+              <cell>Human 2</cell>
+              <cell>Human 3</cell>
+              <cell>Human 4</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell></cell>
+              <cell>SMT</cell>
+              <cell>Transliteration</cell>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+            </row>
+            <row>
+              <cell>PER</cell>
+              <cell>342</cell>
+              <cell>266 (77.8%)</cell>
+              <cell>280 (81.9%)</cell>
+              <cell>210 (61.4%)</cell>
+              <cell>265 (77.5%)</cell>
+              <cell>278 (81.3%)</cell>
+              <cell>275 (80.4%)</cell>
+            </row>
+            <row>
+              <cell>GPE</cell>
+              <cell>910</cell>
+              <cell>863 (94.8%)</cell>
+              <cell>877 (96.4%)</cell>
+              <cell>867 (95.3%)</cell>
+              <cell>849 (93.3%)</cell>
+              <cell>885 (97.3%)</cell>
+              <cell>852 (93.6%)</cell>
+            </row>
+            <row>
+              <cell>ORG</cell>
+              <cell>332</cell>
+              <cell>280 (84.3%)</cell>
+              <cell>282 (84.9%)</cell>
+              <cell>263 (79.2%)</cell>
+              <cell>265 (79.8%)</cell>
+              <cell>293 (88.3%)</cell>
+              <cell>281 (84.6%)</cell>
+            </row>
+            <row>
+              <cell>FAC</cell>
+              <cell>27</cell>
+              <cell>18 (66.7%)</cell>
+              <cell>24 (88.9%)</cell>
+              <cell>21 (77.8%)</cell>
+              <cell>20 (74.1%)</cell>
+              <cell>22 (81.5%)</cell>
+              <cell>20 (74.1%)</cell>
+            </row>
+            <row>
+              <cell>PER.Nom</cell>
+              <cell>61</cell>
+              <cell>49 (80.3%)</cell>
+              <cell>48 (78.7%)</cell>
+              <cell>61 (100.0%)</cell>
+              <cell>56 (91.8%)</cell>
+              <cell>60 (98.4%)</cell>
+              <cell>57 (93.4%)</cell>
+            </row>
+            <row>
+              <cell>LOC</cell>
+              <cell>58</cell>
+              <cell>43 (74.1%)</cell>
+              <cell>41 (70.7%)</cell>
+              <cell>48 (82.8%)</cell>
+              <cell>48 (82.8%)</cell>
+              <cell>51 (87.9%)</cell>
+              <cell>43 (74.1%)</cell>
+            </row>
+            <row>
+              <cell>All types</cell>
+              <cell>1730</cell>
+              <cell>1519 (87.8%)</cell>
+              <cell>1552 (89.7%)</cell>
+              <cell>1470 (85.0%)</cell>
+              <cell>1503 (86.9%)</cell>
+              <cell>1589 (91.8%)</cell>
+              <cell>1528 (88.3%)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Yaser Al-Onaizan</author>
+          <author>Kevin Knight</author>
+        </authors>
+        <title>Machine Transliteration of Names in Arabic Text.</title>
+        <publication>In Proceedings of the Association for Computational Linguistics Workshop on Computational Approaches to Semitic Languages.</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Thorsten Brants</author>
+          <author>Alex Franz</author>
+        </authors>
+        <title>Web 1T 5-gram Version 1. Released by Google through the Linguistic Data Consortium,</title>
+        <publication>None</publication>
+        <pages>2006--13</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Hsin-Hsi Chen</author>
+          <author>Sheng-Jie Huang</author>
+          <author>Yung-Wei Ding</author>
+          <author>Shih-Chung Tsai</author>
+        </authors>
+        <title>Proper Name Translation in Cross-Language Information Retrieval.</title>
+        <publication>In Proceedings of the 36th Annual Meeting of the Association for Computational Linguistics and the 17th International Conference on Computational Linguistics.</publication>
+        <pages>None</pages>
+        <date>1998</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Hal Daum&#233; John Langford</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>Search-based Structured Prediction.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors/>
+        <title>Submitted to the Machine Learning Journal. http://pub.hal3.name/#daume06searn David Day.</title>
+        <publication>Pilot Evaluation (ET07). In proceedings of the Workshop on Automatic Content Extraction (ACE).</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Byung-Ju Kang</author>
+          <author>Key-Sun Choi</author>
+        </authors>
+        <title>Automatic Transliteration and Back-transliteration by Decision Tree Learning.</title>
+        <publication>In Conference on Language Resources and Evaluation.</publication>
+        <pages>None</pages>
+        <date>2000</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Mehdi M Kashani</author>
+          <author>Fred Popowich</author>
+          <author>Fatiha Sadat</author>
+        </authors>
+        <title>None</title>
+        <publication>Automatic Transliteration of Proper Nouns from Arabic to English. The Challenge of Arabic For NLP/MT,</publication>
+        <pages>76--84</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Alexandre Klementiev</author>
+          <author>Dan Roth</author>
+        </authors>
+        <title>Named entity transliteration and discovery from multilingual comparable corpora.</title>
+        <publication>In Proceedings of the Human Language Technology Conference of the North American Chapter of the Association of Computational Linguistics.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Kevin Knight</author>
+          <author>Jonathan Graehl</author>
+        </authors>
+        <title>Machine Transliteration.</title>
+        <publication>In Proceedings of the 35th Annual Meeting of the Association for Computational Linguistics.</publication>
+        <pages>None</pages>
+        <date>1997</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Li Haizhou</author>
+          <author>Zhang Min</author>
+          <author>Su Jian</author>
+        </authors>
+        <title>A Joint Source-Channel Model for Machine Transliteration.</title>
+        <publication>In Proceedings of the 42nd Annual Meeting on Association for Computational Linguistics.</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Wei-Hao Lin</author>
+          <author>Hsin-Hsi Chen</author>
+        </authors>
+        <title>Backward Machine Transliteration by Learning Phonetic Similarity.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors/>
+        <title>None</title>
+        <publication>Sixth Conference on Natural Language Learning,</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>David Matthews</author>
+        </authors>
+        <title>Machine Transliteration of Proper Names. Master&#8217;s Thesis.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>Masaaki Nagata</author>
+          <author>Teruka Saito</author>
+          <author>Kenji Suzuki</author>
+        </authors>
+        <title>Using the Web as a Bilingual Dictionary.</title>
+        <publication>In Proceedings of the Workshop on Data-driven Methods in Machine Translation.</publication>
+        <pages>None</pages>
+        <date>2001</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Bruno Pouliquen</author>
+          <author>Ralf Steinberger</author>
+          <author>Camelia Ignat</author>
+          <author>Irina Temnikova</author>
+          <author>Anna Widiger</author>
+          <author>Wajdi Zaghouani</author>
+          <author>Jan Zizka</author>
+        </authors>
+        <title>Multilingual Person Name Recognition and Transliteration. CORELA - COgnition, REpresentation, LAnguage,</title>
+        <publication>None</publication>
+        <pages>115--123</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>Tarek Sherif</author>
+          <author>Grzegorz Kondrak</author>
+        </authors>
+        <title>SubstringBased Transliteration.</title>
+        <publication>In Proceedings of the 45th Annual Meeting on Association for Computational Linguistics.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>16</id>
+        <authors>
+          <author>Richard Sproat</author>
+          <author>ChengXiang Zhai</author>
+          <author>Tao Tao</author>
+        </authors>
+        <title>Named Entity Transliteration with Comparable Corpora.</title>
+        <publication>In Proceedings of the 21st International Conference on Computational Linguistics and the 44th Annual Meeting on Association for Computational Linguistics.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>17</id>
+        <authors>
+          <author>Bonnie Glover Stalls</author>
+          <author>Kevin Knight</author>
+        </authors>
+        <title>Translating Names and Technical Terms in Arabic Text.</title>
+        <publication>In Proceedings of the COLING/ACL Workshop on Computational Approaches to Semitic Languages.</publication>
+        <pages>None</pages>
+        <date>1998</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>2</reference_id>
+        <string>Chen et al., 1998</string>
+        <sentence_id>25714</sentence_id>
+        <char_offset>144</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>6</reference_id>
+        <string>Kashani et al., 2007</string>
+        <sentence_id>25839</sentence_id>
+        <char_offset>147</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>8</reference_id>
+        <string>Knight and Graehl, 1997</string>
+        <sentence_id>25714</sentence_id>
+        <char_offset>119</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>8</reference_id>
+        <string>Knight and Graehl, 1997</string>
+        <sentence_id>25839</sentence_id>
+        <char_offset>38</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>12</reference_id>
+        <string>Matthews, 2007</string>
+        <sentence_id>25839</sentence_id>
+        <char_offset>105</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>15</reference_id>
+        <string>Sherif and Kondrak, 2007</string>
+        <sentence_id>25839</sentence_id>
+        <char_offset>121</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>17</reference_id>
+        <string>Stalls and Knight, 1998</string>
+        <sentence_id>25839</sentence_id>
+        <char_offset>63</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

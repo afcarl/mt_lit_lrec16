@@ -1,0 +1,805 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Locally Training the Log-Linear Model for SMT</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-12884">In statistical machine translation, minimum error rate training (MERT) is a standard method for tuning a single weight with regard to a given development data.</A-S>
+    <A-S ID="S-12885">However, due to the diversity and uneven distribution of source sentences, there are two problems suffered by this method.</A-S>
+    <A-S ID="S-12886">First, its performance is highly dependent on the choice of a development set, which may lead to an unstable performance for testing.</A-S>
+    <A-S ID="S-12887">Second, translations become inconsistent at the sentence level since tuning is performed globally on a document level.</A-S>
+    <A-S ID="S-12888">In this paper, we propose a novel local training method to address these two problems.</A-S>
+    <A-S ID="S-12889">Unlike a global training method, such as MERT, in which a single weight is learned and used for all the input sentences, we perform training and testing in one step by learning a sentencewise weight for each input sentence.</A-S>
+    <A-S ID="S-12890">We propose efficient incremental training methods to put the local training into practice.</A-S>
+    <A-S ID="S-12891">In NIST Chinese-to-English translation tasks, our local training method significantly outperforms MERT with the maximal improvements up to 2.0 BLEU points, meanwhile its efficiency is comparable to that of the global method.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-12892"><REF ID="R-23" RPTR="32">Och and Ney (2002)</REF> introduced the log-linear model for statistical machine translation (SMT), in which translation is considered as the following optimization problem:</S>
+      </P>
+      <P>
+        <S ID="S-12893">&#234;(f; W ) = arg max P(e|f; W )</S>
+      </P>
+      <P>
+        <S ID="S-12894">e</S>
+      </P>
+      <P>
+        <S ID="S-12895">= arg max</S>
+      </P>
+      <P>
+        <S ID="S-12896">e</S>
+      </P>
+      <P>
+        <S ID="S-12897">= arg max</S>
+      </P>
+      <P>
+        <S ID="S-12898">e</S>
+      </P>
+      <P>
+        <S ID="S-12899">exp { W &#183; h(f, e) }</S>
+      </P>
+      <P>
+        <S ID="S-12900">&#8721;e &#8242; exp { W &#183; h(f, e &#8242; ) }</S>
+      </P>
+      <P>
+        <S ID="S-12901">{ W &#183; h(f, e) } , (1)</S>
+      </P>
+      <P>
+        <S ID="S-12902">where f and e (e &#8242; ) are source and target sentences, respectively.</S>
+        <S ID="S-12903">h is a feature vector which is scaled by a weight W .</S>
+        <S ID="S-12904">Parameter estimation is one of the most important components in SMT, and various training methods have been proposed to tune W .</S>
+        <S ID="S-12905">Some methods are based on likelihood (<REF ID="R-23" RPTR="33">Och and Ney, 2002</REF>; <REF ID="R-01" RPTR="1">Blunsom et al., 2008</REF>), error rate (<REF ID="R-24" RPTR="35">Och, 2003</REF>; Zhao and Chen, 2009; <REF ID="R-26" RPTR="41">Pauls et al., 2009</REF>; <REF ID="R-10" RPTR="19">Galley and Quirk, 2011</REF>), margin (<REF ID="R-30" RPTR="46">Watanabe et al., 2007</REF>; <REF ID="R-06" RPTR="8">Chiang et al., 2008</REF>) and ranking (<REF ID="R-13" RPTR="22">Hopkins and May, 2011</REF>), and among which minimum error rate training (MERT) (<REF ID="R-24" RPTR="36">Och, 2003</REF>) is the most popular one.</S>
+      </P>
+      <P>
+        <S ID="S-12906">All these training methods follow the same pipeline: they train only a single weight on a given development set, and then use it to translate all the sentences in a test set.</S>
+        <S ID="S-12907">We call them a global training method.</S>
+        <S ID="S-12908">One of its advantages is that it allows us to train a single weight offline and thereby it is efficient.</S>
+        <S ID="S-12909">However, due to the diversity and uneven distribution of source sentences(<REF ID="R-17" RPTR="27">Li et al., 2010</REF>), there are some shortcomings in this pipeline.</S>
+      </P>
+      <P>
+        <S ID="S-12910">Firstly, on the document level, the performance of these methods is dependent on the choice of a development set, which may potentially lead to an unstable translation performance for testing.</S>
+        <S ID="S-12911">As referred in our experiment, the BLEU points on NIST08 are</S>
+      </P>
+      <P>
+        <S ID="S-12912">&#65533; &#65533;1,0 &#65533;&#65533; h( f , e ) &#65533; h( f , e )</S>
+      </P>
+      <P>
+        <S ID="S-12913">1 12 1 11</S>
+      </P>
+      <P>
+        <S ID="S-12914">&#65533; 1, 0 &#65533;&#65533; h( f , e ) &#65533; h( f , e )</S>
+      </P>
+      <P>
+        <S ID="S-12915">1 11 1 12</S>
+      </P>
+      <P>
+        <S ID="S-12916">&#65533; 2,0 &#65533;&#65533; h( f , e ) &#65533; h( f , e )</S>
+      </P>
+      <P>
+        <S ID="S-12917">2 22 2 21</S>
+      </P>
+      <P>
+        <S ID="S-12918">&#65533; &#65533;2,0 &#65533;&#65533; h( f , e ) &#65533; h( f , e )</S>
+      </P>
+      <P>
+        <S ID="S-12919">2 21 2 22</S>
+      </P>
+      <P>
+        <S ID="S-12920">i</S>
+      </P>
+      <P>
+        <S ID="S-12921">Source Candidate Translation f j e</S>
+      </P>
+      <P>
+        <S ID="S-12922">i ij h score</S>
+      </P>
+      <P>
+        <S ID="S-12923">1 &#25105; &#26159; &#23398; &#29983; &#12290; 1 I am students .</S>
+        <S ID="S-12924">&lt;2, 1&gt; 0.5</S>
+      </P>
+      <P>
+        <S ID="S-12925">2 I was students .</S>
+        <S ID="S-12926">&lt;1,1&gt; 0.2</S>
+      </P>
+      <P>
+        <S ID="S-12927">2 &#20170; &#22825; &#26143; &#26399; &#20960; ?</S>
+        <S ID="S-12928">1 week several today ?</S>
+        <S ID="S-12929">&lt;1,2&gt; 0.3</S>
+      </P>
+      <P>
+        <S ID="S-12930">2 today several weeks .</S>
+        <S ID="S-12931">&lt;3,2&gt; 0.1</S>
+      </P>
+      <P>
+        <S ID="S-12932">(a)</S>
+      </P>
+      <P>
+        <S ID="S-12933">h( f , e ) &#65533; h( f , e )</S>
+      </P>
+      <P>
+        <S ID="S-12934">2 21 2 22</S>
+      </P>
+      <P>
+        <S ID="S-12935">&lt;1,0&gt;</S>
+      </P>
+      <P>
+        <S ID="S-12936">.</S>
+        <S ID="S-12937">.</S>
+      </P>
+      <P>
+        <S ID="S-12938">&lt;-2,0&gt;</S>
+      </P>
+      <P>
+        <S ID="S-12939">&lt;-1,0&gt;</S>
+      </P>
+      <P>
+        <S ID="S-12940">h( f , e ) &#65533; h( f , e )</S>
+      </P>
+      <P>
+        <S ID="S-12941">1 12 1 11</S>
+      </P>
+      <P>
+        <S ID="S-12942">(b) h 1</S>
+      </P>
+      <P>
+        <S ID="S-12943">h( f1, e11 ) &#65533; h( f1, e12 )</S>
+      </P>
+      <P>
+        <S ID="S-12944">* *</S>
+      </P>
+      <P>
+        <S ID="S-12945">&lt;2,0&gt;</S>
+      </P>
+      <P>
+        <S ID="S-12946">h 0</S>
+      </P>
+      <P>
+        <S ID="S-12947">h( f , e ) &#65533; h( f , e )</S>
+      </P>
+      <P>
+        <S ID="S-12948">2 22 2 21</S>
+      </P>
+      <P>
+        <S ID="S-12949">19.04 when the Moses system is tuned on NIST02 by MERT.</S>
+        <S ID="S-12950">However, its performance is improved to 21.28 points when tuned on NIST06.</S>
+        <S ID="S-12951">The automatic selection of a development set may partially address the problem.</S>
+        <S ID="S-12952">However it is inefficient since tuning requires iteratively decoding an entire development set, which is impractical for an online service.</S>
+      </P>
+      <P>
+        <S ID="S-12953">Secondly, translation becomes inconsistent on the sentence level (Ma et al., 2011).</S>
+        <S ID="S-12954">Global training method such as MERT tries to optimize the weight towards the best performance for the whole set, and it can not necessarily always obtain good translation for every sentence in the development set.</S>
+        <S ID="S-12955">The reason is that different sentences may need different optimal weights, and MERT can not find a single weight to satisfy all of the sentences.</S>
+        <S ID="S-12956">Figure 1(a) shows such an example, in which a development set contains two sentences f 1 and f 2 with translations e and feature vectors h.</S>
+        <S ID="S-12957">When we tune examples in Figure 1(a) by MERT, it can be regarded as a nonlinearly separable classification problem illustrated in Figure 1(b).</S>
+        <S ID="S-12958">Therefore, there exists no single weight W which simultaneously obtains e 11 and e 21 as translation for f 1 and f 2 via Equation (1).</S>
+        <S ID="S-12959">However, we can achieve this with two weights: &#12296;1, 1&#12297; for f 1 and &#12296;&#8722;1, 1&#12297; for f 2 .</S>
+        <S ID="S-12960">In this paper, inspired by KNN-SVM (<REF ID="R-31" RPTR="51">Zhang et al., 2006</REF>), we propose a local training method, which trains sentence-wise weights instead of a single weight, to address the above two problems.</S>
+        <S ID="S-12961">Compared with global training methods, such as MERT, in which training and testing are separated, our method works in an online fashion, in which training is performed during testing.</S>
+        <S ID="S-12962">This online fashion has an advantage in that it can adapt the weights for each of the test sentences, by dynamically tuning the weights on translation examples which are similar to these test sentences.</S>
+        <S ID="S-12963">Similar to the method of development set automatical selection, the local training method may also suffer the problem of efficiency.</S>
+        <S ID="S-12964">To put it into practice, we propose incremental training methods which avoid retraining and iterative decoding on a development set.</S>
+        <S ID="S-12965">Our local training method has two advantages: firstly, it significantly outperforms MERT, especially when test set is different from the development set; secondly, it improves the translation consistency.</S>
+        <S ID="S-12966">Experiments on NIST Chinese-to-English translation tasks show that our local training method significantly gains over MERT, with the maximum improvements up to 2.0 BLEU, and its efficiency is comparable to that of the global training method.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Local Training and Testing</HEADER>
+      <P>
+        <S ID="S-12967">The local training method (<REF ID="R-02" RPTR="3">Bottou and Vapnik, 1992</REF>) is widely employed in computer vision (<REF ID="R-31" RPTR="52">Zhang et al., 2006</REF>; <REF ID="R-05" RPTR="7">Cheng et al., 2010</REF>).</S>
+        <S ID="S-12968">Compared with the global training method which tries to fit a single weight on the training data, the local one learns weights based on the local neighborhood information for each test example.</S>
+        <S ID="S-12969">It is superior to</S>
+      </P>
+      <P>
+        <S ID="S-12970">the global one when the data sets are not evenly distributed (<REF ID="R-02" RPTR="4">Bottou and Vapnik, 1992</REF>; <REF ID="R-31" RPTR="53">Zhang et al., 2006</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-12971">Algorithm 1 Naive Local Training Method Input: T = {t i } N i=1 (test set), K (retrieval size),</S>
+      </P>
+      <P>
+        <S ID="S-12972">Dev(development set), D(retrieval data) Output: Translation results of T</S>
+      </P>
+      <P>
+        <S ID="S-12973">1: for all sentence t i such that 1 &#8804; i &#8804; N do</S>
+      </P>
+      <P>
+        <S ID="S-12974">2: Retrieve the training examples D i with size</S>
+      </P>
+      <P>
+        <S ID="S-12975">K for t i from D according to a similarity;</S>
+      </P>
+      <P>
+        <S ID="S-12976">3: Train a local weight W i based on Dev and</S>
+      </P>
+      <P>
+        <S ID="S-12977">D i ;</S>
+      </P>
+      <P>
+        <S ID="S-12978">4: Decode t i with W i ;</S>
+      </P>
+      <P>
+        <S ID="S-12979">5: end for</S>
+      </P>
+      <P>
+        <S ID="S-12980">Suppose T be a test set, Dev a development set, and D a retrieval data.</S>
+        <S ID="S-12981">The local training in SMT is described in the Algorithm 1.</S>
+        <S ID="S-12982">For each sentence t i in test set, training examples D i is retrieved from D using a similarity measure (line 2), a weight W i is optimized on Dev and D i (line 3) 1 , and, finally, t i is decoded with W i for testing (line 4).</S>
+        <S ID="S-12983">At the end of this algorithm, it returns the translation results for T .</S>
+        <S ID="S-12984">Note that weights are adapted for each test sentence t i in line 3 by utilizing the translation examples D i which are similar to t i .</S>
+        <S ID="S-12985">Thus, our local training method can be considered as an adaptation of translation weights.</S>
+        <S ID="S-12986">Algorithm 1 suffers a problem of training efficiency in line 3.</S>
+        <S ID="S-12987">It is impractical to train a weight W i on Dev and D i from scratch for every sentence, since iteratively decoding Dev and D i is time consuming when we apply MERT.</S>
+        <S ID="S-12988">To address this problem, we propose a novel incremental approach which is based on a two-phase training.</S>
+      </P>
+      <P>
+        <S ID="S-12989">On the first phase, we use a global training method, like MERT, to tune a baseline weight on the development set Dev in an offline manner.</S>
+        <S ID="S-12990">On the second phase, we utilize the retrieved examples to incrementally tune sentence-wise local weights based on the baseline weight.</S>
+        <S ID="S-12991">This method can not only consider the common characteristics learnt from the Dev, but also take into account the knowl-</S>
+      </P>
+      <P>
+        <S ID="S-12992">1 Usually, the quality of development set Dev is high, since</S>
+      </P>
+      <P>
+        <S ID="S-12993">it is manually produced with multiple references.</S>
+        <S ID="S-12994">This is the main reason why Dev is used as a part of new development set to train W i .</S>
+      </P>
+      <P>
+        <S ID="S-12995">edge for each individual sentence learnt from similar examples during testing.</S>
+        <S ID="S-12996">On the phase of incremental training, we perform decoding only once for retrieved examples D i , though several rounds of decoding are possible and potentially better if one does not seriously care about training speed.</S>
+        <S ID="S-12997">Furthermore, instead of on-the-fly decoding, we decode the retrieval data D offline using the parameter from our baseline weight and its nbest translation candidates are saved with training examples to increase the training efficiency.</S>
+      </P>
+      <P>
+        <S ID="S-12998">Algorithm 2 Local Training Method Based on Incremental Training Input: T = {t i } N i=1 (test set), K (retrieval size),</S>
+      </P>
+      <P>
+        <S ID="S-12999">Dev (development set), D = {&#12296;f s , r s &#12297;} s=S s=1 (retrieval data), Output: Translation results of T</S>
+      </P>
+      <P>
+        <S ID="S-13000">1: Run global Training (such as MERT) on Dev to</S>
+      </P>
+      <P>
+        <S ID="S-13001">get a baseline weight W b ; // Phase 1</S>
+      </P>
+      <P>
+        <S ID="S-13002">2: Decode each sentence in D to get</S>
+      </P>
+      <P>
+        <S ID="S-13003">D = {&#12296;f s , c s , r s &#12297;} s=S s=1 ;</S>
+      </P>
+      <P>
+        <S ID="S-13004">3: for all sentence t i such that 1 &#8804; i &#8804; N do</S>
+      </P>
+      <P>
+        <S ID="S-13005">4: Retrieve K training examples D i =</S>
+      </P>
+      <P>
+        <S ID="S-13006">{&#12296;fj i, ci j , ri j &#12297;}j=K j=1 for t i from D according to a similarity;</S>
+      </P>
+      <P>
+        <S ID="S-13007">5: Incrementally train a local weight W i based</S>
+      </P>
+      <P>
+        <S ID="S-13008">on W b and D i ; // Phase 2</S>
+      </P>
+      <P>
+        <S ID="S-13009">6: Decode t i with W i ;</S>
+      </P>
+      <P>
+        <S ID="S-13010">7: end for</S>
+      </P>
+      <P>
+        <S ID="S-13011">The two-phase local training algorithm is described in Algorithm 2, where c s and r s denote the translation candidate set and reference set for each sentence f s in retrieval data, respectively, and K is the retrieval size.</S>
+        <S ID="S-13012">It globally trains a baseline weight W b (line 1), and decodes each sentence in retrieval data D with the weight W b (line 2).</S>
+        <S ID="S-13013">For each sentence t i in test set T , it first retrieves training examples D i from D (line 4), and then it runs local training to tune a local weight W i (line 5) and performs testing with W i for t i (line 6).</S>
+        <S ID="S-13014">Please note that the two-phase training contains global training in line 1 and local training in line 5.</S>
+      </P>
+      <P>
+        <S ID="S-13015">From Algorithm 2, one can see that our method is effective even if the test set is unknow, for example, in the scenario of online translation services, since the global training on development set and decoding</S>
+      </P>
+      <P>
+        <S ID="S-13016">on retrieval data can be performed offline.</S>
+      </P>
+      <P>
+        <S ID="S-13017">In the next two sections, we will discuss the details about the similarity metric in line 4 and the incremental training in line 5 of Algorithm 2.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Acquiring Training Examples</HEADER>
+      <P>
+        <S ID="S-13018">In line 4 of Algorithm 2, to retrieve training examples for the sentence t i , we first need a metric to retrieve similar translation examples.</S>
+        <S ID="S-13019">We assume that the metric satisfy the property: more similar the test sentence and translation examples are, the better translation result one obtains when decoding the test sentence with the weight trained on the translation examples.</S>
+      </P>
+      <P>
+        <S ID="S-13020">The metric we consider here is derived from an example-based machine translation.</S>
+        <S ID="S-13021">To retrieve translation examples for a test sentence, (<REF ID="R-29" RPTR="44">Watanabe and Sumita, 2003</REF>) defined a metric based on the combination of edit distance and TF-IDF (<REF ID="R-20" RPTR="29">Manning and Sch&#252;tze, 1999</REF>) as follows:</S>
+      </P>
+      <P>
+        <S ID="S-13022">dist(f 1 , f 2 ) = &#952; &#215; edit-dist(f 1 , f 2 )+</S>
+      </P>
+      <P>
+        <S ID="S-13023">(1 &#8722; &#952;) &#215; tf-idf(f 1 , f 2 ), (2)</S>
+      </P>
+      <P>
+        <S ID="S-13024">where &#952;(0 &#8804; &#952; &#8804; 1) is an interpolation weight, f i (i = 1, 2) is a word sequence and can be also considered as a document.</S>
+        <S ID="S-13025">In this paper, we extract similar examples from training data.</S>
+        <S ID="S-13026">Like examplebased translation in which similar source sentences have similar translations, we assume that the optimal translation weights of the similar source sentences are closer.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Incremental Training Based on Ultraconservative Update</HEADER>
+      <P>
+        <S ID="S-13062">Compared with retraining mode, incremental training can improve the training efficiency.</S>
+        <S ID="S-13063">In the field of machine learning research, incremental training has been employed in the work (<REF ID="R-03" RPTR="5">Cauwenberghs and Poggio, 2001</REF>; <REF ID="R-27" RPTR="42">Shilton et al., 2005</REF>), but there is little work for tuning parameters of statistical machine translation.</S>
+        <S ID="S-13064">The biggest difficulty lies in that the feature vector of a given training example, i.e. translation example, is unavailable until actually decoding the example, since the derivation is a latent variable.</S>
+        <S ID="S-13065">In this section, we will investigate the incremental training methods in SMT scenario.</S>
+      </P>
+      <P>
+        <S ID="S-13066">Following the notations in Algorithm 2, W b is the baseline weight, D i = {&#12296;fj i, ci j , ri j &#12297;}K j=1 denotes training examples for t i .</S>
+        <S ID="S-13067">For the sake of brevity, we will drop the index i, D i = {&#12296;f j , c j , r j &#12297;} K j=1 , in the rest of this paper.</S>
+        <S ID="S-13068">Our goal is to find an optimal weight, denoted by W i , which is a local weight and used for decoding the sentence t i .</S>
+        <S ID="S-13069">Unlike the global method which performs tuning on the whole development set Dev + D i as in Algorithm 1, W i can be incrementally learned by optimizing on D i based on W b .</S>
+        <S ID="S-13070">We employ the idea of ultraconservative update (<REF ID="R-08" RPTR="15">Crammer and Singer, 2003</REF>; <REF ID="R-09" RPTR="17">Crammer et al., 2006</REF>) to propose two incremental methods for local training in Algorithm 2 as follows.</S>
+        <S ID="S-13071">Ultraconservative update is an efficient way to consider the trade-off between the progress made on development set Dev and the progress made on D i .</S>
+        <S ID="S-13072">It desires that the optimal weight W i is not only close to the baseline weight W b , but also achieves the low loss over the retrieved examples D i .</S>
+        <S ID="S-13073">The idea of ultraconservative update can be formalized as follows:</S>
+      </P>
+      <P>
+        <S ID="S-13074">min</S>
+      </P>
+      <P>
+        <S ID="S-13075">W</S>
+      </P>
+      <P>
+        <S ID="S-13076">{ d(W, W b ) + &#955; &#183; Loss(D i , W ) } , (3)</S>
+      </P>
+      <P>
+        <S ID="S-13077">where d(W, W b ) is a distance metric over a pair of weights W and W b .</S>
+        <S ID="S-13078">It penalizes the weights far away from W b and it is L 2 norm in this paper.</S>
+        <S ID="S-13079">Loss(D i , W ) is a loss function of W defined on D i and it evaluates the performance of W over D i .</S>
+        <S ID="S-13080">&#955; is a positive hyperparameter.</S>
+        <S ID="S-13081">If D i is more similar to the test sentence t i , the better performance will be achieved for the larger &#955;.</S>
+        <S ID="S-13082">In particular, if D i consists of only a single sentence t i , the best performance will be obtained when &#955; goes to infinity.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Margin Based Ultraconservative Update</HEADER>
+        <P>
+          <S ID="S-13027">MIRA(<REF ID="R-08" RPTR="16">Crammer and Singer, 2003</REF>; <REF ID="R-09" RPTR="18">Crammer et al., 2006</REF>) is a form of ultraconservative update in (3) whose Loss is defined as hinge loss based on margin over the pairwise translation candiates in D i .</S>
+          <S ID="S-13028">It tries to minimize the following quadratic program:</S>
+        </P>
+        <P>
+          <S ID="S-13029">1 2 ||W &#8722; W b|| 2 + &#955; K</S>
+        </P>
+        <P>
+          <S ID="S-13030">with</S>
+        </P>
+        <P>
+          <S ID="S-13031">K&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-13032">max</S>
+        </P>
+        <P>
+          <S ID="S-13033">1&#8804;n&#8804;|c j | j=1</S>
+        </P>
+        <P>
+          <S ID="S-13034">(</S>
+        </P>
+        <P>
+          <S ID="S-13035">ljn &#8722;W &#183;&#8710;h(f j , e jn ) )</S>
+        </P>
+        <P>
+          <S ID="S-13036">&#8710;h(f j , e jn ) = h(f j , e j&#183;) &#8722; h(f j , e jn ), (4)</S>
+        </P>
+        <P>
+          <S ID="S-13037">where h(f j , e) is the feature vector of candidate e, e jn is a translation member of f j in c j , e j&#183; is the oracle one in c j , l jn is a loss between e j&#183; and e jn and it is the same as referred in (<REF ID="R-06" RPTR="9">Chiang et al., 2008</REF>), and |c j | denotes the number of members in c j .</S>
+          <S ID="S-13038">Different from (<REF ID="R-30" RPTR="47">Watanabe et al., 2007</REF>; <REF ID="R-06" RPTR="10">Chiang et al., 2008</REF>) employing the MIRA to globally train SMT, in this paper, we apply MIRA as one of local training method for SMT and we call it as margin based ultraconservative update (MBUU for shortly) to highlight its advantage of incremental training in line 5 of Algorithm 2.</S>
+        </P>
+        <P>
+          <S ID="S-13039">Further, there is another difference between MBUU and MIRA in (<REF ID="R-30" RPTR="48">Watanabe et al., 2007</REF>; <REF ID="R-06" RPTR="11">Chiang et al., 2008</REF>).</S>
+          <S ID="S-13040">MBUU is a batch update mode which updates the weight with all training examples, but MIRA is an online one which updates with each example (<REF ID="R-30" RPTR="49">Watanabe et al., 2007</REF>) or part of examples (<REF ID="R-06" RPTR="12">Chiang et al., 2008</REF>).</S>
+          <S ID="S-13041">Therefore, MBUU is more ultraconservative.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Error Rate Based Ultraconservative Update</HEADER>
+        <P>
+          <S ID="S-13042">Instead of taking into account the margin-based hinge loss between a pair of translations as the Loss in (3), we directly optimize the error rate of translation candidates with respect to their references in D i .</S>
+          <S ID="S-13043">Formally, the objective function of error rate based ultraconservative update (EBUU) is as follows:</S>
+        </P>
+        <P>
+          <S ID="S-13044">1 2 &#8214;W &#8722; W b&#8214; 2 + &#955; K K&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-13045">Error(r j ; &#234;(f j ; W )), (5)</S>
+        </P>
+        <P>
+          <S ID="S-13046">j=1</S>
+        </P>
+        <P>
+          <S ID="S-13047">where &#234;(f j ; W ) is defined in Equation (1), and Error(r j , e) is the sentence-wise minus BLEU (<REF ID="R-25" RPTR="39">Papineni et al., 2002</REF>) of a candidate e with respect to r j .</S>
+        </P>
+        <P>
+          <S ID="S-13048">Due to the existence of L 2 norm in objective function (5), the optimization algorithm MERT can not be applied for this question since the exact line search routine does not hold here.</S>
+          <S ID="S-13049">Motivated by (<REF ID="R-24" RPTR="37">Och, 2003</REF>; Smith and Eisner, 2006), we approximate the Error in (5) by the expected loss, and then derive the following function:</S>
+        </P>
+        <P>
+          <S ID="S-13050">1 2 &#8214;W &#8722;W b&#8214; 2 + &#955; K K&#8721; &#8721; Error(r j ; e)P &#945; (e|f j ; W ),</S>
+        </P>
+        <P>
+          <S ID="S-13051">j=1 e</S>
+        </P>
+        <P>
+          <S ID="S-13052">(6)</S>
+        </P>
+        <P>
+          <S ID="S-13053">with</S>
+        </P>
+        <P>
+          <S ID="S-13054">P &#945; (e|f j ; W ) = exp[&#945;W &#183; h(f j , e)]</S>
+        </P>
+        <P>
+          <S ID="S-13055">&#8721;e &#8242; &#8712;c j</S>
+        </P>
+        <P>
+          <S ID="S-13056">exp[&#945;W &#183; h(f j , e &#8242; )] , (7)</S>
+        </P>
+        <P>
+          <S ID="S-13057">where &#945; &gt; 0 is a real number valued smoother.</S>
+          <S ID="S-13058">One can see that, in the extreme case, for &#945; &#8594; &#8734;, (6) converges to (5).</S>
+        </P>
+        <P>
+          <S ID="S-13059">We apply the gradient decent method to minimize the function (6), as it is smooth with respect to &#955;.</S>
+          <S ID="S-13060">Since the function (6) is non-convex, the solution obtained by gradient descent method may depend on the initial point.</S>
+          <S ID="S-13061">In this paper, we set the initial point as W b in order to achieve a desirable solution.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiments and Results</HEADER>
+      <P>
+        <S ID="S-13156"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Setting</HEADER>
+        <P>
+          <S ID="S-13083">We conduct our experiments on the Chinese-to- English translation task.</S>
+          <S ID="S-13084">The training data is FBIS corpus consisting of about 240k sentence pairs.</S>
+          <S ID="S-13085">The development set is NIST02 evaluation data, and the test datasets are NIST05, NIST06,and NIST08.</S>
+        </P>
+        <P>
+          <S ID="S-13086">We run GIZA++ (<REF ID="R-22" RPTR="31">Och and Ney, 2000</REF>) on the training corpus in both directions (<REF ID="R-14" RPTR="24">Koehn et al., 2003</REF>) to obtain the word alignment for each sentence pair.</S>
+          <S ID="S-13087">We train a 4-gram language model on the Xinhua portion of the English Gigaword corpus using the SRILM Toolkits (<REF ID="R-28" RPTR="43">Stolcke, 2002</REF>) with modified Kneser-Ney smoothing (<REF ID="R-04" RPTR="6">Chen and Goodman, 1998</REF>).</S>
+          <S ID="S-13088">In our experiments the translation performances are measured by case-insensitive BLEU4 metric (<REF ID="R-25" RPTR="40">Papineni et al., 2002</REF>) and we use mtevalv13a.pl as the evaluation tool.</S>
+          <S ID="S-13089">The significance testing is performed by paired bootstrap re-sampling (<REF ID="R-16" RPTR="26">Koehn, 2004</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-13090">We use an in-house developed hierarchical phrase-based translation (<REF ID="R-07" RPTR="14">Chiang, 2005</REF>) as our baseline system, and we denote it as In-Hiero.</S>
+          <S ID="S-13091">To obtain satisfactory baseline performance, we tune In- Hiero system for 5 times using MERT, and then se-</S>
+        </P>
+        <P>
+          <S ID="S-13092">lect the best-performing one as our baseline for the following experiments.</S>
+          <S ID="S-13093">As Table 1 indicates, our baseline In-Hiero is comparable to the phrase-based MT (Moses) and the hierarchical phrase-based MT (Moses hier) implemented in Moses, an open source MT toolkit 2 (<REF ID="R-15" RPTR="25">Koehn et al., 2007</REF>).</S>
+          <S ID="S-13094">Both of these systems are with default setting.</S>
+          <S ID="S-13095">All three systems are trained by MERT with 100 best candidates.</S>
+          <S ID="S-13096">To compare the local training method in Algorithm 2, we use a standard global training method, MERT, as the baseline training method.</S>
+          <S ID="S-13097">We do not compare with Algorithm 1, in which retraining is performed for each input sentence, since retraining for the whole test set is impractical given that each sentence-wise retraining may take some hours or even days.</S>
+          <S ID="S-13098">Therefore, we just compare Algorithm 2 with MERT.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Runtime Results</HEADER>
+        <P>
+          <S ID="S-13099">To run the Algorithm 2, we tune the baseline weight W b on NIST02 by MERT 3 .</S>
+          <S ID="S-13100">The retrieval data is set as the training data, i.e. FBIS corpus, and the retrieval size is 100.</S>
+          <S ID="S-13101">We translate retrieval data with W b to obtain their 100 best translation candidates.</S>
+          <S ID="S-13102">We use the simple linear interpolated TF-IDF metric with &#952; = 0.1 in Section 3 as the retrieval metric.</S>
+        </P>
+        <P>
+          <S ID="S-13103">2 See web: http://www.statmt.org 3 W b is exactly the weight of In-Hiero in Table 1.</S>
+        </P>
+        <P>
+          <S ID="S-13104">For an efficient tuning, the retrieval process is parallelized as follows: the examples are assigned to 4 CPUs so that each CPU accepts a query and returns its top-100 results, then all these top-100 results are merged into the final top-100 retrieved examples together with their translation candidates.</S>
+          <S ID="S-13105">In our experiments, we employ the two incremental training methods, i.e. MBUU and EBUU.</S>
+          <S ID="S-13106">Both of the hyperparameters &#955; are tuned on NIST05 and set as 0.018 and 0.06 for MBUU and EBUU, respectively.</S>
+          <S ID="S-13107">In the incremental training step, only one CPU is employed.</S>
+        </P>
+        <P>
+          <S ID="S-13108">Table 2 depicts that testing each sentence with local training method takes 2.9 seconds, which is comparable to the testing time 2.0 seconds with global training method 4 .</S>
+          <S ID="S-13109">This shows that the local method is efficient.</S>
+          <S ID="S-13110">Further, compared to the retrieval, the local training is not the bottleneck.</S>
+          <S ID="S-13111">Actually, if we use LSH technique (<REF ID="R-00" RPTR="0">Andoni and Indyk, 2008</REF>) in retrieval process, the local method can be easily scaled to a larger training data.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Results and Analysis</HEADER>
+        <P>
+          <S ID="S-13112">Table 3 shows the main results of our local training methods.</S>
+          <S ID="S-13113">The EBUU training method significantly outperforms the MERT baseline, and the improvement even achieves up to 2.0 BLEU points on NIST08.</S>
+          <S ID="S-13114">We can also see that EBUU and MBUU are comparable on these three test sets.</S>
+          <S ID="S-13115">Both of these two local training methods achieve significant improvements over the MERT baseline, which proves the effectiveness of our local training method over global training method.</S>
+        </P>
+        <P>
+          <S ID="S-13116">Although both local methods MBUU and EBUU achieved improvements on all the datasets, their gains on NIST06 and NIST08 are significantly higher than those achieved on NIST05 test dataset.</S>
+          <S ID="S-13117">We conjecture that, the more different a test set and a development set are, the more potential improvem-</S>
+        </P>
+        <P>
+          <S ID="S-13118">4 The runtime excludes the time of tuning and decoding on D</S>
+        </P>
+        <P>
+          <S ID="S-13119">in Algorithm 2, since both of them can be performanced offline.</S>
+        </P>
+        <P>
+          <S ID="S-13120">B L E U 2 8</S>
+        </P>
+        <P>
+          <S ID="S-13121">2 6</S>
+        </P>
+        <P>
+          <S ID="S-13122">2 4</S>
+        </P>
+        <P>
+          <S ID="S-13123">2 2</S>
+        </P>
+        <P>
+          <S ID="S-13124">2 0</S>
+        </P>
+        <P>
+          <S ID="S-13125">1 8</S>
+        </P>
+        <P>
+          <S ID="S-13126">N I S T 0 5</S>
+        </P>
+        <P>
+          <S ID="S-13127">N I S T 0 6</S>
+        </P>
+        <P>
+          <S ID="S-13128">N I S T 0 8</S>
+        </P>
+        <P>
+          <S ID="S-13129">0 .0 0 0 .0 2 0 .0 4 0 .0 6 0 .0 8 0 .1 0</S>
+        </P>
+        <P>
+          <S ID="S-13130">nts local training has for the sentences in this test set.</S>
+          <S ID="S-13131">To test our hypothesis, we measured the similarity between the development set and a test set by the average value 5 of accumulated TF-IDF scores of development dataset and each sentence in test datasets.</S>
+          <S ID="S-13132">Table 4 shows that NIST06 and NIST08 are more different from NIS02 than NIST05, thus, this is potentially the reason why local training is more effective on NIST06 and NIST08.</S>
+          <S ID="S-13133">As mentioned in Section 1, the global training methods such as MERT are highly dependent on development sets, which can be seen in Table 5.</S>
+          <S ID="S-13134">Therefore, the translation performance will be degraded if one chooses a development data which is not close</S>
+        </P>
+        <P>
+          <S ID="S-13135">5 Instead of using the similarity between two documents development and test datasets, we define the similarity as the average similarity of the development set and the sentences in test set.</S>
+          <S ID="S-13136">The reason is that it reduces its dependency on the number of sentences in test dataset, which may cause a bias.</S>
+        </P>
+        <P>
+          <S ID="S-13137">l</S>
+        </P>
+        <P>
+          <S ID="S-13138">to the test data.</S>
+          <S ID="S-13139">We can see that, with the help of the local training, we still gain much even if we selected an unsatisfactory development data.</S>
+        </P>
+        <P>
+          <S ID="S-13140">As also mentioned in Section 1, the global methods do not care about the sentence level performance.</S>
+          <S ID="S-13141">Table 6 depicts that there are 1735 sentences with zero BLEU points in all the three test datasets for MERT.</S>
+          <S ID="S-13142">Besides obtaining improvements on document level as referred in Table 3, the local training methods can also achieve consistent improvements on sentence level and thus can improve the users&#8217; experiences.</S>
+        </P>
+        <P>
+          <S ID="S-13143">The hyperparameters &#955; in both MBUU (4) and EBUU (6) has an important influence on translation performance.</S>
+          <S ID="S-13144">Figure 2 shows such influence for EBUU on the test datasets.</S>
+          <S ID="S-13145">We can see that, the performances on all these datasets improve as &#955; becomes closer to 0.06 from 0, and the performance continues improving when &#955; passes over 0.06 on NIST08 test set, where the performance constantly improves up to 2.6 BLEU points over baseline.</S>
+          <S ID="S-13146">As mentioned in Section 4, if the retrieved examples are very similar to the test sentence, the better performance will be achieved with the larger &#955;.</S>
+          <S ID="S-13147">Therefore, it is reasonable that the performances improved when &#955; increased from 0 to 0.06.</S>
+          <S ID="S-13148">Further, the turning point appearing at 0.06 proves that the ultraconservative update is necessary.</S>
+          <S ID="S-13149">We can also see that the performance on NIST08 consistently improves and achieves the maximum gain when &#955; arrives at 0.1, but those on both NIST05 and NIST06 achieves the best when it arrives at 0.06.</S>
+          <S ID="S-13150">This phenomenon can also be interpreted in Table 4 as the lowest similarity between the development and NIST08 datasets.</S>
+        </P>
+        <P>
+          <S ID="S-13151">Generally, the better performance may be achieved when more examples are retrieved.</S>
+          <S ID="S-13152">Actually, in Table 7 there seems to be little dependency between the numbers of examples retrieved and the translation qualities, although they are positively re-</S>
+        </P>
+        <P>
+          <S ID="S-13153">lated approximately.</S>
+          <S ID="S-13154">Table 8 presents the performance of the oracle translations selected from the 1-best translation results of MERT and EBUU.</S>
+          <S ID="S-13155">Clearly, there exists more potential improvement for local training method.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Related Work</HEADER>
+      <P>
+        <S ID="S-13157">Several works have proposed discriminative techniques to train log-linear model for SMT.</S>
+        <S ID="S-13158">(<REF ID="R-23" RPTR="34">Och and Ney, 2002</REF>; <REF ID="R-01" RPTR="2">Blunsom et al., 2008</REF>) used maximum likelihood estimation to learn weights for MT.</S>
+        <S ID="S-13159">(<REF ID="R-24" RPTR="38">Och, 2003</REF>; <REF ID="R-21" RPTR="30">Moore and Quirk, 2008</REF>; Zhao and Chen, 2009; <REF ID="R-10" RPTR="20">Galley and Quirk, 2011</REF>) employed an evaluation metric as a loss function and directly optimized it.</S>
+        <S ID="S-13160">(<REF ID="R-30" RPTR="50">Watanabe et al., 2007</REF>; <REF ID="R-06" RPTR="13">Chiang et al., 2008</REF>; <REF ID="R-13" RPTR="23">Hopkins and May, 2011</REF>) proposed other optimization objectives by introducing a margin-based and ranking-based indirect loss functions.</S>
+        <S ID="S-13161">All the methods mentioned above train a single weight for the whole development set, whereas our local training method learns a weight for each sentence.</S>
+        <S ID="S-13162">Further, our translation framework integrates the training and testing into one unit, instead of treating them separately.</S>
+        <S ID="S-13163">One of the advantages is that it can adapt the weights for each of the test sentences.</S>
+        <S ID="S-13164">Our method resorts to some translation examples, which is similar as example-based translation or translation memory (<REF ID="R-29" RPTR="45">Watanabe and Sumita, 2003</REF>; He et al., 2010; Ma et al., 2011).</S>
+        <S ID="S-13165">Instead of using translation examples to construct translation rules for enlarging the decoding space, we employed them to discriminatively learn local weights.</S>
+        <S ID="S-13166">Similar to (<REF ID="R-12" RPTR="21">Hildebrand et al., 2005</REF>; <REF ID="R-18" RPTR="28">L&#252; et al., 2007</REF>), our method also employes IR methods to retrieve examples for a given test set.</S>
+        <S ID="S-13167">Their methods utilize the retrieved examples to acquire translation model and can be seen as the adaptation of translation model.</S>
+        <S ID="S-13168">However, ours uses the retrieved examples to tune the weights and thus can be considered as the adaptation of tuning.</S>
+        <S ID="S-13169">Furthermore, since ours does not change the translation model which needs to run GIZA++ and it incrementally trains local weights, our method can be applied for online translation service.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion and Future Work</HEADER>
+      <P>
+        <S ID="S-13170">This paper proposes a novel local training framework for SMT.</S>
+        <S ID="S-13171">It has two characteristics, which are different from global training methods such as MERT.</S>
+        <S ID="S-13172">First, instead of training only one weight for document level, it trains a single weight for sentence level.</S>
+        <S ID="S-13173">Second, instead of considering the training and testing as two separate units, we unify the training and testing into one unit, which can employ the information of test sentences and perform sentencewise local adaptation of weights.</S>
+        <S ID="S-13174">Local training can not only alleviate the problem of the development data selection, but also reduce the risk of sentence-wise bad translation results, thus consistently improve the translation performance.</S>
+        <S ID="S-13175">Experiments show gains up to 2.0 BLEU points compared with a MERT baseline.</S>
+        <S ID="S-13176">With the help of incremental training methods, the time incurred by local training was negligible and the local training and testing totally took 2.9 seconds for each sentence.</S>
+        <S ID="S-13177">In the future work, we will further investigate the local training method, since there are more room for improvements as observed in our experiments.</S>
+        <S ID="S-13178">We will test our method on other translation models and larger training data 6 .</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-13179"></S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Alexandr Andoni</RAUTHOR>
+      <REFTITLE>Near-optimal hashing algorithms for approximate nearest neighbor in high dimensions.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Phil Blunsom</RAUTHOR>
+      <REFTITLE>A discriminative latent variable model for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>L&#233;on Bottou</RAUTHOR>
+      <REFTITLE>Local learning algorithms.</REFTITLE>
+      <DATE>1992</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>G Cauwenberghs</RAUTHOR>
+      <REFTITLE>Incremental and decremental support vector machine learning.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Stanley F Chen</RAUTHOR>
+      <REFTITLE>An empirical study of smoothing techniques for language modeling. In</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Haibin Cheng</RAUTHOR>
+      <REFTITLE>Efficient algorithm for localized support vector machine.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Online large-margin training of syntactic and structural translation features.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>A hierarchical phrase-based model for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Koby Crammer</RAUTHOR>
+      <REFTITLE>Ultraconservative online algorithms for multiclass problems.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Koby Crammer</RAUTHOR>
+      <REFTITLE>Online passiveaggressive algorithms.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Optimal search for minimum error rate training.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Yifan He</RAUTHOR>
+      <REFTITLE>Bridging smt and tm with translation recommendation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>S Hildebrand</RAUTHOR>
+      <REFTITLE>Adaptation of the translation model for statistical machine translation based on information retrieval.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Mark Hopkins</RAUTHOR>
+      <REFTITLE>Tuning as ranking.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical significance tests for machine translation evaluation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Mu Li</RAUTHOR>
+      <REFTITLE>Adaptive development data selection for log-linear model in statistical machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Yajuan L&#252;</RAUTHOR>
+      <REFTITLE>Improving statistical machine translation performance by training data selection and optimization.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Yanjun Ma</RAUTHOR>
+      <REFTITLE>Consistent translation using discriminative learning - a translation memory-inspired approach.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Christopher D Manning</RAUTHOR>
+      <REFTITLE>Foundations of statistical natural language processing.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Robert C Moore</RAUTHOR>
+      <REFTITLE>Random restarts in minimum error rate training for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Improved statistical alignment models.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Discriminative training and maximum entropy models for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Adam Pauls</RAUTHOR>
+      <REFTITLE>Consensus training for consensus decoding in machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Alistair Shilton</RAUTHOR>
+      <REFTITLE>Incremental training of support vector machines.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>Srilm - an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR>Taro Watanabe</RAUTHOR>
+      <REFTITLE>Examplebased decoding for statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="30">
+      <RAUTHOR>Taro Watanabe</RAUTHOR>
+      <REFTITLE>Online large-margin training for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="31">
+      <RAUTHOR>Hao Zhang</RAUTHOR>
+      <REFTITLE>Svm-knn: Discriminative nearest neighbor classification for visual category recognition.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

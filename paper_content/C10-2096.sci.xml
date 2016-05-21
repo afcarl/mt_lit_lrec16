@@ -1,0 +1,773 @@
+<PAPER>
+  <FILENO/>
+  <TITLE></TITLE>
+  <AUTHORS/>
+  <ABSTRACT/>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-3873">Statistical machine translation (SMT) has witnessed promising progress in recent years.</S>
+        <S ID="S-3874">Typically, conventional SMT is characterized as a 1- best pipeline system (Figure 1(a)), whose modules are independent of each other and only take as input 1-best results from the previous module.</S>
+        <S ID="S-3875">Though this assumption is convenient to reduce the complexity of SMT systems.</S>
+        <S ID="S-3876">It also bring a major drawback of error propagation.</S>
+        <S ID="S-3877">The errors of 1-best outputs, introduced inevitably in each phase, will propagate and accumulate along the pipeline.</S>
+        <S ID="S-3878">Not recoverable in the final decoding source</S>
+      </P>
+      <P>
+        <S ID="S-3879">source</S>
+      </P>
+      <P>
+        <S ID="S-3880">1-best segmentation</S>
+      </P>
+      <P>
+        <S ID="S-3881">1-best tree</S>
+      </P>
+      <P>
+        <S ID="S-3882">segmentation lattice</S>
+      </P>
+      <P>
+        <S ID="S-3883">parse forest</S>
+      </P>
+      <P>
+        <S ID="S-3884">target</S>
+      </P>
+      <P>
+        <S ID="S-3885">target</S>
+      </P>
+      <P>
+        <S ID="S-3886">(a)</S>
+      </P>
+      <P>
+        <S ID="S-3887">(b)</S>
+      </P>
+      <P>
+        <S ID="S-3888">step.</S>
+        <S ID="S-3889">These errors will severely hurt the translation quality.</S>
+        <S ID="S-3890">For example, if the accuracy of each module is 90%, the final accuracy will drop to 73% after three separate phases.</S>
+        <S ID="S-3891">To alleviate this problem, an obvious solution is to widen the pipeline with k-best lists rather than 1-best results.</S>
+        <S ID="S-3892">For example Venugopal et al. (2008) use k-best alignments and parses in the training phase.</S>
+        <S ID="S-3893">However, with limited scope and too many redundancies, it is inefficient to search separately on each of these similar lists (Huang, 2008).</S>
+      </P>
+      <P>
+        <S ID="S-3894">Another efficient method is to use compact data structures instead of k-bestlists.</S>
+        <S ID="S-3895">A lattice or forest, compactly encoded exponentially many derivations, have proven to be a promising technique.</S>
+        <S ID="S-3896">For example, Mi and Huang (2008), Mi et al. (2008), Liu et al. (2009) and Zhang et al. (2009) use forests in rule extraction and decoding phases to extract more general rules and weaken the influence of parsing errors; Dyer et al. (2008) use word lattice in Chinese word segmentation and Arabic morphological variation phases to weaken the influence of segmentation errors; Huang (2008) and</S>
+      </P>
+      <P>
+        <S ID="S-3897">Coling 2010: Poster Volume, pages 837&#8211;845, Beijing, August 2010</S>
+      </P>
+      <P>
+        <S ID="S-3898">(0, 2, NR) (2,3,CC) (3,5,NR) (5, 6, VV) (6, 8, NN) (8,9,NN) 0 c 0 :B&#249; 1 c 1 :sh&#237; 2 c 2 :y&#468; 3 c 3 :Sh&#257; 4 c 4 :l&#243;ng 5 c 5 :j&#468; 6 c 6 :x&#237;ng 7 c 7 :t&#462;o 8 c 8 :l&#249;n 9 (2,3,P) (5,7,VV) (7,9,NN)</S>
+      </P>
+      <P>
+        <S ID="S-3899">Jiang et al. (2008b) stress the problems in reranking phase.</S>
+        <S ID="S-3900">Both lattices and forests have become popular in machine translation literature.</S>
+      </P>
+      <P>
+        <S ID="S-3901">However, to the best of our knowledge, previous work only focused on one module at a time.</S>
+        <S ID="S-3902">In this paper, we investigate the combination of lattice and forest (Section 2), as shown in Figure 1(b).</S>
+        <S ID="S-3903">We explore the algorithms of lattice parsing (Section 3.2), rule extraction (Section 4) and decoding (Section 5).</S>
+        <S ID="S-3904">More importantly, in the decoding step, our model can search among not only more parse-trees but also more segmentations encoded in the lattice-forests and can take into account all the probabilities of segmentations and parse-trees.</S>
+        <S ID="S-3905">In other words, our model postpones the disambiguition of segmentation and parsing into the final translation step, so that we can do global search for the best segmentation, parse-tree and translation in one step.</S>
+        <S ID="S-3906">When we integrate a lattice into a forest system, medium-scale experiments (Section 6) show another improvement of +0.9 BLEU points over a state-of-the-art forest-based system.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Compact Structures</HEADER>
+      <P>
+        <S ID="S-3931">A word lattice (Figure 2) is a compact representation of all the possible of segmentations and POS tags, while a parse forest (Figure 5) is a compact representation of all parse trees.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Word Lattice</HEADER>
+        <P>
+          <S ID="S-3907">For a given input sentence C = c 0 ..c n&#8722;1 ,where c i denotes a character at position i, andn is the length of the sentence.</S>
+        </P>
+        <P>
+          <S ID="S-3908">A word lattice (Figure 2), or lattice in short, is asetofedges L, where each edge is in the form of (i, j, X), which denotes a word of tag X, covering characters c i through c j&#8722;1 .</S>
+          <S ID="S-3909">For example, in Figure 2, (7, 9, NN) is a noun &#8220;t&#462;ol&#249;n&#8221; of two characters.</S>
+        </P>
+        <P>
+          <S ID="S-3910">The lattice in Figure 2 shows result of the example:&#8220; B&#249; sh&#237;y&#468;Sh&#257;l&#243;ng j&#468; x&#237;ng t&#462;o l&#249;n &#8221;.</S>
+          <S ID="S-3911">One ambiguity comes from the POS tag of word &#8220;y&#468;&#8221; (preposition (P) or conjunction (CC)).</S>
+          <S ID="S-3912">The other one is the segmentation ambiguity of the last four characters, we can segment into either &#8220;j&#468; x&#237;ngt&#462;o l&#249;n&#8221; (solid lines), which means lift, begging and argument separately for each word or &#8220;j&#468;x&#237;ng t&#462;ol&#249;n&#8221; (dashed lines), which means hold a discussion.</S>
+        </P>
+        <P>
+          <S ID="S-3913">lift begging argument</S>
+        </P>
+        <P>
+          <S ID="S-3914">5 j&#468; 6 x&#237;ng 7 t&#462;o 8 l&#249;n 9</S>
+        </P>
+        <P>
+          <S ID="S-3915">hold a discussion</S>
+        </P>
+        <P>
+          <S ID="S-3916">The solid lines above (and also in Figure 2) show the 1-best result, which is obviously wrong.</S>
+          <S ID="S-3917">If we feed it into the next modules in the SMT pipeline, parsing and translation will be become much more difficult, since the segmentation is not recoverable.</S>
+          <S ID="S-3918">So it is necessary to postpone error segmentation decisions to the final translation step.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Parse Forest</HEADER>
+        <P>
+          <S ID="S-3919">In parsing scenario, a parse forest (Figrure 5), or forest for short, can be formalized as a hypergraph H, a pair &#12296;V,E&#12297;, where node v &#8712; V is in the form of X i,j , which denotes the recognition of nonterminal X spanning the substring c i:j&#8722;1 from positions c i through c j&#8722;1 .</S>
+          <S ID="S-3920">Each hyperedge e &#8712; E is a pair &#12296;tails(e), head(e)&#12297;, wherehead(e) &#8712; V is the consequent node in an instantiated deductive step, and tails(e) &#8712; (V ) &#8727; is the list of antecedent nodes.</S>
+        </P>
+        <P>
+          <S ID="S-3921">For the following deduction:</S>
+        </P>
+        <P>
+          <S ID="S-3922">NR 0,2 CC 2,3 NR 3,5 NP 0,5 (*)</S>
+        </P>
+        <P>
+          <S ID="S-3923">its hyperedge e &#8727; is notated:</S>
+        </P>
+        <P>
+          <S ID="S-3924">&#12296;(NR 0,2 , CC 2,3 , NR 3,5 ), NP 0,5 &#12297;.</S>
+        </P>
+        <P>
+          <S ID="S-3925">where</S>
+        </P>
+        <P>
+          <S ID="S-3926">head(e &#8727; )={NP 0,5 },and</S>
+        </P>
+        <P>
+          <S ID="S-3927">tails(e &#8727; )={NR 0,2 , CC 2,3 , NR 3,5 }.</S>
+        </P>
+        <P>
+          <S ID="S-3928">We also denote IN (v) to be the set of incoming hyperedges of node v, which represents the different ways of deriving v.</S>
+          <S ID="S-3929">For simplicity, we only show a tree in Figure 5(a) over 1-best segmentation and POS tagging result in Figure 2.</S>
+          <S ID="S-3930">So the IN (NP 0,5 ) is {e &#8727; }.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Lattice Parsing</HEADER>
+      <P>
+        <S ID="S-3998">In this section, we first briefly review the conventional CYK parsing, and then extend to lattice parsing.</S>
+        <S ID="S-3999">More importantly, we propose a more efficient parsing paradigm in Section 3.3.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Conventional Parsing</HEADER>
+        <P>
+          <S ID="S-3932">The conventional CYK parsing algorithm in Figure 3(a) usually takes as input a single sequence of words, so the CYK cells are organized over words.</S>
+          <S ID="S-3933">This algorithm consists of two steps: initialization and parsing.</S>
+          <S ID="S-3934">The first step is to initialize the CYK cells, whose span size is one, with POS tags produced by a POS tagger or defined by the input string 1 .</S>
+          <S ID="S-3935">For example, the top line in Figure 3(a) is initialized with a series of POS tags in 1-best segmentation.</S>
+          <S ID="S-3936">The second step is to search for the best syntactic tree under a context-free grammar.</S>
+          <S ID="S-3937">For example, the tree composed by the solid lines in Figure 5(a) shows the parsing tree for the 1-best segmentation and POS tagging results.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Lattice Parsing</HEADER>
+        <P>
+          <S ID="S-3938">The main differences of our lattice parsing in Figure 3(b) from conventional approach are listed in following: First, the CYK cells are organized over characters rather than words.</S>
+          <S ID="S-3939">Second, in the initialization step, we only initialize the cells with all edges L in the lattice.</S>
+          <S ID="S-3940">Take the edge (7, 9, NN) in Figure 2 for example, the corresponding cell should be (7, 9), then we add a leaf node v = NN 7,9 with a word t&#462;ol&#249;n.</S>
+          <S ID="S-3941">The final initialization is shown in Figure 3(b), which shows that</S>
+        </P>
+        <P>
+          <S ID="S-3942">1 For simplicity, we assume the input of a parser is a segmentation and POS tagging result</S>
+        </P>
+        <P>
+          <S ID="S-3943">0 B&#249; 1 sh&#237; 2 y&#468; 3 Sh&#257; 4 l&#243;ng 5 j&#468; 6 x&#237;ng 7 t&#462;o 8 l&#249;n 9 NR CC NR VV NN NN</S>
+        </P>
+        <P>
+          <S ID="S-3944">NP</S>
+        </P>
+        <P>
+          <S ID="S-3945">IP</S>
+        </P>
+        <P>
+          <S ID="S-3946">VPB</S>
+        </P>
+        <P>
+          <S ID="S-3947">O(n 3 w)</S>
+        </P>
+        <P>
+          <S ID="S-3948">(a): Parsing over 1-best segmentation</S>
+        </P>
+        <P>
+          <S ID="S-3949">0 B&#249; 1 sh&#237; 2 y&#468; 3 Sh&#257; 4 l&#243;ng 5 j&#468; 6 x&#237;ng 7 t&#462;o 8 l&#249;n 9 CC,P VV NN NR NR VV NN NN PP NP VPB</S>
+        </P>
+        <P>
+          <S ID="S-3950">IP</S>
+        </P>
+        <P>
+          <S ID="S-3951">VP</S>
+        </P>
+        <P>
+          <S ID="S-3952">(b): Parsing over characters</S>
+        </P>
+        <P>
+          <S ID="S-3953">O(n 3 )</S>
+        </P>
+        <P>
+          <S ID="S-3954">0 B&#249; 1 sh&#237; 2 y&#468; 3 Sh&#257; 4 l&#243;ng 5 j&#468; 6 x&#237;ng 7 t&#462;o 8 l&#249;n 9 NR CC,P NR VV NN VV NN NN PP</S>
+        </P>
+        <P>
+          <S ID="S-3955">NP VPB</S>
+        </P>
+        <P>
+          <S ID="S-3956">IP</S>
+        </P>
+        <P>
+          <S ID="S-3957">VP</S>
+        </P>
+        <P>
+          <S ID="S-3958">O(n 3 r)</S>
+        </P>
+        <P>
+          <S ID="S-3959">(c): Parsing over most-refined segmentation</S>
+        </P>
+        <P>
+          <S ID="S-3960">lattice parsing can initialize the cells, whose span size is larger than one.</S>
+          <S ID="S-3961">Third, in the deduction step of the parsing algorithm i, j, k are the indexes between characters rather than words.</S>
+          <S ID="S-3962">We formalize our lattice parser as a deductive proof system (Shieber et al., 1994) in Figure 4.</S>
+          <S ID="S-3963">Following the definitions of the previous Sec-</S>
+        </P>
+        <P>
+          <S ID="S-3964">tion, given a set of edges L of a lattice for an input sentence C = c 0 ..c n&#8722;1 and a PCFG grammar: a 4-tuple &#12296;N,&#931;,P,S&#12297;, whereN is a set of nonterminals, &#931; is a set of terminal symbols, P is a set of inference rules, each of which is in the form of X &#8594; &#945; : p for X &#8712; N, &#945; &#8712; (N &#8746; &#931;) &#8727; and p is the probability, and S &#8712; N is the start symbol.</S>
+          <S ID="S-3965">The deductive proof system (Figure 4) consists of axioms, goals and inference rules.</S>
+          <S ID="S-3966">The axioms are converted by edges in L.</S>
+          <S ID="S-3967">Take the (5, 7, NN) associated with a weight p 1 for example, the corresponding axiom is NN &#8594; t&#462;ol&#249;n : p 1 .</S>
+          <S ID="S-3968">All axioms converted from the lattice are shown in Figure 3(b) exclude the italic non-terminals.</S>
+          <S ID="S-3969">Please note that all the probabilities of the edges L in a lattice are taken into account in the parsing step.</S>
+          <S ID="S-3970">The goals are the recognition X 0,n &#8712; S of the whole sentence.</S>
+          <S ID="S-3971">The inference rules are the deductions in parsing.</S>
+          <S ID="S-3972">Take the deduction (*) for example, it will prove a new item NP 0,5 (italic NP in Figure 3(b)) and generate a new hyper-edge e &#8727; (in Figure 5(b)).</S>
+          <S ID="S-3973">So the parsing algorithm starts with the axioms, and then applies the inference rules to prove new items until a goal item is proved.</S>
+          <S ID="S-3974">The final whole forest for the input lattice (Figure 2) is shown in Figure 5(b).</S>
+          <S ID="S-3975">The extra hyper-edges of lattice-forest are highlighted with dashed lines, which can inference the input sentence correctly.</S>
+          <S ID="S-3976">For example: &#8220;y&#468;&#8221; is tagged into P rather than CC.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Faster Parsing with Most-refined Lattice</HEADER>
+        <P>
+          <S ID="S-3977">However, our statistics show that the average number of characters n in a sentence is 1.6 times than the number of words n w in its 1-best segmentation.</S>
+          <S ID="S-3978">As a result, the parsing time over the characters will grow more than 4 times than parsing over the 1-best segmentation, since the time complexity is O(n 3 ).</S>
+          <S ID="S-3979">In order to alleviate this problem, we reduce the parsing time by using most-refined segmentation for a lattice, whose number of tokens is n r and has the property n w &#8804; n r &#8804; n.</S>
+        </P>
+        <P>
+          <S ID="S-3980">Given a lattice with its edges L over indexes (0, .., n), a index i is a split point, if and only if there exists some edge (i, j, X) &#8712; L or (k, i, X) &#8712; L.</S>
+          <S ID="S-3981">The most-refined segmentation, or ms for short, is the segmentation result by using all split points in a lattice.</S>
+          <S ID="S-3982">For example, the corresponding ms of the example is &#8220;B&#249;sh&#237; y&#468;Sh&#257;l&#243;ng j&#468; x&#237;ng t&#462;o l&#249;n&#8221; since points 1 and 4 are not split points.</S>
+        </P>
+        <P>
+          <S ID="S-3983">Item form:</S>
+        </P>
+        <P>
+          <S ID="S-3984">Axioms:</S>
+        </P>
+        <P>
+          <S ID="S-3985">Infer.</S>
+          <S ID="S-3986">rules:</S>
+        </P>
+        <P>
+          <S ID="S-3987">X i,j</S>
+        </P>
+        <P>
+          <S ID="S-3988">(i, j, X) &#8712; L X i,j : p(i, j, X)</S>
+        </P>
+        <P>
+          <S ID="S-3989">X i,k : p 1 Y k,j : p 2 Z &#8594; XY : p &#8712; P</S>
+        </P>
+        <P>
+          <S ID="S-3990">Z i,j : pp 1 p 2</S>
+        </P>
+        <P>
+          <S ID="S-3991">Goals: X 0,n</S>
+        </P>
+        <P>
+          <S ID="S-3992">Figure 3(c) shows the CKY parsing cells over most-refined segmentation, the average number of tokens n r is reduced by combining columns, which are shown with red dashed boxes.</S>
+          <S ID="S-3993">As a result, the search space is reduced without losing any derivations.</S>
+          <S ID="S-3994">Theoretically, the parsing over fs will speed up in O((n/n r ) 3 ).</S>
+          <S ID="S-3995">And our experiments in Section 6 show the efficiency of our new approach.</S>
+        </P>
+        <P>
+          <S ID="S-3996">It turns out that the parsing algorithm developed in lattice-parsing Section 3.2 can be used here without any change.</S>
+          <S ID="S-3997">The non-terminals inducted are also shown in Figure 3(c) in italic style.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Rule Extraction with Lattice &amp; Forest</HEADER>
+      <P>
+        <S ID="S-4000">We now explore the extraction algorithm from aligned source lattice-forest and target string 2 , which is a tuple &#12296;F, &#964;, a&#12297; in Figure 5(b).</S>
+        <S ID="S-4001">Following Mi and Huang (2008), we extract minimal rules from a lattice-forest also in two steps:</S>
+      </P>
+      <P>
+        <S ID="S-4002">(1) frontier set computation</S>
+      </P>
+      <P>
+        <S ID="S-4003">(2) fragmentation</S>
+      </P>
+      <P>
+        <S ID="S-4004">Following the algorithms developed by Mi and Huang (2008) in Algorithm 1, all the nodes in frontier set (fs) are highlighted with gray in Figure 5(b).</S>
+        <S ID="S-4005">Our process of fragmentation (lines 1- 13) is to visit each frontier node v and initial a queue (open) of growing fragments with a pair of empty fragment and node v (line 3).</S>
+        <S ID="S-4006">Each fragment is associated with a list of expansion sites (front) being</S>
+      </P>
+      <P>
+        <S ID="S-4007">2 For simplicity and consistency, we use character-based</S>
+      </P>
+      <P>
+        <S ID="S-4008">lattice-forest for the running example.</S>
+        <S ID="S-4009">The &#8220;B&#249;&#8221; and&#8220;sh&#237;&#8221; are aligned to the same word &#8220;Bush&#8221;.</S>
+        <S ID="S-4010">In our experiment, we use most-refined segmentation to run lattice-parsing and word alignment.</S>
+      </P>
+      <P>
+        <S ID="S-4011">IP 0,9</S>
+      </P>
+      <P>
+        <S ID="S-4012">NP 0,5 VPB 5,9 (a)</S>
+      </P>
+      <P>
+        <S ID="S-4013">e &#8727;</S>
+      </P>
+      <P>
+        <S ID="S-4014">.NR 0,2 .CC 2,3 .NR 3,5 .VV 5,6 .NN 6,8 .NN 8,9</S>
+      </P>
+      <P>
+        <S ID="S-4015">0 .B&#249; 1 .sh&#237; 2 .y&#468; 3 .Sh&#257; 4 .l&#243;ng 5 .j&#468; 6 .x&#237;ng 7 .t&#462;o 8 .l&#249;n 9</S>
+      </P>
+      <P>
+        <S ID="S-4016">IP 0,9</S>
+      </P>
+      <P>
+        <S ID="S-4017">NP 0,5 VP 2,9</S>
+      </P>
+      <P>
+        <S ID="S-4018">e &#8727; (b)</S>
+      </P>
+      <P>
+        <S ID="S-4019">PP 2,5 VPB 5,9</S>
+      </P>
+      <P>
+        <S ID="S-4020">.</S>
+        <S ID="S-4021">NR 0,2 .</S>
+        <S ID="S-4022">CC 2,3 .</S>
+        <S ID="S-4023">P 2,3 .</S>
+        <S ID="S-4024">NR 3,5 .VV 5,6 .</S>
+        <S ID="S-4025">VV 5,7 .NN 6,8 .NN 8,9 .</S>
+        <S ID="S-4026">NN 7,9</S>
+      </P>
+      <P>
+        <S ID="S-4027">0 .B&#249; 1 .sh&#237; 2 .y&#468; 3 .Sh&#257; 4 .l&#243;ng 5 .j&#468; 6 .x&#237;ng 7 .t&#462;o 8 .l&#249;n 9</S>
+      </P>
+      <P>
+        <S ID="S-4028">Bush held a discussion with Sharon</S>
+      </P>
+      <P>
+        <S ID="S-4029">(c)</S>
+      </P>
+      <P>
+        <S ID="S-4030">the subset of leaf nodes of the current fragment that are not in the fs except for the initial node v.</S>
+        <S ID="S-4031">Then we keep expanding fragments in open in following way.</S>
+        <S ID="S-4032">If current fragment is complete, whose expansion sites is empty, we extract rule corresponding to the fragment and its target string</S>
+      </P>
+      <P>
+        <S ID="S-4033">(line 7) .</S>
+        <S ID="S-4034">Otherwise we pop one expansion node u to grow and spin-off new fragments by IN (u), adding new expansion sites (lines 11- 13), until all active fragments are complete and open queue is empty.</S>
+        <S ID="S-4035">The extra minimal rules extracted on latticeforest are listed at the right bottom of Figure 5(c).</S>
+        <S ID="S-4036">Compared with the forest-only approach, we can extract smaller and more general rules.</S>
+      </P>
+      <P>
+        <S ID="S-4037">After we get all the minimal rules, we compose two or more minimal rules into composed rules (Galley et al., 2006), which will be used in our experiments.</S>
+      </P>
+      <P>
+        <S ID="S-4038">For each rule r extracted, we also assign a fractional count which is computed by using insideoutside probabilities:</S>
+      </P>
+      <P>
+        <S ID="S-4039">Q &#945;(root(r)) &#183; P(lhs(r)) &#183;</S>
+      </P>
+      <P>
+        <S ID="S-4040">v&#8712;yield(root(r))</S>
+      </P>
+      <P>
+        <S ID="S-4041">c(r) = &#946;(v) , &#946;(TOP) (1)</S>
+      </P>
+      <P>
+        <S ID="S-4042">where root(r) is the root of the rule, lhs(r) is the left-hand-side of rule, rhs(r) is the righthand-side of rule, P(lhs(r)) is the product of all probabilities of hyperedges involved in lhs(r), yield(root(r)) is the leave nodes, TOP is the root node of the forest, &#945;(v) and &#946;(v) are outside and inside probabilities, respectively.</S>
+        <S ID="S-4043">Then we compute three conditional probabilities for each rule:</S>
+      </P>
+      <P>
+        <S ID="S-4044">c(r) P(r | lhs(r)) = &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-4045">r &#8242; :lhs(r &#8242; )=lhs(r) c(r&#8242; )</S>
+      </P>
+      <P>
+        <S ID="S-4046">(2)</S>
+      </P>
+      <P>
+        <S ID="S-4047">c(r) P(r | rhs(r)) = &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-4048">r &#8242; :rhs(r &#8242; )=rhs(r) c(r&#8242; )</S>
+      </P>
+      <P>
+        <S ID="S-4049">P(r | root(r)) =</S>
+      </P>
+      <P>
+        <S ID="S-4050">(3) c(r)</S>
+      </P>
+      <P>
+        <S ID="S-4051">&#8721;r &#8242; :root(r &#8242; )=root(r) c(r&#8242; ) .</S>
+        <S ID="S-4052">(4)</S>
+      </P>
+      <P>
+        <S ID="S-4053">All these probabilities are used in decoding step (Section 5).</S>
+        <S ID="S-4054">For more detail, we refer to the algorithms of Mi and Huang (2008).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Decoding with Lattice &amp; Forest</HEADER>
+      <P>
+        <S ID="S-4055">Given a source-side lattice-forest F , our decoder searches for the best derivation d &#8727; among the set of all possible derivation D, each of which converts a tree in lattice-forest into a target string &#964;:</S>
+      </P>
+      <P>
+        <S ID="S-4056">d &#8727; =argmaxP (d|T ) &#955;0 &#183; e &#955; 1|d|</S>
+      </P>
+      <P>
+        <S ID="S-4057">d&#8712;D,T&#8712;F</S>
+      </P>
+      <P>
+        <S ID="S-4058">&#183; LM(&#964;(d)) &#955;2 &#183; e &#955; 3|&#964;(d)| , (5)</S>
+      </P>
+      <P>
+        <S ID="S-4059">where |d| is the penalty term on the number of rules in a derivation, LM(&#964;(d)) is the language model and e &#955; 3|&#964;(d)| is the length penalty term on target translation.</S>
+        <S ID="S-4060">The P (d|T ) decomposes into the product of rule probabilities P (r), each of which is decomposed further into</S>
+      </P>
+      <P>
+        <S ID="S-4061">P (d|T )= &#8719; r&#8712;d P (r).</S>
+        <S ID="S-4062">(6)</S>
+      </P>
+      <P>
+        <S ID="S-4063">Each P (r) in Equation 6 is decomposed further into the production of five probabilities:</S>
+      </P>
+      <P>
+        <S ID="S-4064">P(r) =P(r|lhs(r)) &#955; 4</S>
+      </P>
+      <P>
+        <S ID="S-4065">&#183; P(r|rhs(r)) &#955; 5</S>
+      </P>
+      <P>
+        <S ID="S-4066">&#183; P(r|root(lhs(r)) &#955; 6</S>
+      </P>
+      <P>
+        <S ID="S-4067">&#183; P lex (lhs(r)|rhs(r)) &#955; 7</S>
+      </P>
+      <P>
+        <S ID="S-4068">&#183; P lex (rhs(r)|lhs(r)) &#955; 8 ,</S>
+      </P>
+      <P>
+        <S ID="S-4069">(7)</S>
+      </P>
+      <P>
+        <S ID="S-4070">where the last two are the lexical probabilities between the terminals of lhs(r) and rhs(r).</S>
+        <S ID="S-4071">All the weights of those features are tuned by using Minimal Error Rate Training (Och, 2003).</S>
+      </P>
+      <P>
+        <S ID="S-4072">Following Mi et al. (2008), we first convert the lattice-forestintolattice translation forest with the conversion algorithm proposed by Mi et al. (2008),</S>
+      </P>
+      <P>
+        <S ID="S-4073">and then the decoder finds the best derivation on the lattice translation forest.</S>
+        <S ID="S-4074">For 1-best search, we use the cube pruning technique (Chiang, 2007; Huang and Chiang, 2007) which approximately intersects the translation forest with the LM.</S>
+        <S ID="S-4075">For k-best search after getting 1-best derivation, we use the lazy Algorithm 3 of Huang and Chiang (2005) to incrementally compute the second, third, through the kth best alternatives.</S>
+      </P>
+      <P>
+        <S ID="S-4076">For more detail, we refer to the algorithms of Mi et al. (2008).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Experiments</HEADER>
+      <P>
+        <S ID="S-4118"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Data Preparation</HEADER>
+        <P>
+          <S ID="S-4077">Our experiments are on Chinese-to-English translation.</S>
+          <S ID="S-4078">Our training corpus is FBIS corpus with about 6.9M/8.9M words in Chinese/English respectively.</S>
+        </P>
+        <P>
+          <S ID="S-4079">We use SRI Language Modeling Toolkit (Stolcke, 2002) to train a 4-gram language model with Kneser-Ney smoothing on the first 1/3 of the Xinhua portion of Gigaword corpus.</S>
+        </P>
+        <P>
+          <S ID="S-4080">We use the 2002 NIST MT Evaluation test set as development set and the 2005 NIST MT Evaluation test set as test set.</S>
+          <S ID="S-4081">We evaluate the translation quality using the case-insensitive BLEU-4 metric (Papineni et al., 2002).</S>
+          <S ID="S-4082">We use the standard MERT (Och, 2003) to tune the weights.</S>
+        </P>
+        <P>
+          <S ID="S-4083">6.1.1 Baseline Forest-based System We first segment the Chinese sentences into the 1-best segmentations using a state-of-the-art system (Jiang et al., 2008a), since it is not necessary for a conventional parser to take as input the POS tagging results.</S>
+          <S ID="S-4084">Then we parse the segmentation results into forest by using the parser of Xiong et al. (2005).</S>
+          <S ID="S-4085">Actually, the parser will assign multiple POS tags to each word rather than one.</S>
+          <S ID="S-4086">As a result, our baseline system has already postponed the POS tagging disambiguition to the decoding step.</S>
+          <S ID="S-4087">Forest is pruned by using a marginal probabilitybased pruning algorithm similar to Huang (2008).</S>
+          <S ID="S-4088">The pruning threshold are p f =5and p f =10at rule extraction and decoding steps respectively.</S>
+        </P>
+        <P>
+          <S ID="S-4089">We word-align the strings of 1-best segmentations and target strings with GIZA++ (Och and Ney, 2000) and apply the refinement method &#8220;grow-diag-final-and&#8221; (Koehn et al., 2003) to get the final alignments.</S>
+          <S ID="S-4090">Following Mi and Huang (2008) and Mi et al. (2008), we also extract rules from forest-string pairs and translate forest to string.</S>
+        </P>
+        <P>
+          <S ID="S-4091">6.1.2 Lattice-forest System</S>
+        </P>
+        <P>
+          <S ID="S-4092">We first segment and POS tag the Chinese sentences into word lattices using the same system (Jiang et al., 2008a), and prune each lattice into a reasonable size using the marginal probability-based pruning algorithm.</S>
+        </P>
+        <P>
+          <S ID="S-4093">Then, as current GIZA++ (Och and Ney, 2000) can only handle alignment between string-string pairs, and word-alingment with the pairs of Chinese characters and target-string will obviously result in worse alignment quality.</S>
+          <S ID="S-4094">So a much better way to utilize GIZA++ is to use the most-refined segmentation for each lattice instead of the character sequence.</S>
+          <S ID="S-4095">This approach can be viewed as a compromise between character-string and latticestring word-alignment paradigms.</S>
+          <S ID="S-4096">In our experiments, we construct the most-refined segmentations for lattices and word-align them against the English sentences.</S>
+          <S ID="S-4097">We again apply the refinement method &#8220;grow-diag-final-and&#8221; (Koehn et al., 2003) to get the final alignments.</S>
+        </P>
+        <P>
+          <S ID="S-4098">In order to get the lattice-forests, we modified Xiong et al. (2005)&#8217;s parser into a lattice parser, which produces the pruned lattice forests for both training, dev and test sentences.</S>
+          <S ID="S-4099">Finally, we apply the rule extraction algorithm proposed in this paper to obtain the rule set.</S>
+          <S ID="S-4100">Both lattices and forests are pruned using a marginal probabilitybased pruning algorithm similar to Huang (2008).</S>
+          <S ID="S-4101">The pruning threshold of lattice is p l =20at both the rule extraction and decoding steps, the thresholds for the latice-forests are p f =5and p f =10 at rule extraction and decoding steps respectively.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Results and Analysis</HEADER>
+        <P>
+          <S ID="S-4102">Table 1 shows results of two systems.</S>
+          <S ID="S-4103">Our latticeforest (LF) system achieves a BLEU score of 29.65, which is an absolute improvement of 0.9 points over the forest (F) baseline system, and the improvement is statistically significant at p &lt; 0.01 using the sign-test of Collins et al. (2005).</S>
+          <S ID="S-4104">The average number of tokens for the 1-best and most-refined segmentations are shown in second column.</S>
+          <S ID="S-4105">The average number of characters is 46.7, which is not shown in Table 1.</S>
+          <S ID="S-4106">Com-</S>
+        </P>
+        <P>
+          <S ID="S-4107">Sys</S>
+        </P>
+        <P>
+          <S ID="S-4108">Avg # of Rules tokens links All dev&amp;tst BLEU</S>
+        </P>
+        <P>
+          <S ID="S-4109">pared with the characters-based lattice parsing, our most-refined lattice parsing speeds up parsing by (37.1/46.7) 3 &#8776; 2 times, since parsing complexity is O(n 3 ).</S>
+        </P>
+        <P>
+          <S ID="S-4110">More interestingly, our lattice-forest model only extracts 23.5M rules, which is 79.4% percent of the rules extracted by the baseline system.</S>
+          <S ID="S-4111">The main reason lies in the larger average number of words for most-refined segmentations over lattices being 37.1 words vs 28.7 words over 1-best segmentations.</S>
+          <S ID="S-4112">With much finer granularity, more word aligned links and restrictions are introduced during the rule extraction step by GIZA++.</S>
+          <S ID="S-4113">However, more rules can be used in the decoding step for the lattice-forest system, since the lattice-forest is larger than the forest over 1-best segmentation.</S>
+          <S ID="S-4114">We also investigate the question of how often the non 1-best segmentations are picked in the final translation.</S>
+          <S ID="S-4115">The statistic on our dev set suggests 33% of sentences choose non 1-best segmentations.</S>
+          <S ID="S-4116">So our lattice-forest model can do global search for the best segmentation and parse-tree to direct the final translation.</S>
+          <S ID="S-4117">More importantly, we can use more translation rules in the translation step.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Related Works</HEADER>
+      <P>
+        <S ID="S-4119">Compactly encoding exponentially many derivations, lattice and forest have been used in some previous works on SMT.</S>
+        <S ID="S-4120">To alleviate the problem of parsing error in 1-best tree-to-string translation model, Mi et al. (2008) first use forest to direct translation.</S>
+        <S ID="S-4121">Then Mi and Huang (2008) use forest in rule extraction step.</S>
+        <S ID="S-4122">Following the same direction, Liu et al. (2009) use forest in treeto-tree model, and improve 1-best system by 3 BLEU points.</S>
+        <S ID="S-4123">Zhang et al. (2009) use forest in tree-sequence-to-string model and also achieve a promising improvement.</S>
+        <S ID="S-4124">Dyer et al. (2008) combine multiple segmentations into word lattice and then use lattice to direct a phrase-based translation decoder.</S>
+        <S ID="S-4125">Then Dyer (2009) employ a single Maximum Entropy segmentation model to generate more diverse lattice, they test their model on the hierarchical phrase-based system.</S>
+        <S ID="S-4126">Lattices and forests can also be used in Minimal Error Rate Training and Minimum Bayes Risk Decoding phases (Macherey et al., 2008; Tromble et al., 2008; DeNero et al., 2009; Kumar et al., 2009; Li and Eisner, 2009).</S>
+        <S ID="S-4127">Different from the works listed above, we mainly focus on how to combine lattice and forest into a single tree-to-string system.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>8 Conclusion and Future Work</HEADER>
+      <P>
+        <S ID="S-4128">In this paper, we have proposed a lattice-forest based model to alleviate the problem of error propagation in traditional single-best pipeline framework.</S>
+        <S ID="S-4129">Unlike previous works, which only focus on one module at a time, our model successfully integrates lattice into a state-of-the-art forest tree-tostring system.</S>
+        <S ID="S-4130">We have explored the algorithms of lattice parsing, rule extraction and decoding.</S>
+        <S ID="S-4131">Our model postpones the disambiguition of segmentation and parsing into the final translation step, so that we can make a more global decision to search for the best segmentation, parse-tree and translation in one step.</S>
+        <S ID="S-4132">The experimental results show that our lattice-forest approach achieves an absolute improvement of +0.9 points in term of BLEU score over a state-of-the-art forest-based model.</S>
+      </P>
+      <P>
+        <S ID="S-4133">For future work, we would like to pay more attention to word alignment between lattice pairs and forest pairs, which would be more principled than our current method of word alignment between most-refined segmentation and string.</S>
+      </P>
+      <P>
+        <S ID="S-4134">Acknowledgement</S>
+      </P>
+      <P>
+        <S ID="S-4135">We thank Steve DeNeefe and the three anonymous reviewers for comments.</S>
+        <S ID="S-4136">The work is supported by National Natural Science Foundation of China, Contracts 90920004 and 60736014, and 863 State Key Project No.</S>
+        <S ID="S-4137">2006AA010108 (H. M and Q.</S>
+        <S ID="S-4138">L.</S>
+        <S ID="S-4139">), and in part by DARPA GALE Contract No.</S>
+        <S ID="S-4140">HR0011-06-C-0022, and DARPA under DOI-NBC Grant N10AP20031 (L.</S>
+        <S ID="S-4141">H and H. M).</S>
+      </P>
+      <P>
+        <S ID="S-4142">References</S>
+      </P>
+      <P>
+        <S ID="S-4143">David Chiang.</S>
+        <S ID="S-4144">2007.</S>
+        <S ID="S-4145">Hierarchical phrase-based translation.</S>
+        <S ID="S-4146">Comput.</S>
+        <S ID="S-4147">Linguist., 33(2):201&#8211;228.</S>
+      </P>
+      <P>
+        <S ID="S-4148">Michael Collins, Philipp Koehn, and Ivona Kucerova.</S>
+        <S ID="S-4149">2005.</S>
+        <S ID="S-4150">Clause restructuring for statistical machine translation.</S>
+        <S ID="S-4151">In Proceedings of ACL, pages 531&#8211;540, Ann Arbor, Michigan, June.</S>
+      </P>
+      <P>
+        <S ID="S-4152">John DeNero, David Chiang, and Kevin Knight.</S>
+        <S ID="S-4153">2009.</S>
+        <S ID="S-4154">Fast consensus decoding over translation forests.</S>
+        <S ID="S-4155">In Proceedings of ACL/IJCNLP.</S>
+      </P>
+      <P>
+        <S ID="S-4156">Christopher Dyer, Smaranda Muresan, and Philip Resnik.</S>
+        <S ID="S-4157">2008.</S>
+        <S ID="S-4158">Generalizing word lattice translation.</S>
+        <S ID="S-4159">In Proceedings of ACL-08: HLT, pages 1012&#8211;1020, Columbus, Ohio, June.</S>
+      </P>
+      <P>
+        <S ID="S-4160">C. Dyer.</S>
+        <S ID="S-4161">2009.</S>
+        <S ID="S-4162">Using a maximum entropy model to build segmentation lattices for mt.</S>
+        <S ID="S-4163">In Proceedings of NAACL.</S>
+      </P>
+      <P>
+        <S ID="S-4164">Michel Galley, Jonathan Graehl, Kevin Knight, Daniel Marcu, Steve DeNeefe, Wei Wang, and Ignacio Thayer.</S>
+        <S ID="S-4165">2006.</S>
+        <S ID="S-4166">Scalable inference and training of context-rich syntactic translation models.</S>
+        <S ID="S-4167">In Proceedings of COLING-ACL, pages 961&#8211;968, Sydney, Australia, July.</S>
+      </P>
+      <P>
+        <S ID="S-4168">Liang Huang and David Chiang.</S>
+        <S ID="S-4169">2005.</S>
+        <S ID="S-4170">Better k-best parsing.</S>
+        <S ID="S-4171">In Proceedings of IWPT.</S>
+      </P>
+      <P>
+        <S ID="S-4172">Liang Huang and David Chiang.</S>
+        <S ID="S-4173">2007.</S>
+        <S ID="S-4174">Forest rescoring: Faster decoding with integrated language models.</S>
+        <S ID="S-4175">In Proceedings of ACL, pages 144&#8211;151, June.</S>
+      </P>
+      <P>
+        <S ID="S-4176">Liang Huang.</S>
+        <S ID="S-4177">2008.</S>
+        <S ID="S-4178">Forest reranking: Discriminative parsing with non-local features.</S>
+        <S ID="S-4179">In Proceedings of ACL.</S>
+      </P>
+      <P>
+        <S ID="S-4180">Wenbin Jiang, Liang Huang, Qun Liu, and Yajuan L&#252;.</S>
+        <S ID="S-4181">2008a.</S>
+        <S ID="S-4182">A cascaded linear model for joint chinese word segmentation and part-of-speech tagging.</S>
+        <S ID="S-4183">In Proceedings of ACL-08: HLT.</S>
+      </P>
+      <P>
+        <S ID="S-4184">Wenbin Jiang, Haitao Mi, and Qun Liu.</S>
+        <S ID="S-4185">2008b.</S>
+        <S ID="S-4186">Word lattice reranking for chinese word segmentation and part-of-speech tagging.</S>
+        <S ID="S-4187">In Proceedings of Coling 2008.</S>
+      </P>
+      <P>
+        <S ID="S-4188">Philipp Koehn, Franz Joseph Och, and Daniel Marcu.</S>
+        <S ID="S-4189">2003.</S>
+        <S ID="S-4190">Statistical phrase-based translation.</S>
+        <S ID="S-4191">In Proceedings of HLT-NAACL, pages 127&#8211;133, Edmonton, Canada, May.</S>
+      </P>
+      <P>
+        <S ID="S-4192">Shankar Kumar, Wolfgang Macherey, Chris Dyer, and Franz Och.</S>
+        <S ID="S-4193">2009.</S>
+        <S ID="S-4194">Efficient minimum error rate training and minimum bayes-risk decoding for translation hypergraphs and lattices.</S>
+        <S ID="S-4195">In Proceedings of the ACL/IJCNLP 2009.</S>
+      </P>
+      <P>
+        <S ID="S-4196">Zhifei Li and Jason Eisner.</S>
+        <S ID="S-4197">2009.</S>
+        <S ID="S-4198">First- and secondorder expectation semirings with applications to minimum-risk training on translation forests.</S>
+        <S ID="S-4199">In Proceedings of EMNLP, pages 40&#8211;51, Singapore, August.</S>
+        <S ID="S-4200">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-4201">Yang Liu, Yajuan L&#252;, and Qun Liu.</S>
+        <S ID="S-4202">2009.</S>
+        <S ID="S-4203">Improving tree-to-tree translation with packed forests.</S>
+        <S ID="S-4204">In Proceedings of ACL/IJCNLP, August.</S>
+      </P>
+      <P>
+        <S ID="S-4205">Wolfgang Macherey, Franz Och, Ignacio Thayer, and Jakob Uszkoreit.</S>
+        <S ID="S-4206">2008.</S>
+        <S ID="S-4207">Lattice-based minimum error rate training for statistical machine translation.</S>
+        <S ID="S-4208">In Proceedings of EMNLP 2008.</S>
+      </P>
+      <P>
+        <S ID="S-4209">Haitao Mi and Liang Huang.</S>
+        <S ID="S-4210">2008.</S>
+        <S ID="S-4211">Forest-based translation rule extraction.</S>
+        <S ID="S-4212">In Proceedings of EMNLP 2008, pages 206&#8211;214, Honolulu, Hawaii, October.</S>
+      </P>
+      <P>
+        <S ID="S-4213">Haitao Mi, Liang Huang, and Qun Liu.</S>
+        <S ID="S-4214">2008.</S>
+        <S ID="S-4215">Forestbased translation.</S>
+        <S ID="S-4216">In Proceedings of ACL-08:HLT, pages 192&#8211;199, Columbus, Ohio, June.</S>
+      </P>
+      <P>
+        <S ID="S-4217">Franz J. Och and Hermann Ney.</S>
+        <S ID="S-4218">2000.</S>
+        <S ID="S-4219">Improved statistical alignment models.</S>
+        <S ID="S-4220">In Proceedings of ACL, pages 440&#8211;447.</S>
+      </P>
+      <P>
+        <S ID="S-4221">Franz J. Och.</S>
+        <S ID="S-4222">2003.</S>
+        <S ID="S-4223">Minimum error rate training in statistical machine translation.</S>
+        <S ID="S-4224">In Proceedings of ACL, pages 160&#8211;167.</S>
+      </P>
+      <P>
+        <S ID="S-4225">Kishore Papineni, Salim Roukos, Todd Ward, and Wei- Jing Zhu.</S>
+        <S ID="S-4226">2002.</S>
+        <S ID="S-4227">Bleu: a method for automatic evaluation of machine translation.</S>
+        <S ID="S-4228">In Proceedings of ACL, pages 311&#8211;318, Philadephia, USA, July.</S>
+      </P>
+      <P>
+        <S ID="S-4229">Stuart M. Shieber, Yves Schabes, and Fernando C.</S>
+        <S ID="S-4230">N. Pereira.</S>
+        <S ID="S-4231">1994.</S>
+        <S ID="S-4232">Principles and implementation of deductive parsing.</S>
+      </P>
+      <P>
+        <S ID="S-4233">Andreas Stolcke.</S>
+        <S ID="S-4234">2002.</S>
+        <S ID="S-4235">SRILM - an extensible language modeling toolkit.</S>
+        <S ID="S-4236">In Proceedings of ICSLP, volume 30, pages 901&#8211;904.</S>
+      </P>
+      <P>
+        <S ID="S-4237">Roy Tromble, Shankar Kumar, Franz Och, and Wolfgang Macherey.</S>
+        <S ID="S-4238">2008.</S>
+        <S ID="S-4239">Lattice Minimum Bayes- Risk decoding for statistical machine translation.</S>
+        <S ID="S-4240">In Proceedings of EMNLP 2008.</S>
+      </P>
+      <P>
+        <S ID="S-4241">Ashish Venugopal, Andreas Zollmann, Noah A. Smith, and Stephan Vogel.</S>
+        <S ID="S-4242">2008.</S>
+        <S ID="S-4243">Wider pipelines: N-best alignments and parses in MT training.</S>
+        <S ID="S-4244">In Proceedings of AMTA.</S>
+      </P>
+      <P>
+        <S ID="S-4245">Deyi Xiong, Shuanglong Li, Qun Liu, and Shouxun Lin.</S>
+        <S ID="S-4246">2005.</S>
+        <S ID="S-4247">Parsing the Penn Chinese Treebank with Semantic Knowledge.</S>
+        <S ID="S-4248">In Proceedings of IJCNLP 2005, pages 70&#8211;81.</S>
+      </P>
+      <P>
+        <S ID="S-4249">Hui Zhang, Min Zhang, Haizhou Li, Aiti Aw, and Chew Lim Tan.</S>
+        <S ID="S-4250">2009.</S>
+        <S ID="S-4251">Forest-based tree sequence to string translation model.</S>
+        <S ID="S-4252">In Proceedings of the ACL/IJCNLP 2009.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES/>
+</PAPER>

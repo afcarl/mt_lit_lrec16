@@ -1,0 +1,432 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Stem Translation with Affix-Based Rule Selection for Agglutinative Languages</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-38344">Current translation models are mainly designed for languages with limited morphology, which are not readily applicable to agglutinative languages as the difference in the way lexical forms are generated.</A-S>
+    <A-S ID="S-38345">In this paper, we propose a novel approach for translating agglutinative languages by treating stems and affixes differently.</A-S>
+    <A-S ID="S-38346">We employ stem as the atomic translation unit to alleviate data spareness.</A-S>
+    <A-S ID="S-38347">In addition, we associate each stemgranularity translation rule with a distribution of related affixes, and select desirable rules according to the similarity of their affix distributions with given spans to be translated.</A-S>
+    <A-S ID="S-38348">Experimental results show that our approach significantly improves the translation performance on tasks of translating from three Turkic languages to Chinese.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-38349">Currently, most methods on statistical machine translation (SMT) are developed for translation of languages with limited morphology (e.g., English, Chinese).</S>
+        <S ID="S-38350">They assumed that word was the atomic translation unit (ATU), always ignoring the internal morphological structure of word.</S>
+        <S ID="S-38351">This assumption can be traced back to the original IBM word-based models (<REF ID="R-01" RPTR="2">Brown et al., 1993</REF>) and several significantly improved models, including phrase-based (<REF ID="R-22" RPTR="22">Och and Ney, 2004</REF>; <REF ID="R-13" RPTR="14">Koehn et al., 2003</REF>), hierarchical (<REF ID="R-04" RPTR="5">Chiang, 2005</REF>) and syntactic (<REF ID="R-25" RPTR="25">Quirk et al., 2005</REF>; <REF ID="R-07" RPTR="8">Galley et al., 2006</REF>; <REF ID="R-16" RPTR="16">Liu et al., 2006</REF>) models.</S>
+        <S ID="S-38352">These improved models worked well for translating languages like English with large scale parallel corpora available.</S>
+      </P>
+      <P>
+        <S ID="S-38353">Different from languages with limited morphology, words of agglutinative languages are formed mainly by concatenation of stems and affixes.</S>
+        <S ID="S-38354">Generally, a stem can attach with several affixes, thus leading to tens of hundreds of possible inflected variants of lexicons for a single stem.</S>
+        <S ID="S-38355">Modeling each lexical form as a separate word will generate high out-of-vocabulary rate for SMT.</S>
+        <S ID="S-38356">Theoretically, ways like morphological analysis and increasing bilingual corpora could alleviate the problem of data sparsity, but most agglutinative languages are less-studied and suffer from the problem of resource-scarceness.</S>
+        <S ID="S-38357">Therefore, previous research mainly focused on the different inflected variants of the same stem and made various transformation of input by morphological analysis, such as (<REF ID="R-15" RPTR="15">Lee, 2004</REF>; <REF ID="R-08" RPTR="9">Goldwater and McClosky, 2005</REF>; <REF ID="R-30" RPTR="31">Yang and Kirchhoff, 2006</REF>; <REF ID="R-09" RPTR="10">Habash and Sadat, 2006</REF>; <REF ID="R-00" RPTR="1">Bisazza and Federico, 2009</REF>; <REF ID="R-29" RPTR="30">Wang et al., 2011</REF>).</S>
+        <S ID="S-38358">These work still assume that the atomic translation unit is word, stem or morpheme, without considering the difference between stems and affixes.</S>
+      </P>
+      <P>
+        <S ID="S-38359">In agglutinative languages, stem is the base part of word not including inflectional affixes.</S>
+        <S ID="S-38360">Affix, especially inflectional affix, indicates different grammatical categories such as tense, person, number and case, etc., which is useful for translation rule disambiguation.</S>
+        <S ID="S-38361">Therefore, we employ stem as the atomic translation unit and use affix information to guide translation rule selection.</S>
+        <S ID="S-38362">Stem-granularity translation rules have much larger coverage and can lower the OOV rate.</S>
+        <S ID="S-38363">Affix based rule selection takes advantage of auxiliary syntactic roles of affixes to make a better rule selection.</S>
+        <S ID="S-38364">In this way, we can achieve a balance between rule coverage and matching accuracy, and ultimately improve the translation performance.</S>
+      </P>
+      <P>
+        <S ID="S-38365">zunyi yighin ||| &#65533;&#65533; &#65533;&#65533; &#65533; ||| i gha</S>
+      </P>
+      <P>
+        <S ID="S-38366">(A) Instances of translation rule</S>
+      </P>
+      <P>
+        <S ID="S-38367">zunyi yighin ||| &#65533; &#65533;&#65533; &#65533;&#65533; &#65533; ||| i da zunyi yighin ||| &#65533;&#65533; &#65533;&#65533; &#65533; ||| i gha</S>
+      </P>
+      <P>
+        <S ID="S-38368">i /SUF</S>
+      </P>
+      <P>
+        <S ID="S-38369">Original:zunyi yighin+i+da Meaning:on zunyi conference</S>
+      </P>
+      <P>
+        <S ID="S-38370">da /SUF (3)</S>
+      </P>
+      <P>
+        <S ID="S-38371">i /SUF</S>
+      </P>
+      <P>
+        <S ID="S-38372">gha /SUF Original:zunyi yighin+i+gha Meaning:of zunyi conference</S>
+      </P>
+      <P>
+        <S ID="S-38373">(B)Translation rules with affix distribution</S>
+      </P>
+      <P>
+        <S ID="S-38374">zunyi yighin ||| &#65533;&#65533; &#65533;&#65533; &#65533; ||| i:0 gha:0.09 zunyi yighin ||| &#65533; &#65533;&#65533; &#65533;&#65533; &#65533; ||| i:0 da:0.24</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Affix Based Rule Selection Model</HEADER>
+      <P>
+        <S ID="S-38409">Figure 1 (B) shows two translation rules along with affix distributions.</S>
+        <S ID="S-38410">Here a translation rule contains three parts: the source part (on stem level), the target part, and the related affix distribution (represented as a vector).</S>
+        <S ID="S-38411">We can see that, although the source part of the two translation rules are identical, their affix distributions are quite different.</S>
+        <S ID="S-38412">Affix &#8220;gha&#8221; in the first rule indicates that something is affiliated to a subject, similar to &#8220;of&#8221; in English.</S>
+        <S ID="S-38413">And &#8220;da&#8221; in second rule implies location information.</S>
+        <S ID="S-38414">Therefore, given a span &#8220;zunyi/STM yighin/STM+i/SUF+da/SUF+...&#8221; to be translated, we hope to encourage our model to select the second translation rule.</S>
+        <S ID="S-38415">We can achieve this by calculating similarity between the affix distributions of the translation rule and the span.</S>
+      </P>
+      <P>
+        <S ID="S-38416">The affix distribution can be obtained by keeping the related affixes for each rule instance during translation rule extraction ((A) in Figure 1).</S>
+        <S ID="S-38417">After extracting and scoring stem-granularity rules in a traditional way, we extract stem-granularity rules again by keeping affix information and compute the affix distribution with tf-idf (<REF ID="R-26" RPTR="26">Salton and Buckley, 1987</REF>).</S>
+        <S ID="S-38418">Finally, the affix distribution will be added to the previous stem-granularity rules.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Affix Distribution Estimation</HEADER>
+        <P>
+          <S ID="S-38375">Formally, translation rule instances with the same source part can be treated as a document collection 1 , so each rule instance in the collection is</S>
+        </P>
+        <P>
+          <S ID="S-38376">1 We employ concepts from text classification to illustrate</S>
+        </P>
+        <P>
+          <S ID="S-38377">how to estimate affix distribution.</S>
+        </P>
+        <P>
+          <S ID="S-38378">some kind of document.</S>
+          <S ID="S-38379">Our goal is to classify the source parts into the target parts on the document collection level with the help of affix distribution.</S>
+          <S ID="S-38380">Accordingly, we employ vector space model (VSM) to represent affix distribution of each rule instance.</S>
+          <S ID="S-38381">In this model, the feature weights are represented by the classic tf-idf (<REF ID="R-26" RPTR="27">Salton and Buckley, 1987</REF>):</S>
+        </P>
+        <P>
+          <S ID="S-38382">tf i,j =</S>
+        </P>
+        <P>
+          <S ID="S-38383">n i,j &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-38384">k n k,j</S>
+        </P>
+        <P>
+          <S ID="S-38385">|D| idf i,j = log |j : a i &#8712; r j | (1)</S>
+        </P>
+        <P>
+          <S ID="S-38386">tfidf i,j = tf i,j &#215; idf i,j</S>
+        </P>
+        <P>
+          <S ID="S-38387">where tfidf i,j is the weight of affix a i in translation rule instance r j .</S>
+          <S ID="S-38388">n i,j indicates the number of occurrence of affix a i in r j .</S>
+          <S ID="S-38389">|D| is the number of rule instance with the same source part, and |j : a i &#8712; r j | is the number of rule instance which contains affix a i within |D|.</S>
+        </P>
+        <P>
+          <S ID="S-38390">Let&#8217;s take the suffix &#8220;gha&#8221; from (A 1 ) in Figure 1 as an example.</S>
+          <S ID="S-38391">We assume that there are only three instances of translation rules extracted from parallel corpus ((A) in Figure 1).</S>
+          <S ID="S-38392">We can see that &#8220;gha&#8221; only appear once in (A 1 ) and also appear once in whole instances.</S>
+          <S ID="S-38393">Therefore, tf gha,(A1 ) is 0.5 and idf gha,(A1 ) is log(3/2).</S>
+          <S ID="S-38394">tfidf gha,(A1 ) is the product of tf gha,(A1 ) and idf gha,(A1 ) which is 0.09.</S>
+        </P>
+        <P>
+          <S ID="S-38395">Given a set of N translation rule instances with the same source and target part, we define the centroid vector d r according to the centroid-based classification algorithm (<REF ID="R-10" RPTR="11">Han and Karypis, 2000</REF>),</S>
+        </P>
+        <P>
+          <S ID="S-38396">d r = 1 &#8721; d i (2) N</S>
+        </P>
+        <P>
+          <S ID="S-38397">i&#8712;N</S>
+        </P>
+        <P>
+          <S ID="S-38398">Data set #Sent.</S>
+        </P>
+        <P>
+          <S ID="S-38399">d r is the final affix distribution.</S>
+          <S ID="S-38400">By comparing the similarity of affix distributions, we are able to decide whether a translation rule is suitable for a span to be translated.</S>
+          <S ID="S-38401">In this work, similarity is measured using the cosine distance similarity metric, given by</S>
+        </P>
+        <P>
+          <S ID="S-38402">sim(d 1 , d 2 ) =</S>
+        </P>
+        <P>
+          <S ID="S-38403">d 1 &#183; d 2 &#8741;d 1 &#8741; &#215; &#8741;d 2 &#8741; (3)</S>
+        </P>
+        <P>
+          <S ID="S-38404">where d i corresponds to a vector indicating affix distribution, and &#8220;&#183;&#8221; denotes the inner product of the two vectors.</S>
+          <S ID="S-38405">Therefore, for a specific span to be translated, we first analyze it to get the corresponding stem sequence and related affix distribution represented as a vector.</S>
+          <S ID="S-38406">Then the stem sequence is used to search the translation rule table.</S>
+          <S ID="S-38407">If the source part is matched, the similarity will be calculated for each candidate translation rule by cosine similarity (as in equation 3).</S>
+          <S ID="S-38408">Therefore, in addition to the traditional translation features on stem level, our model also adds the affix similarity score as a dynamic feature into the log-linear model (<REF ID="R-21" RPTR="21">Och and Ney, 2002</REF>).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Related Work</HEADER>
+      <P>
+        <S ID="S-38419">Most previous work on agglutinative language translation mainly focus on Turkish and Finnish.</S>
+        <S ID="S-38420"><REF ID="R-00" RPTR="0">Bisazza and Federico (2009)</REF> and <REF ID="R-20" RPTR="20">Mermer and Saraclar (2011)</REF> optimized morphological analysis as a pre-processing step to improve the translation between Turkish and English.</S>
+        <S ID="S-38421">Yeniterzi and Oflazer (2010) mapped the syntax of the English side to the morphology of the Turkish side with the factored model (<REF ID="R-12" RPTR="13">Koehn and Hoang, 2007</REF>).</S>
+        <S ID="S-38422"><REF ID="R-30" RPTR="32">Yang and Kirchhoff (2006)</REF> backed off surface form to stem when translating OOV words of Finnish.</S>
+        <S ID="S-38423"><REF ID="R-17" RPTR="17">Luong and Kan (2010)</REF> and <REF ID="R-18" RPTR="18">Luong et al. (2010)</REF> focused on Finnish-English translation through improving word alignment and enhancing phrase table.</S>
+        <S ID="S-38424">These works still assumed that the atomic translation unit is word, stem or morpheme, without considering the difference between stems and affixes.</S>
+      </P>
+      <P>
+        <S ID="S-38425">There are also some work that employed the context information to make a better choice of translation rules (<REF ID="R-02" RPTR="3">Carpuat and Wu, 2007</REF>; <REF ID="R-03" RPTR="4">Chan et al., 2007</REF>; <REF ID="R-11" RPTR="12">He et al., 2008</REF>; <REF ID="R-06" RPTR="7">Cui et al., 2010</REF>).</S>
+        <S ID="S-38426">all the work employed rich context information, such as POS, syntactic, etc., and experiments were mostly done on less inflectional languages (i.e. Chinese, English) and resourceful languages (i.e. Arabic).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments</HEADER>
+      <P>
+        <S ID="S-38457">In this work, we conduct our experiments on three different agglutinative languages, including Uyghur, Kazakh and Kirghiz.</S>
+        <S ID="S-38458">All of them are derived from Altaic language family, belonging to Turkic languages, and mostly spoken by people in Central Asia.</S>
+        <S ID="S-38459">There are about 24 million people take these languages as mother tongue.</S>
+        <S ID="S-38460">All of the tasks are derived from the evaluation of China Workshop of Machine Translation (CWMT) 2 .</S>
+        <S ID="S-38461">Table 1 shows the statistics of data sets.</S>
+      </P>
+      <P>
+        <S ID="S-38462">For the language model, we use the SRI Language Modeling Toolkit (<REF ID="R-27" RPTR="28">Stolcke, 2002</REF>) to train a 5-gram model with the target side of training corpus.</S>
+        <S ID="S-38463">And phrase-based Moses 3 is used as our</S>
+      </P>
+      <P>
+        <S ID="S-38464">2 http://mt.xmu.edu.cn/cwmt2011/en/index.html.</S>
+        <S ID="S-38465">3 http://www.statmt.org/moses/</S>
+      </P>
+      <P>
+        <S ID="S-38466">baseline SMT system.</S>
+        <S ID="S-38467">The decoding weights are optimized with MERT (<REF ID="R-23" RPTR="23">Och, 2003</REF>) to maximum word-level BLEU scores (<REF ID="R-24" RPTR="24">Papineni et al., 2002</REF>).</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Using Unsupervised Morphological Analyzer</HEADER>
+        <P>
+          <S ID="S-38427">As most agglutinative languages are resourcepoor, we employ unsupervised learning method to obtain the morphological structure.</S>
+          <S ID="S-38428">Following the approach in (<REF ID="R-28" RPTR="29">Virpioja et al., 2007</REF>), we employ the Morfessor 4 Categories-MAP algorithm (<REF ID="R-05" RPTR="6">Creutz and Lagus, 2005</REF>).</S>
+          <S ID="S-38429">It applies a hierarchical model with three categories (prefix, stem, and suffix) in an unsupervised way.</S>
+          <S ID="S-38430">From Table 1 we can see that vocabulary sizes of the three languages are reduced obviously after unsupervised morphological analysis.</S>
+          <S ID="S-38431">Table 2 shows the translation results.</S>
+          <S ID="S-38432">All the three translation tasks achieve obvious improvements with the proposed model, which always performs better than only employ word, stem and morph.</S>
+          <S ID="S-38433">For the Uyghur to Chinese translation (UY-CH) task in Table 2, performances after unsupervised morphological analysis are always better than the baseline.</S>
+          <S ID="S-38434">And we gain up to +2.6 BLEU points improvements with affix compared to the baseline.</S>
+          <S ID="S-38435">For the Kazakh to Chinese translation (KA-CH) task, the improvements are also significant.</S>
+          <S ID="S-38436">We achieve +2.27 and +0.77 improvements compared to the baseline and stem, respectively.</S>
+          <S ID="S-38437">As for the Kirghiz to Chinese translation (KI-CH) task, improvements seem relative small compared to the other two language pairs.</S>
+          <S ID="S-38438">However, it also gains +0.91 BLEU points over the baseline.</S>
+        </P>
+        <P>
+          <S ID="S-38439">4 http://www.cis.hut.fi/projects/morpho/</S>
+        </P>
+        <P>
+          <S ID="S-38440">BLEU score(%)</S>
+        </P>
+        <P>
+          <S ID="S-38441">36.5</S>
+        </P>
+        <P>
+          <S ID="S-38442">36 35.5</S>
+        </P>
+        <P>
+          <S ID="S-38443">35 34.5</S>
+        </P>
+        <P>
+          <S ID="S-38444">34 33.5</S>
+        </P>
+        <P>
+          <S ID="S-38445">33 32.5</S>
+        </P>
+        <P>
+          <S ID="S-38446">32 31.5 word</S>
+        </P>
+        <P>
+          <S ID="S-38447">morph</S>
+        </P>
+        <P>
+          <S ID="S-38448">Unsupervised Supervised</S>
+        </P>
+        <P>
+          <S ID="S-38449">stem</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Using Supervised Morphological Analyzer</HEADER>
+        <P>
+          <S ID="S-38450">Taking it further, we also want to see the effect of supervised analysis on our model.</S>
+          <S ID="S-38451">A generative statistical model of morphological analysis for Uyghur was developed according to (<REF ID="R-19" RPTR="19">Mairehaba et al., 2012</REF>).</S>
+          <S ID="S-38452">Table 3 shows the difference of statistics of training corpus after supervised and unsupervised analysis.</S>
+          <S ID="S-38453">Supervised method generates fewer type of stems and affixes than the unsupervised approach.</S>
+          <S ID="S-38454">As we can see from Figure 2, except for the morph method, stem and affix based approaches perform better after supervised analysis.</S>
+          <S ID="S-38455">The results show that our approach can obtain even better translation performance if better morphological analyzers are available.</S>
+          <S ID="S-38456">Supervised morphological analysis generates more meaningful morphemes, which lead to better disambiguation of translation rules.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusions and Future Work</HEADER>
+      <P>
+        <S ID="S-38468">In this paper we propose a novel framework for agglutinative language translation by treating stem and affix differently.</S>
+        <S ID="S-38469">We employ the stem sequence as the main part for training and decoding.</S>
+        <S ID="S-38470">Besides, we associate each stem-granularity translation rule with an affix distribution, which could be used to make better translation decisions by calculating the affix distribution similarity be- affix 367 tween the rule and the instance to be translated.</S>
+        <S ID="S-38471">We conduct our model on three different language pairs, all of which substantially improved the translation performance.</S>
+        <S ID="S-38472">The procedure is totally language-independent, and we expect that other language pairs could benefit from our approach.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-38473">like to thank the anonymous reviewers for their insightful comments and those who helped to modify the paper.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Arianna Bisazza</RAUTHOR>
+      <REFTITLE>Morphological pre-processing for Turkish to English statistical machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Peter F Brown</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: parameter estimation.</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Marine Carpuat</RAUTHOR>
+      <REFTITLE>Improving statistical machine translation using word sense disambiguation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Yee Seng Chan</RAUTHOR>
+      <REFTITLE>Word sense disambiguation improves statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>A hierarchical phrasebased model for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Mathias Creutz</RAUTHOR>
+      <REFTITLE>Inducing the morphological lexicon of a natural language from unannotated text.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Lei Cui</RAUTHOR>
+      <REFTITLE>A joint rule selection model for hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Scalable inference and training of context-rich syntactic translation models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Sharon Goldwater</RAUTHOR>
+      <REFTITLE>Improving statistical MT through morphological analysis.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Nizar Habash</RAUTHOR>
+      <REFTITLE>Arabic preprocessing schemes for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Eui-Hong Sam Han</RAUTHOR>
+      <REFTITLE>Centroid-based document classification: analysis experimental results.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Zhongjun He</RAUTHOR>
+      <REFTITLE>Improving statistical machine translation using lexicalized rule selection.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Factored translation models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical significance tests for machine translation evaluation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Young-Suk Lee</RAUTHOR>
+      <REFTITLE>Morphological analysis for statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Treeto-string alignment template for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Minh-Thang Luong</RAUTHOR>
+      <REFTITLE>Enhancing morphological alignment for translating highly inflected languages.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Minh-Thang Luong</RAUTHOR>
+      <REFTITLE>A hybrid morpheme-word representation for machine translation of morphologically rich languages.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Aili Mairehaba</RAUTHOR>
+      <REFTITLE>Directed graph model of Uyghur morphological analysis.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Coskun Mermer</RAUTHOR>
+      <REFTITLE>Unsupervised Turkish morphological segmentation for statistical machine translation.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Josef Och</RAUTHOR>
+      <REFTITLE>Discriminative training and maximum entropy models for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>The alignment template approach to statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Chris Quirk</RAUTHOR>
+      <REFTITLE>Dependency treelet translation: syntactically informed phrasal SMT.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Gerard Salton</RAUTHOR>
+      <REFTITLE>Term weighting approaches in automatic text retrieval.</REFTITLE>
+      <DATE>1987</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>SRILM - an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Sami Virpioja</RAUTHOR>
+      <REFTITLE>Morphology-aware statistical machine translation based on morphs induced in an unsupervised manner.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR>Zhiyang Wang</RAUTHOR>
+      <REFTITLE>Multi-granularity word alignment and decoding for agglutinative language translation.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="30">
+      <RAUTHOR>Mei Yang</RAUTHOR>
+      <REFTITLE>Phrase-based backoff models for machine translation of highly inflected languages.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

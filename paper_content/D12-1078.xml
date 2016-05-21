@@ -1,0 +1,2709 @@
+<document>
+  <filename>D12-1078</filename>
+  <authors/>
+  <title>Re-training Monolingual Parser Bilingually for Syntactic SMT</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>The training of most syntactic SMT approaches involves two essential components, word alignment and monolingual parser. In the current state of the art these two components are mutually independent, thus causing problems like lack of rule generalization, and violation of syntactic correspondence in translation rules. In this paper, we propose two ways of re-training monolingual parser with the target of maximizing the consistency between parse trees and alignment matrices. One is targeted self-training with a simple evaluation function; the other is based on training data selection from forced alignment of bilingual data. We also propose an auxiliary method for boosting alignment quality, by symmetrizing alignment matrices with respect to parse trees. The best combination of these novel methods achieves 3 Bleu point gain in an IWSLT task and more than 1 Bleu point gain in NIST tasks.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The training of most syntactic SMT approaches involves two essential components, word alignment and monolingual parser.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the current state of the art these two components are mutually independent, thus causing problems like lack of rule generalization, and violation of syntactic correspondence in translation rules.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In this paper, we propose two ways of re-training monolingual parser with the target of maximizing the consistency between parse trees and alignment matrices.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>One is targeted self-training with a simple evaluation function; the other is based on training data selection from forced alignment of bilingual data.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>We also propose an auxiliary method for boosting alignment quality, by symmetrizing alignment matrices with respect to parse trees.</text>
+              <doc_id>4</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>The best combination of these novel methods achieves 3 Bleu point gain in an IWSLT task and more than 1 Bleu point gain in NIST tasks.</text>
+              <doc_id>5</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>There are many varieties in syntactic statistical machine translation (SSMT). Apart from a few attempts to use synchronous parsing to produce the tree structure of both source language (SL) and target language (TL) simultaneously, most SSMT approaches make use of monolingual parser to produce the parse tree(s) of the SL and/or TL sentences, and then link up the information of the two languages through word alignment. In the current state of the art, word aligner and monolingual parser are trained and applied separately. On the one hand, an average word aligner does not consider the syntax information of both languages, and the output links may violate syntactic correspondence. That is, some SL words yielded by a SL parse tree node may not be traced to, via alignment links, some TL words with legitimate syntactic structure. On the other hand, parser design is a monolingual activity and its impact on MT is not well studied (Ambati, 2008). Many good translation rules may thus be filtered by a good monolingual parser.
+In this paper we will focus on the translation task from Chinese to English, and the string-to-tree SSMT model as elaborated in (Galley et al., 2006). There are two kinds of translation rules in this model, minimal rules, and composed rules, which are composition of minimal rules. The minimal rules are extracted from a special kind of nodes, known as frontier nodes, on TL parse tree. The concept of frontier node can be illustrated by Figure 1, which shows two partial bilingual sentences with the corresponding TL sub-trees and word alignment links. The TL words yielded by a TL parse node can be traced to the corresponding SL words through alignment links. In the diagram, each parse node is represented by a rectangle, showing the phrase label, span, and complement span respectively. The span of a TL node is defined as the minimal contiguous SL string that covers all the SL words reachable from . The complement span of is the union of spans of all the nodes that are neither descendants nor ancestors of (c.f. Galley et al., 2006) . A frontier node is a node of which the span and the complement span do not overlap with each other. In the diagram, frontier nodes are grey in color. Frontier node is the key in the SSMT model, as it identifies the bilingual information which is consistent with both the parse tree and alignment matrix.
+There are two major problems in the SSMT model. The first one is the violation of syntactic
+2 3 null1 4 6 6 6 1
+a 1large 2 number 3 of 4 people 5 coming 6 to 7 listen 8 to 9 their 10 propaganda 11 lectures 12
+null 7 7 5 6 1 null null null 3 4 4
+&#22812; &#26202; 1 &#23621; &#20303; 2 &#22312; 3 &#29287; &#27665; 4 &#30340; 5 &#27617; &#25151; 6
+(a)
+&#26469; 1 &#21548; 2 &#20182; &#20204; 3 &#23459; &#35762; 4 &#30340; 5 &#20154; 6 &#24456; &#22810; 7
+(b)
+Figure 1. Two example partial bilingual sentences with word alignment and syntactic tree for the target sentence. All the nodes in gray are frontier nodes. Example (a) contains two error links (in dash line), and the syntactic tree for the target sentence of example (b) is wrong.
+structure by incorrect alignment links, as shown by the two dashed links in Figure 1(a). These two incorrect links hinder the extraction of a good minimal rule &#8220; &#27617; &#25151; &#8221; and that of a good composed rule &#8220; &#29287; &#27665; , &#30340; NP(DT(the), NN(herdsmen), POS('s)) &#8221;. By and large, incorrect alignment links lead to translation rules that are large in size, few in number, and poor in generalization ability (Fossum et al, 2008). The second problem is parsing error, as shown in Figure 1(b). The incorrect POS tagging of the word &#8220;lectures" causes a series of parsing errors, including the absence of the noun phrase &#8220;NP(NN(propaganda), NN(lectures))&#8221;. These parsing errors hinder the extraction of good rules, such as &#8220; &#23459; &#35762; NP(NN(propaganda), NN(lectures)) &#8221;.
+Note that in Figure 1(a), the parse tree is correct, and the incorrect alignment links might be fixed if the aligner takes the parse tree into consideration. Similarly, in Figure 1(b) some parsing errors might be fixed if the parser takes into consideration the correct alignment links about &#8220;propaganda&#8221; and &#8220;lecture&#8221;. That is, alignment errors and parsing might be fixed if word aligner and parser are not mutually independent.
+In this paper, we emphasize more on the correction of parsing errors by exploiting alignment information. The general approach is to re-train a parser with parse trees which are the most consistent with alignment matrices. Our first strategy is to apply the idea of targeted selftraining (Katz-Brown et al., 2011) with the simple evaluation function of frontier set size. That is to re-train the parser with the parse trees which give rise to the largest number of frontier nodes. The second strategy is to apply forced alignment (Wuebker et al., 2010) to bilingual data and select the parse trees generated by our SSMT system for re-training the parser. Besides, although we do not invent a new word aligner exploiting syntactic information, we propose a new method to symmetrize the alignment matrices of two directions by taking parse tree into consideration.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>There are many varieties in syntactic statistical machine translation (SSMT).</text>
+              <doc_id>6</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Apart from a few attempts to use synchronous parsing to produce the tree structure of both source language (SL) and target language (TL) simultaneously, most SSMT approaches make use of monolingual parser to produce the parse tree(s) of the SL and/or TL sentences, and then link up the information of the two languages through word alignment.</text>
+              <doc_id>7</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the current state of the art, word aligner and monolingual parser are trained and applied separately.</text>
+              <doc_id>8</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>On the one hand, an average word aligner does not consider the syntax information of both languages, and the output links may violate syntactic correspondence.</text>
+              <doc_id>9</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>That is, some SL words yielded by a SL parse tree node may not be traced to, via alignment links, some TL words with legitimate syntactic structure.</text>
+              <doc_id>10</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>On the other hand, parser design is a monolingual activity and its impact on MT is not well studied (Ambati, 2008).</text>
+              <doc_id>11</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Many good translation rules may thus be filtered by a good monolingual parser.</text>
+              <doc_id>12</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper we will focus on the translation task from Chinese to English, and the string-to-tree SSMT model as elaborated in (Galley et al., 2006).</text>
+              <doc_id>13</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>There are two kinds of translation rules in this model, minimal rules, and composed rules, which are composition of minimal rules.</text>
+              <doc_id>14</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The minimal rules are extracted from a special kind of nodes, known as frontier nodes, on TL parse tree.</text>
+              <doc_id>15</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The concept of frontier node can be illustrated by Figure 1, which shows two partial bilingual sentences with the corresponding TL sub-trees and word alignment links.</text>
+              <doc_id>16</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The TL words yielded by a TL parse node can be traced to the corresponding SL words through alignment links.</text>
+              <doc_id>17</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the diagram, each parse node is represented by a rectangle, showing the phrase label, span, and complement span respectively.</text>
+              <doc_id>18</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>The span of a TL node is defined as the minimal contiguous SL string that covers all the SL words reachable from .</text>
+              <doc_id>19</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>The complement span of is the union of spans of all the nodes that are neither descendants nor ancestors of (c.f.</text>
+              <doc_id>20</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>Galley et al., 2006) .</text>
+              <doc_id>21</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>A frontier node is a node of which the span and the complement span do not overlap with each other.</text>
+              <doc_id>22</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the diagram, frontier nodes are grey in color.</text>
+              <doc_id>23</doc_id>
+              <sec_id>10</sec_id>
+            </sentence>
+            <sentence>
+              <text>Frontier node is the key in the SSMT model, as it identifies the bilingual information which is consistent with both the parse tree and alignment matrix.</text>
+              <doc_id>24</doc_id>
+              <sec_id>11</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>There are two major problems in the SSMT model.</text>
+              <doc_id>25</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The first one is the violation of syntactic</text>
+              <doc_id>26</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2 3 null1 4 6 6 6 1</text>
+              <doc_id>27</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>a 1large 2 number 3 of 4 people 5 coming 6 to 7 listen 8 to 9 their 10 propaganda 11 lectures 12</text>
+              <doc_id>28</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>null 7 7 5 6 1 null null null 3 4 4</text>
+              <doc_id>29</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#22812; &#26202; 1 &#23621; &#20303; 2 &#22312; 3 &#29287; &#27665; 4 &#30340; 5 &#27617; &#25151; 6</text>
+              <doc_id>30</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(a)</text>
+              <doc_id>31</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#26469; 1 &#21548; 2 &#20182; &#20204; 3 &#23459; &#35762; 4 &#30340; 5 &#20154; 6 &#24456; &#22810; 7</text>
+              <doc_id>32</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(b)</text>
+              <doc_id>33</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Figure 1.</text>
+              <doc_id>34</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Two example partial bilingual sentences with word alignment and syntactic tree for the target sentence.</text>
+              <doc_id>35</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>All the nodes in gray are frontier nodes.</text>
+              <doc_id>36</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Example (a) contains two error links (in dash line), and the syntactic tree for the target sentence of example (b) is wrong.</text>
+              <doc_id>37</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>structure by incorrect alignment links, as shown by the two dashed links in Figure 1(a).</text>
+              <doc_id>38</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>These two incorrect links hinder the extraction of a good minimal rule &#8220; &#27617; &#25151; &#8221; and that of a good composed rule &#8220; &#29287; &#27665; , &#30340; NP(DT(the), NN(herdsmen), POS('s)) &#8221;.</text>
+              <doc_id>39</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>By and large, incorrect alignment links lead to translation rules that are large in size, few in number, and poor in generalization ability (Fossum et al, 2008).</text>
+              <doc_id>40</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The second problem is parsing error, as shown in Figure 1(b).</text>
+              <doc_id>41</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The incorrect POS tagging of the word &#8220;lectures" causes a series of parsing errors, including the absence of the noun phrase &#8220;NP(NN(propaganda), NN(lectures))&#8221;.</text>
+              <doc_id>42</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>These parsing errors hinder the extraction of good rules, such as &#8220; &#23459; &#35762; NP(NN(propaganda), NN(lectures)) &#8221;.</text>
+              <doc_id>43</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Note that in Figure 1(a), the parse tree is correct, and the incorrect alignment links might be fixed if the aligner takes the parse tree into consideration.</text>
+              <doc_id>44</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Similarly, in Figure 1(b) some parsing errors might be fixed if the parser takes into consideration the correct alignment links about &#8220;propaganda&#8221; and &#8220;lecture&#8221;.</text>
+              <doc_id>45</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>That is, alignment errors and parsing might be fixed if word aligner and parser are not mutually independent.</text>
+              <doc_id>46</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we emphasize more on the correction of parsing errors by exploiting alignment information.</text>
+              <doc_id>47</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The general approach is to re-train a parser with parse trees which are the most consistent with alignment matrices.</text>
+              <doc_id>48</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our first strategy is to apply the idea of targeted selftraining (Katz-Brown et al., 2011) with the simple evaluation function of frontier set size.</text>
+              <doc_id>49</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>That is to re-train the parser with the parse trees which give rise to the largest number of frontier nodes.</text>
+              <doc_id>50</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The second strategy is to apply forced alignment (Wuebker et al., 2010) to bilingual data and select the parse trees generated by our SSMT system for re-training the parser.</text>
+              <doc_id>51</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Besides, although we do not invent a new word aligner exploiting syntactic information, we propose a new method to symmetrize the alignment matrices of two directions by taking parse tree into consideration.</text>
+              <doc_id>52</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Parser Re-training Strategies</title>
+        <text>Most monolingual parsers used in SSMT are trained upon certain tree bank. That is, a parser is trained with the target of maximizing the agreement between its decision on syntactic structure and that decision in the human-annotated parse trees. As mentioned in Section 1, monolingual syntactic structure is not necessarily suitable for translation, and sometimes the bilingual information in word alignment may help the parser find out the correct structure. Therefore, it is desirable if there is a way to re-train a parser with bilingual information.
+What is needed includes a framework of parser re-training, and a data selection strategy that maximizes the consistency between parse tree and alignment matrix. Our two solutions will be introduced in the next two subsections respectively.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Most monolingual parsers used in SSMT are trained upon certain tree bank.</text>
+              <doc_id>53</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>That is, a parser is trained with the target of maximizing the agreement between its decision on syntactic structure and that decision in the human-annotated parse trees.</text>
+              <doc_id>54</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>As mentioned in Section 1, monolingual syntactic structure is not necessarily suitable for translation, and sometimes the bilingual information in word alignment may help the parser find out the correct structure.</text>
+              <doc_id>55</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Therefore, it is desirable if there is a way to re-train a parser with bilingual information.</text>
+              <doc_id>56</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>What is needed includes a framework of parser re-training, and a data selection strategy that maximizes the consistency between parse tree and alignment matrix.</text>
+              <doc_id>57</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our two solutions will be introduced in the next two subsections respectively.</text>
+              <doc_id>58</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 Targeted Self-Training with Frontier Set Based Evaluation (TST-FS)</title>
+            <text>The first solution is based on targeted self-training (TST) (Katz-Brown et al., 2011). In standard selftraining, the top one parse trees produced by the current parser are taken as training data for the next round, and the training objective is still the correctness of monolingual syntactic structure. In targeted self-training, the training objective shifts to certain external evaluation function. For each sentence, the n-best parse trees from the current parser are re-ranked in accordance with this external evaluation function, and the top one of the re-ranked candidates is then selected as training data for the next round. The key of targeted selftraining is the definition of this external evaluation function.
+As shown by the example in Figure 1(b), an incorrect parse tree is likely to hinder the extraction of good translation rules, because the number of frontier nodes in the incorrect tree is in general smaller than that in the correct tree. Consider the example in Figure 2, which is about the same partial bilingual sentence as in Figure 1(b). Although both parse trees do not have the correct syntactic structure, the tree in Figure 2 has more frontier nodes, leads to more valid translation rules, and is therefore more preferable.
+This example suggests a very simple external evaluation function, viz. the size of frontier set. Given a bilingual sentence, its alignment matrix,
+DT null 1-7 NP 7 1-6
+JJ 7 1-7 NP 1-7 3-4
+NN 7 1-7
+IN
+5 1-4,6-7
+PP 1-6 3-4,7
+NP
+6 1-5,7
+NNS
+6 1-5,7
+NP 1-6 3-5,7
+VP 1 3-7
+VBG 1 3-7
+TO null 1-7
+VP 3-4 1,5-7
+VP 3-4 1,5-7
+PP 3-4 1,5-7
+NP 3-4 1,5-7
+a 1large 2 number 3 of 4 people 5 coming 6 to 7 listen 8 to 9 their 10 propaganda 11 lectures 12
+null 7 7 5 6 1 null null null 3 4 4
+&#26469; 1 &#21548; 2 &#20182; &#20204; 3 &#23459; &#35762; 4 &#30340; 5 &#20154; 6 &#24456; &#22810; 7
+and the N-best parse trees of the TL sentence, we will calculate the number of frontier nodes for each parse tree, and re-rank the parse trees in its descending order. The new top one parse tree is selected as the training data for the next round of targeted self-training of the TL parser. In the following we will call this approach as targeted self-training with frontier set based evaluation (TST-FS).
+Note that the size of the N-best list should be kept small. It is because sometimes a parse tree with an extremely mistaken structure happens to have perfect match with the alignment matrix, thereby giving rise to nearest the largest frontier set size. It is empirically found that a 5-best list of parse trees is already sufficient to significantly improve translation performance.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The first solution is based on targeted self-training (TST) (Katz-Brown et al., 2011).</text>
+                  <doc_id>59</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In standard selftraining, the top one parse trees produced by the current parser are taken as training data for the next round, and the training objective is still the correctness of monolingual syntactic structure.</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In targeted self-training, the training objective shifts to certain external evaluation function.</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each sentence, the n-best parse trees from the current parser are re-ranked in accordance with this external evaluation function, and the top one of the re-ranked candidates is then selected as training data for the next round.</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The key of targeted selftraining is the definition of this external evaluation function.</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>As shown by the example in Figure 1(b), an incorrect parse tree is likely to hinder the extraction of good translation rules, because the number of frontier nodes in the incorrect tree is in general smaller than that in the correct tree.</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Consider the example in Figure 2, which is about the same partial bilingual sentence as in Figure 1(b).</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Although both parse trees do not have the correct syntactic structure, the tree in Figure 2 has more frontier nodes, leads to more valid translation rules, and is therefore more preferable.</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>This example suggests a very simple external evaluation function, viz.</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>the size of frontier set.</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given a bilingual sentence, its alignment matrix,</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>DT null 1-7 NP 7 1-6</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>JJ 7 1-7 NP 1-7 3-4</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NN 7 1-7</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>IN</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5 1-4,6-7</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PP 1-6 3-4,7</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6 1-5,7</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NNS</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6 1-5,7</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 1-6 3-5,7</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VP 1 3-7</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VBG 1 3-7</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>TO null 1-7</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VP 3-4 1,5-7</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VP 3-4 1,5-7</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PP 3-4 1,5-7</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 3-4 1,5-7</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>a 1large 2 number 3 of 4 people 5 coming 6 to 7 listen 8 to 9 their 10 propaganda 11 lectures 12</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>null 7 7 5 6 1 null null null 3 4 4</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#26469; 1 &#21548; 2 &#20182; &#20204; 3 &#23459; &#35762; 4 &#30340; 5 &#20154; 6 &#24456; &#22810; 7</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>and the N-best parse trees of the TL sentence, we will calculate the number of frontier nodes for each parse tree, and re-rank the parse trees in its descending order.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The new top one parse tree is selected as the training data for the next round of targeted self-training of the TL parser.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the following we will call this approach as targeted self-training with frontier set based evaluation (TST-FS).</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Note that the size of the N-best list should be kept small.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is because sometimes a parse tree with an extremely mistaken structure happens to have perfect match with the alignment matrix, thereby giving rise to nearest the largest frontier set size.</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is empirically found that a 5-best list of parse trees is already sufficient to significantly improve translation performance.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 Forced Alignment-based Parser Re- Training (FA-PR)</title>
+            <text>If we doubt that the parse tree from a monolingual parser is not appropriate enough for translation purpose, then it seems reasonable to consider using the parse tree produced by an SSMT system to retrain the parser. A na&#239;ve idea is simply to run an SSMT system over some SL sentences and retrieve the by-product TL parse trees for re-training the monolingual parser. The biggest problem of this na&#239;ve approach is that the translation by an MT system is often a 'weird' TL sentence, and thus the associated parse tree is of little use in improving the parser.
+Forced alignment (Wuebker et al., 2010) of bilingual data is a much more promising approach.
+VB null 1-7 TO null 1-7
+PRP
+3 1,4-7
+Figure 2. The parse tree selected by TST-FS for the example in Figure 1(b)
+NN 4 1-7 VP 4 1-7
+When applied to SSMT, given a bilingual sentence, it performs phrase segmentation of the SL side, parsing of the TL side, and word alignment of the bilingual sentence, using the full translation system as in decoding. It finds the best decoding path that generates the TL side of the bilingual sentence, and the parse tree of the TL sentence is also obtained as a by-product. The parse trees from forced alignment are suitable for re-training the monolingual parser.
+Here is the simple iterative re-training algorithm. First we have a baseline monolingual parser and plug it into an SSMT system. Then perform forced alignment, using the SSMT system, of some bilingual data and obtain the parse trees as new training data for the parser. The new parser can then be applied again to do the second round of forced alignment. This iteration of forced alignment followed by parser re-training is kept going until some stopping criterion is met. In the following we will call this approach as forced alignment based parser re-training (FA-PR).
+There are a few important implementation details of FA-PR. Forced alignment is guaranteed to obtain a parse tree if all translation rules are kept and no pruning is performed during decoding. Yet in reality an average MT system applies pruning during translation model training and decoding, and a lot of translation rules will then be discarded. In order to have more parse trees be considered by forced alignment, we keep all translation rules and relax pruning constraints in the decoder, viz.
+DT null 1-7 NP 7 1-6
+JJ 7 1-7 NN 7 1-7
+NP 5-7 1-4
+IN
+5 1-4,6-7
+PP 5-6 1-4,7
+NP
+6 1-5,7
+NNS
+6 1-5,7 VBG 1 3-7
+TO null 1-7 ADJP null 1-7
+NP 3-4 1,5-7
+NP
+4 1-3,5-7
+a 1large 2 number 3 of 4 people 5 coming 6 to 7 listen 8 to 9 their 10 propaganda 11 lectures 12
+null 7 7 5 6 1 null null null 3 4 4
+&#26469; 1 &#21548; 2 &#20182; &#20204; 3 &#23459; &#35762; 4 &#30340; 5 &#20154; 6 &#24456; &#22810; 7
+enlarge the stack size of each cell in the chart from 50 to 150.
+Another measure to guarantee the existence of a decoding path in forced alignment is to allow part of a SL or TL sentence translate to null. Consider the example in Figure 1(b). We also add a null alignment for any span of the source and target sentences to handle the null translation scenario. It is easy to add a null translation candidate for a span of the source sentence during decoding, but not easy for target spans. For example, suppose the best translation candidate for the source span " &#26469; 1 NP &#30340; 5 &#20154; 6 &#24456; &#22810; 7" is "a large number of people coming NP", and the best translation candidate for " &#21548; 2 &#20182; &#20204; 3 &#23459; &#35762; 4" is "their propaganda lectures", there is no combination of candidates from two n- best translation lists which can match a sequence in the given target part, so we add a translation candidate ("to listen to ") generated from null, whose syntactic label can be any label (decided according to the translated context, which is &#8220;ADJP&#8221; here). The feature weights for the added null alignment are set to be very small, so as to avoid the competition with the normal candidates. In order to generate normal trees with not so many null alignment sub-trees for the target sentence (such trees are not suitable for parser re-training), only target spans with less than 4 words can align to null, and such null-aligned sub-tree can only be added no more than 3 times.
+With all the mentioned modification of the forced alignment, the partial target tree generated using forced alignment for the example in Figure 1(b) is shown in Figure 3. We can see that even
+NP 1-4 5-7
+VB null 1-7 TO null 1-7
+NP 3-4 1,5-7
+PRP
+3 1,4-7
+Figure 3. The parse tree selected by FA-PR for the example in Figure 1(b)
+NN 4 1-7 VP 4 1-7
+with an incorrect sub-tree, more useful rules can be extracted, compared with the baseline sub-tree and the sub-tree generated from TST-FS.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>If we doubt that the parse tree from a monolingual parser is not appropriate enough for translation purpose, then it seems reasonable to consider using the parse tree produced by an SSMT system to retrain the parser.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>A na&#239;ve idea is simply to run an SSMT system over some SL sentences and retrieve the by-product TL parse trees for re-training the monolingual parser.</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The biggest problem of this na&#239;ve approach is that the translation by an MT system is often a 'weird' TL sentence, and thus the associated parse tree is of little use in improving the parser.</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Forced alignment (Wuebker et al., 2010) of bilingual data is a much more promising approach.</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VB null 1-7 TO null 1-7</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PRP</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 1,4-7</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 2.</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The parse tree selected by TST-FS for the example in Figure 1(b)</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NN 4 1-7 VP 4 1-7</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>When applied to SSMT, given a bilingual sentence, it performs phrase segmentation of the SL side, parsing of the TL side, and word alignment of the bilingual sentence, using the full translation system as in decoding.</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It finds the best decoding path that generates the TL side of the bilingual sentence, and the parse tree of the TL sentence is also obtained as a by-product.</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The parse trees from forced alignment are suitable for re-training the monolingual parser.</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Here is the simple iterative re-training algorithm.</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>First we have a baseline monolingual parser and plug it into an SSMT system.</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Then perform forced alignment, using the SSMT system, of some bilingual data and obtain the parse trees as new training data for the parser.</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The new parser can then be applied again to do the second round of forced alignment.</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This iteration of forced alignment followed by parser re-training is kept going until some stopping criterion is met.</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the following we will call this approach as forced alignment based parser re-training (FA-PR).</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>There are a few important implementation details of FA-PR.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Forced alignment is guaranteed to obtain a parse tree if all translation rules are kept and no pruning is performed during decoding.</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Yet in reality an average MT system applies pruning during translation model training and decoding, and a lot of translation rules will then be discarded.</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In order to have more parse trees be considered by forced alignment, we keep all translation rules and relax pruning constraints in the decoder, viz.</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>DT null 1-7 NP 7 1-6</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>JJ 7 1-7 NN 7 1-7</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 5-7 1-4</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>IN</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5 1-4,6-7</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PP 5-6 1-4,7</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6 1-5,7</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NNS</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6 1-5,7 VBG 1 3-7</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>TO null 1-7 ADJP null 1-7</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 3-4 1,5-7</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 1-3,5-7</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>a 1large 2 number 3 of 4 people 5 coming 6 to 7 listen 8 to 9 their 10 propaganda 11 lectures 12</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>null 7 7 5 6 1 null null null 3 4 4</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#26469; 1 &#21548; 2 &#20182; &#20204; 3 &#23459; &#35762; 4 &#30340; 5 &#20154; 6 &#24456; &#22810; 7</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>enlarge the stack size of each cell in the chart from 50 to 150.</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Another measure to guarantee the existence of a decoding path in forced alignment is to allow part of a SL or TL sentence translate to null.</text>
+                  <doc_id>138</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Consider the example in Figure 1(b).</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We also add a null alignment for any span of the source and target sentences to handle the null translation scenario.</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is easy to add a null translation candidate for a span of the source sentence during decoding, but not easy for target spans.</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, suppose the best translation candidate for the source span " &#26469; 1 NP &#30340; 5 &#20154; 6 &#24456; &#22810; 7" is "a large number of people coming NP", and the best translation candidate for " &#21548; 2 &#20182; &#20204; 3 &#23459; &#35762; 4" is "their propaganda lectures", there is no combination of candidates from two n- best translation lists which can match a sequence in the given target part, so we add a translation candidate ("to listen to ") generated from null, whose syntactic label can be any label (decided according to the translated context, which is &#8220;ADJP&#8221; here).</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The feature weights for the added null alignment are set to be very small, so as to avoid the competition with the normal candidates.</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In order to generate normal trees with not so many null alignment sub-trees for the target sentence (such trees are not suitable for parser re-training), only target spans with less than 4 words can align to null, and such null-aligned sub-tree can only be added no more than 3 times.</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>With all the mentioned modification of the forced alignment, the partial target tree generated using forced alignment for the example in Figure 1(b) is shown in Figure 3.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We can see that even</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 1-4 5-7</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VB null 1-7 TO null 1-7</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 3-4 1,5-7</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PRP</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 1,4-7</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 3.</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The parse tree selected by FA-PR for the example in Figure 1(b)</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NN 4 1-7 VP 4 1-7</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>with an incorrect sub-tree, more useful rules can be extracted, compared with the baseline sub-tree and the sub-tree generated from TST-FS.</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Word Alignment Symmetrization</title>
+        <text>The most widely used word aligners in MT, like HMM and IBM Models (Och and Ney, 2003), are directional aligners. Such aligner produces one set of alignment matrices for the SL-to-TL direction and another set for the TL-to-SL direction. Symmetrization refers to the combination of these two sets of alignment matrices.
+The most popular method of symmetrization is intersect-diag-grow (IDG). Given a bilingual sentence and its two alignment matrices and
+IDG starts with all the links in . Then IDG considers each link in in turn. A link is added if its addition does not make some phrase pairs overlap. Although IDG is simple and efficient, and has been shown to be effective in phrase-based SMT, it is problematic in SSMT, as illustrated by the example in section 1.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The most widely used word aligners in MT, like HMM and IBM Models (Och and Ney, 2003), are directional aligners.</text>
+              <doc_id>156</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Such aligner produces one set of alignment matrices for the SL-to-TL direction and another set for the TL-to-SL direction.</text>
+              <doc_id>157</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Symmetrization refers to the combination of these two sets of alignment matrices.</text>
+              <doc_id>158</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The most popular method of symmetrization is intersect-diag-grow (IDG).</text>
+              <doc_id>159</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Given a bilingual sentence and its two alignment matrices and</text>
+              <doc_id>160</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>IDG starts with all the links in .</text>
+              <doc_id>161</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Then IDG considers each link in in turn.</text>
+              <doc_id>162</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>A link is added if its addition does not make some phrase pairs overlap.</text>
+              <doc_id>163</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Although IDG is simple and efficient, and has been shown to be effective in phrase-based SMT, it is problematic in SSMT, as illustrated by the example in section 1.</text>
+              <doc_id>164</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Intersect-Diag-Syntactic-Grow (IDSG)</title>
+            <text>We propose a new symmetrization method, Intersect-Diag-Syntactic-Grow (IDSG), which is an adaptation of IDG but also taking syntactic information in consideration. It is sketched in Algorithm 2.
+Algorithm 2 Intersect-Diag-Syntactic-Grow
+&#8226; step1: Generate all the candidate links using IDG.
+&#8226; step2: Select the one which can generate the
+biggest frontier set:
+&#8226; step3: Add to , and repeat step 1, until no
+new link can be added.
+Like IDG, IDSG starts with all the links in and its main task is to add links selected from . IDSG is also subject to the constraints of IDG. The new criterion in link selection in IDSG is specified in Step 2. Given a parse tree of the TL side of the bilingual sentence, in each iteration IDSG considers the change of frontier set size caused by
+VDB
+2 1,3-6
+IN
+3 1-2,4-6
+DT null1 1-6
+PP 3-6 1-2
+NP 4-5 1-3,6
+NN
+4 1-3,5-6 POS
+5 1-4,6 NNS 6 1-5
+lived 1 in 2 the 3 herdsmen 4 &#8216;s 5 yurts 6 at 7 night 8
+2 3 null1 4 5 6 1 1
+&#22812; &#26202; 1 &#23621; &#20303; 2 &#22312; 3 &#29287; &#27665; 4 &#30340; 5 &#27617; &#25151; 6
+Figure 4, the alignment generated by IDSG for the example in Figure 1(a)
+the addition of each link in . The link leading to the maximum number of frontier nodes is added (and removed from ). This process continues until no more links can be added.
+In sum, IDSG add links in an order which take syntactic structure into consideration, and the link with the least violation of the syntactic structure is added first.
+For the example in Figure 1(a), IDSG succeeds in discarding the two incorrect links, and produces the final alignment and frontier set as shown in Figure 4. Note that IDSG still fails to produce the correct link (the 3 , &#29287; &#27665; 4), since this link does not appear in at all.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We propose a new symmetrization method, Intersect-Diag-Syntactic-Grow (IDSG), which is an adaptation of IDG but also taking syntactic information in consideration.</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is sketched in Algorithm 2.</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Algorithm 2 Intersect-Diag-Syntactic-Grow</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; step1: Generate all the candidate links using IDG.</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; step2: Select the one which can generate the</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>biggest frontier set:</text>
+                  <doc_id>170</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; step3: Add to , and repeat step 1, until no</text>
+                  <doc_id>171</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>new link can be added.</text>
+                  <doc_id>172</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Like IDG, IDSG starts with all the links in and its main task is to add links selected from .</text>
+                  <doc_id>173</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>IDSG is also subject to the constraints of IDG.</text>
+                  <doc_id>174</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The new criterion in link selection in IDSG is specified in Step 2.</text>
+                  <doc_id>175</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given a parse tree of the TL side of the bilingual sentence, in each iteration IDSG considers the change of frontier set size caused by</text>
+                  <doc_id>176</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VDB</text>
+                  <doc_id>177</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 1,3-6</text>
+                  <doc_id>178</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>IN</text>
+                  <doc_id>179</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 1-2,4-6</text>
+                  <doc_id>180</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>DT null1 1-6</text>
+                  <doc_id>181</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PP 3-6 1-2</text>
+                  <doc_id>182</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 4-5 1-3,6</text>
+                  <doc_id>183</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NN</text>
+                  <doc_id>184</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 1-3,5-6 POS</text>
+                  <doc_id>185</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5 1-4,6 NNS 6 1-5</text>
+                  <doc_id>186</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>lived 1 in 2 the 3 herdsmen 4 &#8216;s 5 yurts 6 at 7 night 8</text>
+                  <doc_id>187</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 3 null1 4 5 6 1 1</text>
+                  <doc_id>188</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#22812; &#26202; 1 &#23621; &#20303; 2 &#22312; 3 &#29287; &#27665; 4 &#30340; 5 &#27617; &#25151; 6</text>
+                  <doc_id>189</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 4, the alignment generated by IDSG for the example in Figure 1(a)</text>
+                  <doc_id>190</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>the addition of each link in .</text>
+                  <doc_id>191</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The link leading to the maximum number of frontier nodes is added (and removed from ).</text>
+                  <doc_id>192</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This process continues until no more links can be added.</text>
+                  <doc_id>193</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In sum, IDSG add links in an order which take syntactic structure into consideration, and the link with the least violation of the syntactic structure is added first.</text>
+                  <doc_id>194</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For the example in Figure 1(a), IDSG succeeds in discarding the two incorrect links, and produces the final alignment and frontier set as shown in Figure 4.</text>
+                  <doc_id>195</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that IDSG still fails to produce the correct link (the 3 , &#29287; &#27665; 4), since this link does not appear in at all.</text>
+                  <doc_id>196</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Combining TST-FS/FA-PR and IDSG</title>
+            <text>Parser re-training aims to improve a parser with alignment matrix while IDSG aims to improve alignment matrix with parse tree. It is reasonable to combine them, and there are two alternatives of the combination, depending on the order of application. That is, we could either improve alignment matrix by IDSG and then re-train parser with the better alignment, or re-train parser and then improve alignment matrix with better syntactic information. Either alternative can be arranged into an iterative training routine, but empirically it is found that only one round of parser re-training before or after only one round of IDSG is already enough.
+VP 1-6 ----
+NP 4-6 1-3
+IN 1 1-6 PP 1 2-6
+NP 1 1-6
+NN 1 1-6</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Parser re-training aims to improve a parser with alignment matrix while IDSG aims to improve alignment matrix with parse tree.</text>
+                  <doc_id>197</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is reasonable to combine them, and there are two alternatives of the combination, depending on the order of application.</text>
+                  <doc_id>198</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>That is, we could either improve alignment matrix by IDSG and then re-train parser with the better alignment, or re-train parser and then improve alignment matrix with better syntactic information.</text>
+                  <doc_id>199</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Either alternative can be arranged into an iterative training routine, but empirically it is found that only one round of parser re-training before or after only one round of IDSG is already enough.</text>
+                  <doc_id>200</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VP 1-6 ----</text>
+                  <doc_id>201</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 4-6 1-3</text>
+                  <doc_id>202</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>IN 1 1-6 PP 1 2-6</text>
+                  <doc_id>203</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP 1 1-6</text>
+                  <doc_id>204</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NN 1 1-6</text>
+                  <doc_id>205</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Experiment</title>
+        <text>In this section, we conduct experiments on Chinese to English translation task to test our proposed methods of parser re-training and word alignment symmetrization. The evaluation method is the case insensitive IBM BLEU-4 (Papineni et al., 2002). Significant testing is carried out using bootstrap resampling method proposed by Koehn (2004) with a 95% confidence level.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this section, we conduct experiments on Chinese to English translation task to test our proposed methods of parser re-training and word alignment symmetrization.</text>
+              <doc_id>206</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The evaluation method is the case insensitive IBM BLEU-4 (Papineni et al., 2002).</text>
+              <doc_id>207</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Significant testing is carried out using bootstrap resampling method proposed by Koehn (2004) with a 95% confidence level.</text>
+              <doc_id>208</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 Parser and SMT Decoder</title>
+            <text>The syntactic parser we used in this paper is Berkley parser, with the grammar trained on WSJ corpus, and the training method follows Petrov and Klein (2007). Our SMT decoder is an in-house implementation of string-to-tree decoder. The features we used are standard used features, such as translation probabilities, lexical weights, language model probabilities and distortion probability. The feature weights are tuned using the minimum error rate training (MERT) (Och, 2003).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The syntactic parser we used in this paper is Berkley parser, with the grammar trained on WSJ corpus, and the training method follows Petrov and Klein (2007).</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our SMT decoder is an in-house implementation of string-to-tree decoder.</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The features we used are standard used features, such as translation probabilities, lexical weights, language model probabilities and distortion probability.</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The feature weights are tuned using the minimum error rate training (MERT) (Och, 2003).</text>
+                  <doc_id>212</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 Experiment Data Setting and Baselines</title>
+            <text>We test our method with two data settings: one is IWSLT data set, the other is NIST data set.
+Table 1. Baselines for IWSLT data set
+Table 2. Baselines for NIST data set
+Our IWSLT data is the IWSLT 2009 dialog task data set. The training data include the BTEC and SLDB training data. The training data contains 81k sentence pairs, 655k Chinese words and 806k English words. The language model is 5-gram language model trained with the English sentences in the training data. We use the combination of dev8 and dialog as development set, and dev9 as test set. The TL sentences of the training data with the selected/generated trees are used as the training data to re-train the parser. To get the baseline of this setting, we run IDG to combine the bidirection alignment generated by Giza++ (Och Ney, 2003), and run Berkeley parser (Petrov and Klein, 2007) to parse the target sentences. With the baseline alignments and syntactic trees, we extract rules and calculate features. The baseline results are shown in Table 1.
+For the NIST data set, the bilingual training data we used is NIST 2008 training set excluding the Hong Kong Law and Hong Kong Hansard. The training data contains 354k sentence pairs, 8M Chinese words and 10M English words, and is also the training data for our parser re-training. The language model is 5-gram language model trained with the Giga-Word corpus plus the English sentences in the training data. The development data to tune the feature weights of our decoder is NIST 2003 evaluation set, and test sets are NIST 2005 and 2008 evaluation sets. The baseline for NIST data is got in a similar way with for IWSLT, which are shown in Table 2 .</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We test our method with two data settings: one is IWSLT data set, the other is NIST data set.</text>
+                  <doc_id>213</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 1.</text>
+                  <doc_id>214</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Baselines for IWSLT data set</text>
+                  <doc_id>215</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 2.</text>
+                  <doc_id>216</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Baselines for NIST data set</text>
+                  <doc_id>217</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Our IWSLT data is the IWSLT 2009 dialog task data set.</text>
+                  <doc_id>218</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The training data include the BTEC and SLDB training data.</text>
+                  <doc_id>219</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The training data contains 81k sentence pairs, 655k Chinese words and 806k English words.</text>
+                  <doc_id>220</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The language model is 5-gram language model trained with the English sentences in the training data.</text>
+                  <doc_id>221</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use the combination of dev8 and dialog as development set, and dev9 as test set.</text>
+                  <doc_id>222</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The TL sentences of the training data with the selected/generated trees are used as the training data to re-train the parser.</text>
+                  <doc_id>223</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To get the baseline of this setting, we run IDG to combine the bidirection alignment generated by Giza++ (Och Ney, 2003), and run Berkeley parser (Petrov and Klein, 2007) to parse the target sentences.</text>
+                  <doc_id>224</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>With the baseline alignments and syntactic trees, we extract rules and calculate features.</text>
+                  <doc_id>225</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The baseline results are shown in Table 1.</text>
+                  <doc_id>226</doc_id>
+                  <sec_id>8</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For the NIST data set, the bilingual training data we used is NIST 2008 training set excluding the Hong Kong Law and Hong Kong Hansard.</text>
+                  <doc_id>227</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The training data contains 354k sentence pairs, 8M Chinese words and 10M English words, and is also the training data for our parser re-training.</text>
+                  <doc_id>228</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The language model is 5-gram language model trained with the Giga-Word corpus plus the English sentences in the training data.</text>
+                  <doc_id>229</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The development data to tune the feature weights of our decoder is NIST 2003 evaluation set, and test sets are NIST 2005 and 2008 evaluation sets.</text>
+                  <doc_id>230</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The baseline for NIST data is got in a similar way with for IWSLT, which are shown in Table 2 .</text>
+                  <doc_id>231</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>4.3 Results of TST-FS/ FA-PR</title>
+            <text>The parser re-training strategies TST-FS and FA- PR are tested with two baselines, one is the default parser without any re-training and another is standard self-training (SST). All three re-training approaches are based on the same bilingual datasets as used in translation model training. The MT performances on IWSLT and NIST by the four approaches are shown in Table 3 and 4 respectively.
+It can be seen that just standard self-training does improve translation performance, as retraining on the TL side of bilingual data is a kind of domain adaptation (from WSJ to IWSLT/NIST). But targeted self-training achieves more noticeable improvement, almost twice as much as standard self-training. This confirms the value of word alignment information in parser re-training. Finally, the even larger improvement of FA-PR than TST- FS shows that merely increasing the number of frontier nodes is not enough. Some frontier nodes are of poor quality, and the frontier nodes found in forced alignment are more suitable.
+It can also be seen that the improvement in IWSLT is larger than that in NIST. The first reason is that both WSJ and NIST are of the news domain and of formal writing style, whereas IWSLT is of the tourist domain and of colloquial style. Therefore any improvement from the default parser, which is trained on WSJ, is expected to be smaller in the NIST case. Another reason is that, since the
+IWSLT dataset is much smaller, the impact of more and better rules is more obvious.
+Note that the figures in Table 3 and 4 are about parser re-training for only one iteration. It is found that, more iteration do not lead to further significant improvement. The forced alignment of bilingual training data does not obtain a full decoding path for every bilingual sentence. It is because, although all translation rules are kept, there is still pruning during decoding. Only 64% of the IWSLT dataset and 53% of the NIST dataset can be successfully forced-aligned. In general, the longer the bilingual sentence, the less likely forced alignment is successful, and that is why a lower proportion of NIST can be forced-aligned.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The parser re-training strategies TST-FS and FA- PR are tested with two baselines, one is the default parser without any re-training and another is standard self-training (SST).</text>
+                  <doc_id>232</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All three re-training approaches are based on the same bilingual datasets as used in translation model training.</text>
+                  <doc_id>233</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The MT performances on IWSLT and NIST by the four approaches are shown in Table 3 and 4 respectively.</text>
+                  <doc_id>234</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>It can be seen that just standard self-training does improve translation performance, as retraining on the TL side of bilingual data is a kind of domain adaptation (from WSJ to IWSLT/NIST).</text>
+                  <doc_id>235</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>But targeted self-training achieves more noticeable improvement, almost twice as much as standard self-training.</text>
+                  <doc_id>236</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This confirms the value of word alignment information in parser re-training.</text>
+                  <doc_id>237</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Finally, the even larger improvement of FA-PR than TST- FS shows that merely increasing the number of frontier nodes is not enough.</text>
+                  <doc_id>238</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Some frontier nodes are of poor quality, and the frontier nodes found in forced alignment are more suitable.</text>
+                  <doc_id>239</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>It can also be seen that the improvement in IWSLT is larger than that in NIST.</text>
+                  <doc_id>240</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The first reason is that both WSJ and NIST are of the news domain and of formal writing style, whereas IWSLT is of the tourist domain and of colloquial style.</text>
+                  <doc_id>241</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Therefore any improvement from the default parser, which is trained on WSJ, is expected to be smaller in the NIST case.</text>
+                  <doc_id>242</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Another reason is that, since the</text>
+                  <doc_id>243</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>IWSLT dataset is much smaller, the impact of more and better rules is more obvious.</text>
+                  <doc_id>244</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Note that the figures in Table 3 and 4 are about parser re-training for only one iteration.</text>
+                  <doc_id>245</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is found that, more iteration do not lead to further significant improvement.</text>
+                  <doc_id>246</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The forced alignment of bilingual training data does not obtain a full decoding path for every bilingual sentence.</text>
+                  <doc_id>247</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is because, although all translation rules are kept, there is still pruning during decoding.</text>
+                  <doc_id>248</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Only 64% of the IWSLT dataset and 53% of the NIST dataset can be successfully forced-aligned.</text>
+                  <doc_id>249</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In general, the longer the bilingual sentence, the less likely forced alignment is successful, and that is why a lower proportion of NIST can be forced-aligned.</text>
+                  <doc_id>250</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>4.4 Symmetrization</title>
+            <text>The new symmetrization method IDSG is compared with the baseline method IDG.
+Table 5. MT performance of symmetrization methods on IWSLT data set. The results in bold type are significantly better than the performance of IDG.
+Table 6. MT performance of symmetrization methods on NIST data. The results in bold type are significantly better than the performance of IDG.
+As shown by the results in Table 5 and 6, IDSG enlarges the set of translation rules by more than 20%, thereby improving translation performance significantly. As in parser re-training, the improvement in the IWSLT task is larger than that in the NIST task. Again, it is because the IWSLT dataset is very small and so the effect of rule table size is more obvious.
+Table 3. MT performance of parser re-training strategies on IWSLT data set. The results in bold type are significantly better than the baseline.
+Table 4. MT performance of parser re-training strategies on NIST data set. The results in bold type are significantly better than the baseline.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The new symmetrization method IDSG is compared with the baseline method IDG.</text>
+                  <doc_id>251</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 5.</text>
+                  <doc_id>252</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>MT performance of symmetrization methods on IWSLT data set.</text>
+                  <doc_id>253</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The results in bold type are significantly better than the performance of IDG.</text>
+                  <doc_id>254</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 6.</text>
+                  <doc_id>255</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>MT performance of symmetrization methods on NIST data.</text>
+                  <doc_id>256</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The results in bold type are significantly better than the performance of IDG.</text>
+                  <doc_id>257</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>As shown by the results in Table 5 and 6, IDSG enlarges the set of translation rules by more than 20%, thereby improving translation performance significantly.</text>
+                  <doc_id>258</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As in parser re-training, the improvement in the IWSLT task is larger than that in the NIST task.</text>
+                  <doc_id>259</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Again, it is because the IWSLT dataset is very small and so the effect of rule table size is more obvious.</text>
+                  <doc_id>260</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 3.</text>
+                  <doc_id>261</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>MT performance of parser re-training strategies on IWSLT data set.</text>
+                  <doc_id>262</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The results in bold type are significantly better than the baseline.</text>
+                  <doc_id>263</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 4.</text>
+                  <doc_id>264</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>MT performance of parser re-training strategies on NIST data set.</text>
+                  <doc_id>265</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The results in bold type are significantly better than the baseline.</text>
+                  <doc_id>266</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>4</index>
+            <title>4.5 Methods combined</title>
+            <text>As mentioned in section 3.2, parser re-training and the new symmetrization method can be combined in two different ways, depending on the order of application. Table 7 and 8 show the experiment results of combining FA-PR with IDSG.
+It can be seen that either way of the combination is better than using FA-PR or IDSG alone. Yet there is no significant difference between the two kinds of combination.
+The best result is a gain of more than 3 Bleu points on IWSLT and that of more than 1 Bleu point on NIST.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>As mentioned in section 3.2, parser re-training and the new symmetrization method can be combined in two different ways, depending on the order of application.</text>
+                  <doc_id>267</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 7 and 8 show the experiment results of combining FA-PR with IDSG.</text>
+                  <doc_id>268</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>It can be seen that either way of the combination is better than using FA-PR or IDSG alone.</text>
+                  <doc_id>269</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Yet there is no significant difference between the two kinds of combination.</text>
+                  <doc_id>270</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The best result is a gain of more than 3 Bleu points on IWSLT and that of more than 1 Bleu point on NIST.</text>
+                  <doc_id>271</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Related Works</title>
+        <text>There are a lot of attempts in improving word alignment with syntactic information (Cherry and Lin, 2006; DeNero and Klein, 2007; Hermjackob, 2009) and in improving parser with alignment information (Burkett and Klein, 2008). Yet strictly speaking all these attempts aim to improve the
+parser/aligner itself rather than the translation model.
+To improve the performance of syntactic machine translation, Huang and Knight (2006) proposed a method incorporating a handful of relabeling strategies to modify the syntactic trees structures. Ambati and Lavie (2008) restructured target parse trees to generate highly isomorphic target trees that preserve the syntactic boundaries of constituents aligned in the original parse trees. Wang et al., (2010) proposed to use re-structuring and re-labeling to modify the parser tree. The restructuring method uses a binarization method to enable the reuse of sub-constituent structures, and the linguistic and statistical re-labeling methods to handle the coarse nonterminal problem, so as to enhance generalization ability. Different from the previous work of modifying tree structures with post-processing methods, our methods try to learn a suitable grammar for string-to-tree SMT models, and directly produce trees which are consistent with word alignment matrices.
+Instead of modifying the parse tree to improve machine translation performance, many methods were proposed to modify word alignment by taking syntactic tree into consideration, including deleting incorrect word alignment links by a discriminative model (Fossum et al., 2008), re-aligning sentence pairs using EM method with the rules extracted with initial alignment (Wang et al., 2010), and removing ambiguous alignment of functional words with constraint from chunk-level information during rule extraction (Wu et al., 2011). Unlike all these pursuits, to generate a consistent word alignment, our method modifies the popularly used IDG symmetrization method to make it suitable for string-to-tree rule extraction, and our method is much simpler and faster than the previous works.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>There are a lot of attempts in improving word alignment with syntactic information (Cherry and Lin, 2006; DeNero and Klein, 2007; Hermjackob, 2009) and in improving parser with alignment information (Burkett and Klein, 2008).</text>
+              <doc_id>272</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Yet strictly speaking all these attempts aim to improve the</text>
+              <doc_id>273</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>parser/aligner itself rather than the translation model.</text>
+              <doc_id>274</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>To improve the performance of syntactic machine translation, Huang and Knight (2006) proposed a method incorporating a handful of relabeling strategies to modify the syntactic trees structures.</text>
+              <doc_id>275</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Ambati and Lavie (2008) restructured target parse trees to generate highly isomorphic target trees that preserve the syntactic boundaries of constituents aligned in the original parse trees.</text>
+              <doc_id>276</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Wang et al., (2010) proposed to use re-structuring and re-labeling to modify the parser tree.</text>
+              <doc_id>277</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The restructuring method uses a binarization method to enable the reuse of sub-constituent structures, and the linguistic and statistical re-labeling methods to handle the coarse nonterminal problem, so as to enhance generalization ability.</text>
+              <doc_id>278</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Different from the previous work of modifying tree structures with post-processing methods, our methods try to learn a suitable grammar for string-to-tree SMT models, and directly produce trees which are consistent with word alignment matrices.</text>
+              <doc_id>279</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Instead of modifying the parse tree to improve machine translation performance, many methods were proposed to modify word alignment by taking syntactic tree into consideration, including deleting incorrect word alignment links by a discriminative model (Fossum et al., 2008), re-aligning sentence pairs using EM method with the rules extracted with initial alignment (Wang et al., 2010), and removing ambiguous alignment of functional words with constraint from chunk-level information during rule extraction (Wu et al., 2011).</text>
+              <doc_id>280</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Unlike all these pursuits, to generate a consistent word alignment, our method modifies the popularly used IDG symmetrization method to make it suitable for string-to-tree rule extraction, and our method is much simpler and faster than the previous works.</text>
+              <doc_id>281</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 Conclusion</title>
+        <text>In this paper we have attempted to improve SSMT by reducing the errors introduced by the mutual independence between monolingual parser and word aligner. Our major contribution is the strategies of re-training parser with the bilingual information in alignment matrices. Either of our proposals of targeted self-training with frontier set size as evaluation function and forced alignment based re-training is more effective than baseline
+on NIST data set. The results in bold type are significantly better than the baseline. parser or standard self-training of parser. As an auxiliary method, we also attempted to improve alignment matrices by a new symmetrization method. In future, we will explore more alternatives in integrating parsing information and alignment information, such as discriminative word alignment using a lot of features from parser.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this paper we have attempted to improve SSMT by reducing the errors introduced by the mutual independence between monolingual parser and word aligner.</text>
+              <doc_id>282</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our major contribution is the strategies of re-training parser with the bilingual information in alignment matrices.</text>
+              <doc_id>283</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Either of our proposals of targeted self-training with frontier set size as evaluation function and forced alignment based re-training is more effective than baseline</text>
+              <doc_id>284</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>on NIST data set.</text>
+              <doc_id>285</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The results in bold type are significantly better than the baseline.</text>
+              <doc_id>286</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>parser or standard self-training of parser.</text>
+              <doc_id>287</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>As an auxiliary method, we also attempted to improve alignment matrices by a new symmetrization method.</text>
+              <doc_id>288</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>In future, we will explore more alternatives in integrating parsing information and alignment information, such as discriminative word alignment using a lot of features from parser.</text>
+              <doc_id>289</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 7. MT performance of the new methods  on  IWSLT  data  set.  The  results  in  bold  type  are significantly better than the baseline.#@#@Table 1. Baselines for IWSLT data set</caption>
+        <reference_text>In PAGE 7: ...2, parser re-training and  the  new  symmetrization  method  can  be  combined  in  two  different  ways,  depending  on  the  order  of  application.   Table7   and  8  show  the  experiment  results of combining FA-PR with IDSG.  It can be seen that either way of the combination  is  better  than  using  FA-PR  or  IDSG  alone....</reference_text>
+        <page_num>8</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>None</cell>
+              <cell>dev8+dialog</cell>
+              <cell>dev9</cell>
+              <cell>#</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>Rules</cell>
+            </row>
+            <row>
+              <cell>Baseline</cell>
+              <cell>50.58</cell>
+              <cell>49.85</cell>
+              <cell>515K</cell>
+            </row>
+            <row>
+              <cell>IDSG</cell>
+              <cell>52.71</cell>
+              <cell>51.80</cell>
+              <cell>626K</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>(+2.31)</cell>
+              <cell>(+2.05)</cell>
+            </row>
+            <row>
+              <cell>FA-PR</cell>
+              <cell>53.31</cell>
+              <cell>52.8</cell>
+              <cell>591K</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>(+2.73)</cell>
+              <cell>(+2.95)</cell>
+            </row>
+            <row>
+              <cell>IDSG  then</cell>
+              <cell>53.64</cell>
+              <cell>53.32</cell>
+              <cell>602K</cell>
+            </row>
+            <row>
+              <cell>FA-PR</cell>
+              <cell>(3.06)</cell>
+              <cell>(+3.47)</cell>
+            </row>
+            <row>
+              <cell>FA-PR then</cell>
+              <cell>53.81</cell>
+              <cell>53.26</cell>
+              <cell>597K</cell>
+            </row>
+            <row>
+              <cell>IDSG</cell>
+              <cell>(+3.23)</cell>
+              <cell>(+3.41)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TET</source>
+        <caption>Table 2. Baselines for NIST data set</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>NIST'03</cell>
+              <cell>NIST'05</cell>
+              <cell>NIST'08</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Baseline</cell>
+              <cell>37.57</cell>
+              <cell>36.44</cell>
+              <cell>24.87</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TET</source>
+        <caption>Table 3. MT performance of parser re-training strategies on IWSLT data set. The results in bold type are significantly better than the baseline.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>dev8+dialog</cell>
+              <cell>dev9</cell>
+              <cell># Rules</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Baseline</cell>
+              <cell>50.58</cell>
+              <cell>49.85</cell>
+              <cell>515K</cell>
+            </row>
+            <row>
+              <cell>SST</cell>
+              <cell>52.04 51.26
+(+1.46) (+1.41)</cell>
+              <cell>574K</cell>
+            </row>
+            <row>
+              <cell>TST-FS</cell>
+              <cell>52.75 52.51
+(+2.17) (+2.66)</cell>
+              <cell>572K</cell>
+            </row>
+            <row>
+              <cell>FA-PR</cell>
+              <cell>53.31 52.8
+(+2.73) (+2.95)</cell>
+              <cell>591K</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TET</source>
+        <caption>Table 4. MT performance of parser re-training strategies on NIST data set. The results in bold type are significantly better than the baseline.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>NIST'03 NIST'05 NIST'08</cell>
+              <cell>#Rules</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Baseline</cell>
+              <cell>37.57</cell>
+              <cell>36.44</cell>
+              <cell>24.87</cell>
+              <cell>3,376K</cell>
+            </row>
+            <row>
+              <cell>SST</cell>
+              <cell>37.98 36.79 25.30
+(+0.41) (+0.35) (+0.43)</cell>
+              <cell>3,462K</cell>
+            </row>
+            <row>
+              <cell>TST-FS</cell>
+              <cell>38.42 37.39 25.79
+(+0.85) (+0.95) (+0.92)</cell>
+              <cell>3,642K</cell>
+            </row>
+            <row>
+              <cell>FA-PR</cell>
+              <cell>38.74 37.69 25.89
+(+1.17) (+1.25) (+1.02)</cell>
+              <cell>3,976K</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>5</id>
+        <source>TET</source>
+        <caption>Table 5. MT performance of symmetrization methods on IWSLT data set. The results in bold type are significantly better than the performance of IDG.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>dev8+dialog</cell>
+              <cell>dev9</cell>
+              <cell># Rules</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>IDG</cell>
+              <cell>50.58</cell>
+              <cell>49.85</cell>
+              <cell>515K</cell>
+            </row>
+            <row>
+              <cell>IDSG</cell>
+              <cell>52.71 51.80
+(+2.31) (+2.05)</cell>
+              <cell>626K</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>6</id>
+        <source>TET</source>
+        <caption>Table 6. MT performance of symmetrization methods on NIST data. The results in bold type are significantly better than the performance of IDG.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>NIST'03</cell>
+              <cell>NIST'05</cell>
+              <cell>NIST'08</cell>
+              <cell>#Rules</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>IDG</cell>
+              <cell>37.57</cell>
+              <cell>36.44</cell>
+              <cell>24.87</cell>
+              <cell>3,376K</cell>
+            </row>
+            <row>
+              <cell>IDSG</cell>
+              <cell>38.15 37.07 25.67
+(+0.58) (+0.63) (+0.80)</cell>
+              <cell>4,109K</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>7</id>
+        <source>TET</source>
+        <caption>Table 7. MT performance of the new methods on IWSLT data set. The results in bold type are significantly better than the baseline.</caption>
+        <reference_text></reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>dev8+dialog</cell>
+              <cell>dev9</cell>
+              <cell>#
+Rules</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Baseline</cell>
+              <cell>50.58</cell>
+              <cell>49.85</cell>
+              <cell>515K</cell>
+            </row>
+            <row>
+              <cell>IDSG</cell>
+              <cell>52.71 51.80
+(+2.31) (+2.05)</cell>
+              <cell>626K</cell>
+            </row>
+            <row>
+              <cell>FA-PR</cell>
+              <cell>53.31 52.8
+(+2.73) (+2.95)</cell>
+              <cell>591K</cell>
+            </row>
+            <row>
+              <cell>IDSG then</cell>
+              <cell>53.64</cell>
+              <cell>53.32</cell>
+              <cell>602K</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>8</id>
+        <source>TableSeer</source>
+        <caption>Table 8. MT performance of the new methods  on NIST data set. The results in bold type are  significantly better than the baseline.</caption>
+        <reference_text>None</reference_text>
+        <page_num>8</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>None</cell>
+              <cell>NIST apos</cell>
+              <cell>03</cell>
+              <cell>NIST apos</cell>
+              <cell>05   NIST apos08   #Rules</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Baseline</cell>
+              <cell>37.57</cell>
+              <cell>36.44</cell>
+              <cell>24.87</cell>
+              <cell>3,376K</cell>
+            </row>
+            <row>
+              <cell>IDSG</cell>
+              <cell>38.15</cell>
+              <cell>37.07</cell>
+              <cell>25.67</cell>
+              <cell>4,109K</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>(+0.58)</cell>
+              <cell>(+0.63)</cell>
+              <cell>(+0.80)</cell>
+            </row>
+            <row>
+              <cell>FA-PR</cell>
+              <cell>38.74</cell>
+              <cell>37.69</cell>
+              <cell>25.89</cell>
+              <cell>3,976K</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>(+1.17)</cell>
+              <cell>(+1.25)</cell>
+              <cell>(+1.02)</cell>
+            </row>
+            <row>
+              <cell>IDSG</cell>
+              <cell>38.97</cell>
+              <cell>37.95</cell>
+              <cell>26.74</cell>
+            </row>
+            <row>
+              <cell>then</cell>
+              <cell>(+1.40)</cell>
+              <cell>(+1.51)</cell>
+              <cell>(+1.87)</cell>
+              <cell>4,557K</cell>
+            </row>
+            <row>
+              <cell>F</cell>
+              <cell>A</cell>
+              <cell>-</cell>
+              <cell>P</cell>
+              <cell>R</cell>
+            </row>
+            <row>
+              <cell>F</cell>
+              <cell>A</cell>
+              <cell>-</cell>
+              <cell>P</cell>
+              <cell>R</cell>
+            </row>
+            <row>
+              <cell>then</cell>
+              <cell>38.90</cell>
+              <cell>37.94</cell>
+              <cell>26.52</cell>
+              <cell>4,478K</cell>
+            </row>
+            <row>
+              <cell>IDSG</cell>
+              <cell>(+1.33)</cell>
+              <cell>(+1.50)</cell>
+              <cell>(+1.65)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Vamshi Ambati</author>
+          <author>Alon Lavie</author>
+        </authors>
+        <title>Improving syntax driven translation models by re-structuring divergent and non-isomorphic parse tree structures.</title>
+        <publication>In Student Research Workshop of the Eighth Conference of the Association for Machine Translation in the Americas,</publication>
+        <pages>235--244</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Burkett</author>
+          <author>Dan Klein</author>
+        </authors>
+        <title>Two languages are better than one (for syntactic parsing).</title>
+        <publication>In Proceedings of the Conference on Empirical Methods on Natural Language Processing,</publication>
+        <pages>877--886</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Colin Cherry</author>
+          <author>Dekang Lin</author>
+        </authors>
+        <title>Soft syntactic constraints for word alignment through discriminative training.</title>
+        <publication>In Proceedings of the 21st International Conference on Computational Linguistics and 44th Annual Meeting of the Association for Computational Linguistics.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>John DeNero</author>
+          <author>Dan Klein</author>
+        </authors>
+        <title>Tailing word alignment to syntactic machine translation.</title>
+        <publication>In Proceedings of the Association for Computational Linguistics,</publication>
+        <pages>17--24</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>Victoria Fossum</author>
+          <author>Kevin Knight</author>
+          <author>Steven Abney</author>
+        </authors>
+        <title>Using syntax to improve word alignment precision for syntax-based machine translation.</title>
+        <publication>In Proceedings of the Third Workshop on Statistical Machine Translation,</publication>
+        <pages>44--52</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Michel Galley</author>
+          <author>Jonathan Graehl</author>
+          <author>Kevin Knight</author>
+          <author>Daniel Marcu</author>
+          <author>Steve Deneefe</author>
+          <author>Wei Wang</author>
+          <author>Ignacio Thayer</author>
+        </authors>
+        <title>Scalable inference and training of context-rich syntactic translation models.</title>
+        <publication>In Proceedings of the 21st International Conference on Computational Linguistics and 44th Annual Meeting of the Association for Computational Linguistics,</publication>
+        <pages>961--968</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Bryant Huang</author>
+          <author>Kevin Knight</author>
+        </authors>
+        <title>Relabeling syntax trees to improve syntax-based machine translation quality.</title>
+        <publication>In Proceedings of the Human Technology Conference of the North American Chapter of the ACL,</publication>
+        <pages>240--247</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Jason Katz-Brown</author>
+          <author>Slav Petrov</author>
+          <author>Ryan McDonald</author>
+          <author>Franz Och</author>
+          <author>David Talbot</author>
+        </authors>
+        <title>Hiroshi Ichikawa, Masakazu Seno, Hideto Kazawa.</title>
+        <publication>In Proceedings of the Conference on Empirical Methods on Natural Language Processing,</publication>
+        <pages>183--192</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>Statistical significance tests for machine translation evaluation.</title>
+        <publication>In Proceedings of the Conference on Empirical Methods on Natural Language Processing,</publication>
+        <pages>388--395</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Wei Wang</author>
+          <author>Jonathan May</author>
+          <author>Kevin Knight</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>Re-structuring, re-labeling, and re-alignment for syntax-Based machine translation.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Xianchao Wu</author>
+          <author>Takuya Matsuzaki</author>
+          <author>Jun&amp;apos;ichi Tsujii</author>
+        </authors>
+        <title>Effective use of function words for rule generalization in forest-based translation.</title>
+        <publication>In Proceedings of the Association for Computational Linguistics,</publication>
+        <pages>22--31</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Franz Josef Och</author>
+        </authors>
+        <title>Minimum error rate training in statistical machine translation.</title>
+        <publication>In Proceedings of the Association for Computational Linguistics,</publication>
+        <pages>160--167</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>A systematic comparison of various statistical alignment models.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>Joern Wuebker</author>
+          <author>Arne Mauser</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>Training phrase translation models with leaving-oneout.</title>
+        <publication>In Proceedings of the Association for Computational Linguistics,</publication>
+        <pages>475--484</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Kishore Papineni</author>
+          <author>Salim Roukos</author>
+          <author>Todd Ward</author>
+          <author>Weijing Zhu</author>
+        </authors>
+        <title>BLEU: a method for automatic evaluation of machine translation.</title>
+        <publication>In Proceedings of the Association for Computational Linguistics,</publication>
+        <pages>311--318</pages>
+        <date>2002</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Ambati and Lavie (2008)</string>
+        <sentence_id>14091</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>1</reference_id>
+        <string>Burkett and Klein, 2008</string>
+        <sentence_id>14087</sentence_id>
+        <char_offset>200</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>2</reference_id>
+        <string>Cherry and Lin, 2006</string>
+        <sentence_id>14087</sentence_id>
+        <char_offset>84</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>3</reference_id>
+        <string>DeNero and Klein, 2007</string>
+        <sentence_id>14087</sentence_id>
+        <char_offset>106</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>4</reference_id>
+        <string>Fossum et al., 2008</string>
+        <sentence_id>14095</sentence_id>
+        <char_offset>254</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>4</reference_id>
+        <string>Fossum et al, 2008</string>
+        <sentence_id>13855</sentence_id>
+        <char_offset>141</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>5</reference_id>
+        <string>Galley et al., 2006</string>
+        <sentence_id>13828</sentence_id>
+        <char_offset>129</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>5</reference_id>
+        <string>Galley et al., 2006</string>
+        <sentence_id>13836</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>6</reference_id>
+        <string>Huang and Knight (2006)</string>
+        <sentence_id>14090</sentence_id>
+        <char_offset>61</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>7</reference_id>
+        <string>Katz-Brown et al., 2011</string>
+        <sentence_id>13864</sentence_id>
+        <char_offset>66</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>7</reference_id>
+        <string>Katz-Brown et al., 2011</string>
+        <sentence_id>13868</sentence_id>
+        <char_offset>61</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>8</reference_id>
+        <string>Koehn (2004)</string>
+        <sentence_id>14086</sentence_id>
+        <char_offset>81</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>9</reference_id>
+        <string>Wang et al., (2010)</string>
+        <sentence_id>14092</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>10</reference_id>
+        <string>Wu et al., 2011</string>
+        <sentence_id>14095</sentence_id>
+        <char_offset>510</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>11</reference_id>
+        <string>Och, 2003</string>
+        <sentence_id>14024</sentence_id>
+        <char_offset>76</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>12</reference_id>
+        <string>Och and Ney, 2003</string>
+        <sentence_id>14012</sentence_id>
+        <char_offset>67</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>13</reference_id>
+        <string>Wuebker et al., 2010</string>
+        <sentence_id>13866</sentence_id>
+        <char_offset>50</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>13</reference_id>
+        <string>Wuebker et al., 2010</string>
+        <sentence_id>13909</sentence_id>
+        <char_offset>18</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>14</reference_id>
+        <string>Papineni et al., 2002</string>
+        <sentence_id>14085</sentence_id>
+        <char_offset>58</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

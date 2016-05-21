@@ -1,0 +1,2963 @@
+<document>
+  <filename>P09-1087</filename>
+  <authors>
+    <author>Michel Galley</author>
+  </authors>
+  <title>Quadratic-Time Dependency Parsing for Machine Translation</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>Efficiency is a prime concern in syntactic MT decoding, yet significant developments in statistical parsing with respect to asymptotic efficiency haven&#8217;t yet been explored in MT. Recently, McDonald et al. (2005b) formalized dependency parsing as a maximum spanning tree (MST) problem, which can be solved in quadratic time relative to the length of the sentence. They show that MST parsing is almost as accurate as cubic-time dependency parsing in the case of English, and that it is more accurate with free word order languages. This paper applies MST parsing to MT, and describes how it can be integrated into a phrase-based decoder to compute dependency language model scores. Our results show that augmenting a state-ofthe-art phrase-based system with this dependency language model leads to significant improvements in TER (0.92%) and BLEU (0.45%) scores on five NIST Chinese-English evaluation test sets.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Efficiency is a prime concern in syntactic MT decoding, yet significant developments in statistical parsing with respect to asymptotic efficiency haven&#8217;t yet been explored in MT.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Recently, McDonald et al. (2005b) formalized dependency parsing as a maximum spanning tree (MST) problem, which can be solved in quadratic time relative to the length of the sentence.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>They show that MST parsing is almost as accurate as cubic-time dependency parsing in the case of English, and that it is more accurate with free word order languages.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>This paper applies MST parsing to MT, and describes how it can be integrated into a phrase-based decoder to compute dependency language model scores.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our results show that augmenting a state-ofthe-art phrase-based system with this dependency language model leads to significant improvements in TER (0.92%) and BLEU (0.45%) scores on five NIST Chinese-English evaluation test sets.</text>
+              <doc_id>4</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>Hierarchical approaches to machine translation have proven increasingly successful in recent years (Chiang, 2005; Marcu et al., 2006; Shen et al., 2008), and often outperform phrase-based systems (Och and Ney, 2004; Koehn et al., 2003) on target-language fluency and adequacy. However, their benefits generally come with high computational costs, particularly when chart parsing, such as CKY, is integrated with language models of high orders (Wu, 1996). Indeed, synchronous CFG parsing with m-grams runs in O(n 3m ) time, where n is the length of the sentence. 1
+Furthermore, synchronous CFG approaches often only marginally outperform the most com-
+1 The algorithmic complexity of (Wu, 1996) is
+O(n 3+4(m&#8722;1) ), though Huang et al. (2005) present a more efficient factorization inspired by (Eisner and Satta, 1999) that yields an overall complexity of O(n 3+3(m&#8722;1) ), i.e., O(n 3m ). In comparison, phrase-based decoding can run in linear time if a distortion limit is imposed. Of course, this comparison holds only for approximate algorithms. Since exact MT decoding is NP complete (Knight, 1999), there is no exact search algorithm for either phrase-based or syntactic MT that runs in polynomial time (unless P = NP).
+petitive phrase-based systems in large-scale experiments such as NIST evaluations. 2 This lack of significant difference may not be completely surprising. Indeed, researchers have shown that gigantic language models are key to state-ofthe-art performance (Brants et al., 2007), and the ability of phrase-based decoders to handle large-size, high-order language models with no consequence on asymptotic running time during decoding presents a compelling advantage over CKY decoders, whose time complexity grows prohibitively large with higher-order language models.
+While context-free decoding algorithms (CKY, Earley, etc.) may sometimes appear too computationally expensive for high-end statistical machine translation, there are many alternative parsing algorithms that have seldom been explored in the machine translation literature. The parsing literature presents faster alternatives for both phrasestructure and dependency trees, e.g., O(n) shiftreduce parsers and variants ((Ratnaparkhi, 1997; Nivre, 2003), inter alia). While deterministic parsers are often deemed inadequate for dealing with ambiguities of natural language, highly accurate O(n 2 ) algorithms exist in the case of dependency parsing. Building upon the theoretical work of (Chu and Liu, 1965; Edmonds, 1967), McDonald et al. (2005b) present a quadratic-time dependency parsing algorithm that is just 0.7% less accurate than &#8220;full-fledged&#8221; chart parsing (which, in the case of dependency parsing, runs in time O(n 3 ) (Eisner, 1996)).
+In this paper, we show how to exploit syntactic dependency structure for better machine translation, under the constraint that the depen-</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Hierarchical approaches to machine translation have proven increasingly successful in recent years (Chiang, 2005; Marcu et al., 2006; Shen et al., 2008), and often outperform phrase-based systems (Och and Ney, 2004; Koehn et al., 2003) on target-language fluency and adequacy.</text>
+              <doc_id>5</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, their benefits generally come with high computational costs, particularly when chart parsing, such as CKY, is integrated with language models of high orders (Wu, 1996).</text>
+              <doc_id>6</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Indeed, synchronous CFG parsing with m-grams runs in O(n 3m ) time, where n is the length of the sentence.</text>
+              <doc_id>7</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>1</text>
+              <doc_id>8</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Furthermore, synchronous CFG approaches often only marginally outperform the most com-</text>
+              <doc_id>9</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 The algorithmic complexity of (Wu, 1996) is</text>
+              <doc_id>10</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>O(n 3+4(m&#8722;1) ), though Huang et al. (2005) present a more efficient factorization inspired by (Eisner and Satta, 1999) that yields an overall complexity of O(n 3+3(m&#8722;1) ), i.e., O(n 3m ).</text>
+              <doc_id>11</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In comparison, phrase-based decoding can run in linear time if a distortion limit is imposed.</text>
+              <doc_id>12</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Of course, this comparison holds only for approximate algorithms.</text>
+              <doc_id>13</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since exact MT decoding is NP complete (Knight, 1999), there is no exact search algorithm for either phrase-based or syntactic MT that runs in polynomial time (unless P = NP).</text>
+              <doc_id>14</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>petitive phrase-based systems in large-scale experiments such as NIST evaluations.</text>
+              <doc_id>15</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2 This lack of significant difference may not be completely surprising.</text>
+              <doc_id>16</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Indeed, researchers have shown that gigantic language models are key to state-ofthe-art performance (Brants et al., 2007), and the ability of phrase-based decoders to handle large-size, high-order language models with no consequence on asymptotic running time during decoding presents a compelling advantage over CKY decoders, whose time complexity grows prohibitively large with higher-order language models.</text>
+              <doc_id>17</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>While context-free decoding algorithms (CKY, Earley, etc.) may sometimes appear too computationally expensive for high-end statistical machine translation, there are many alternative parsing algorithms that have seldom been explored in the machine translation literature.</text>
+              <doc_id>18</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The parsing literature presents faster alternatives for both phrasestructure and dependency trees, e.g., O(n) shiftreduce parsers and variants ((Ratnaparkhi, 1997; Nivre, 2003), inter alia).</text>
+              <doc_id>19</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>While deterministic parsers are often deemed inadequate for dealing with ambiguities of natural language, highly accurate O(n 2 ) algorithms exist in the case of dependency parsing.</text>
+              <doc_id>20</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Building upon the theoretical work of (Chu and Liu, 1965; Edmonds, 1967), McDonald et al. (2005b) present a quadratic-time dependency parsing algorithm that is just 0.7% less accurate than &#8220;full-fledged&#8221; chart parsing (which, in the case of dependency parsing, runs in time O(n 3 ) (Eisner, 1996)).</text>
+              <doc_id>21</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we show how to exploit syntactic dependency structure for better machine translation, under the constraint that the depen-</text>
+              <doc_id>22</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Results of the 2008 NIST Open MT evaluation</title>
+        <text>(http://www.itl.nist.gov/iad/mig/tests/mt/2008/doc/ mt08_official_results_v0.html) reveal that, while many of
+the best systems in the Chinese-English and Arabic-English tasks incorporate synchronous CFG models, score differences with the best phrase-based system were insignificantly small.
+dency structure is built as a by-product of phrasebased decoding, without reliance on a dynamicprogramming or chart parsing algorithm such as CKY or Earley. Adapting the approach of Mc- Donald et al. (2005b) for machine translation, we incrementally build dependency structure left-toright in time O(n 2 ) during decoding. Most interestingly, the time complexity of non-projective dependency parsing remains quadratic as the order of the language model increases. This provides a compelling advantage over previous dependency language models for MT (Shen et al., 2008), which use a 5-gram LM only during reranking. In our experiments, we build a competitive baseline (Koehn et al., 2007) incorporating a 5-gram LM trained on a large part of Gigaword and show that our dependency language model provides improvements on five different test sets, with an overall gain of 0.92 in TER and 0.45 in BLEU scores. These results are found to be statistically very significant (p &#8804; .01).
+2 Dependency parsing for machine translation
+In this section, we review dependency parsing formulated as a maximum spanning tree problem (McDonald et al., 2005b), which can be solved in quadratic time, and then present its adaptation and novel application to phrase-based decoding.
+Dependency models have recently gained considerable interest in many NLP applications, including machine translation (Ding and Palmer, 2005; Quirk et al., 2005; Shen et al., 2008). Dependency structure provides several compelling advantages compared to other syntactic representations. First, dependency links are close to the semantic relationships, which are more likely to be consistent across languages. Indeed, Fox (2002) found inter-lingual phrasal cohesion to be greater than for a CFG when using a dependency representation, for which she found only 12.6% of head crossings and 9.2% modifier crossings. Second, dependency trees contain exactly one node per word, which contributes to cutting down the search space during parsing: indeed, the task of the parser is merely to connect existing nodes rather than hypothesizing new ones. Finally, dependency models are more flexible and account for (non-projective) head-modifier relations that CFG models fail to represent adequately, which is problematic with certain types of grammatical constructions and with free word order languages,
+&lt;root&gt; &lt;root&gt;
+0
+as we will see later in this section.
+The most standardly used algorithm for parsing with dependency grammars is presented in (Eisner, 1996; Eisner and Satta, 1999). It runs in time O(n 3 ), where n is the length of the sentence. Their algorithm exploits the special properties of dependency trees to reduce the worst-case complexity of bilexical parsing, which otherwise requires O(n 4 ) for bilexical constituency-based parsing. While it seems difficult to improve the asymptotic running time of the Eisner algorithm beyond what is presented in (Eisner and Satta, 1999), McDonald et al. (2005b) show O(n 2 )-time parsing is possible if trees are not required to be projective. This relaxation entails that dependencies may cross each other rather than being required to be nested, as shown in Fig. 1. More formally, a non-projective tree is any tree that does not satisfy the following definition of a projective tree:
+Definition. Let x = x 1 &#183;&#183;&#183;x n be an input sentence, and let y be a rooted tree represented as a set in which each element (i, j) &#8712; y is an ordered pair of word indices of x that defines a dependency relation between a head x i and a modifier x j . By definition, the tree y is said to be projective if each dependency (i, j) satisfies the following property: each word in x i+1 &#183;&#183;&#183;x j&#8722;1 (if i &lt; j) or in x j+1 &#183;&#183;&#183;x i&#8722;1 (if j &lt; i) is a descendent of head word x i .
+This relaxation is key to computational efficiency, since the parser does not need to keep track of whether dependencies assemble into contiguous spans. It is also linguistically desirable in the case of free word order languages such as Czech, Dutch, and German. Non-projective dependency structures are sometimes even needed for languages like English, e.g., in the case of the wh-movement shown in Fig. 1. For languages
+with relatively rigid word order such as English, there may be some concern that searching the space of non-projective dependency trees, which is considerably larger than the space of projective dependency trees, would yield poor performance. That is not the case: dependency accuracy for nonprojective parsing is 90.2% for English (McDonald et al., 2005b), only 0.7% lower than a projective parser (McDonald et al., 2005a) that uses the same set of features and learning algorithm. In the case of dependency parsing for Czech, (McDonald et al., 2005b) even outperforms projective parsing, and was one of the top systems in the CoNLL-06 shared task in multilingual dependency parsing.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>(http://www.itl.nist.gov/iad/mig/tests/mt/2008/doc/ mt08_official_results_v0.html) reveal that, while many of</text>
+              <doc_id>23</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>the best systems in the Chinese-English and Arabic-English tasks incorporate synchronous CFG models, score differences with the best phrase-based system were insignificantly small.</text>
+              <doc_id>24</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>dency structure is built as a by-product of phrasebased decoding, without reliance on a dynamicprogramming or chart parsing algorithm such as CKY or Earley.</text>
+              <doc_id>25</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Adapting the approach of Mc- Donald et al. (2005b) for machine translation, we incrementally build dependency structure left-toright in time O(n 2 ) during decoding.</text>
+              <doc_id>26</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Most interestingly, the time complexity of non-projective dependency parsing remains quadratic as the order of the language model increases.</text>
+              <doc_id>27</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>This provides a compelling advantage over previous dependency language models for MT (Shen et al., 2008), which use a 5-gram LM only during reranking.</text>
+              <doc_id>28</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>In our experiments, we build a competitive baseline (Koehn et al., 2007) incorporating a 5-gram LM trained on a large part of Gigaword and show that our dependency language model provides improvements on five different test sets, with an overall gain of 0.92 in TER and 0.45 in BLEU scores.</text>
+              <doc_id>29</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>These results are found to be statistically very significant (p &#8804; .01).</text>
+              <doc_id>30</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2 Dependency parsing for machine translation</text>
+              <doc_id>31</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this section, we review dependency parsing formulated as a maximum spanning tree problem (McDonald et al., 2005b), which can be solved in quadratic time, and then present its adaptation and novel application to phrase-based decoding.</text>
+              <doc_id>32</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Dependency models have recently gained considerable interest in many NLP applications, including machine translation (Ding and Palmer, 2005; Quirk et al., 2005; Shen et al., 2008).</text>
+              <doc_id>33</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Dependency structure provides several compelling advantages compared to other syntactic representations.</text>
+              <doc_id>34</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>First, dependency links are close to the semantic relationships, which are more likely to be consistent across languages.</text>
+              <doc_id>35</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Indeed, Fox (2002) found inter-lingual phrasal cohesion to be greater than for a CFG when using a dependency representation, for which she found only 12.6% of head crossings and 9.2% modifier crossings.</text>
+              <doc_id>36</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Second, dependency trees contain exactly one node per word, which contributes to cutting down the search space during parsing: indeed, the task of the parser is merely to connect existing nodes rather than hypothesizing new ones.</text>
+              <doc_id>37</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally, dependency models are more flexible and account for (non-projective) head-modifier relations that CFG models fail to represent adequately, which is problematic with certain types of grammatical constructions and with free word order languages,</text>
+              <doc_id>38</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&lt;root&gt; &lt;root&gt;</text>
+              <doc_id>39</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0</text>
+              <doc_id>40</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>as we will see later in this section.</text>
+              <doc_id>41</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The most standardly used algorithm for parsing with dependency grammars is presented in (Eisner, 1996; Eisner and Satta, 1999).</text>
+              <doc_id>42</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>It runs in time O(n 3 ), where n is the length of the sentence.</text>
+              <doc_id>43</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Their algorithm exploits the special properties of dependency trees to reduce the worst-case complexity of bilexical parsing, which otherwise requires O(n 4 ) for bilexical constituency-based parsing.</text>
+              <doc_id>44</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>While it seems difficult to improve the asymptotic running time of the Eisner algorithm beyond what is presented in (Eisner and Satta, 1999), McDonald et al. (2005b) show O(n 2 )-time parsing is possible if trees are not required to be projective.</text>
+              <doc_id>45</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>This relaxation entails that dependencies may cross each other rather than being required to be nested, as shown in Fig.</text>
+              <doc_id>46</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>1.</text>
+              <doc_id>47</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>More formally, a non-projective tree is any tree that does not satisfy the following definition of a projective tree:</text>
+              <doc_id>48</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Definition.</text>
+              <doc_id>49</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Let x = x 1 &#183;&#183;&#183;x n be an input sentence, and let y be a rooted tree represented as a set in which each element (i, j) &#8712; y is an ordered pair of word indices of x that defines a dependency relation between a head x i and a modifier x j .</text>
+              <doc_id>50</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>By definition, the tree y is said to be projective if each dependency (i, j) satisfies the following property: each word in x i+1 &#183;&#183;&#183;x j&#8722;1 (if i &lt; j) or in x j+1 &#183;&#183;&#183;x i&#8722;1 (if j &lt; i) is a descendent of head word x i .</text>
+              <doc_id>51</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>This relaxation is key to computational efficiency, since the parser does not need to keep track of whether dependencies assemble into contiguous spans.</text>
+              <doc_id>52</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is also linguistically desirable in the case of free word order languages such as Czech, Dutch, and German.</text>
+              <doc_id>53</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Non-projective dependency structures are sometimes even needed for languages like English, e.g., in the case of the wh-movement shown in Fig.</text>
+              <doc_id>54</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>1.</text>
+              <doc_id>55</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>For languages</text>
+              <doc_id>56</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>with relatively rigid word order such as English, there may be some concern that searching the space of non-projective dependency trees, which is considerably larger than the space of projective dependency trees, would yield poor performance.</text>
+              <doc_id>57</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>That is not the case: dependency accuracy for nonprojective parsing is 90.2% for English (McDonald et al., 2005b), only 0.7% lower than a projective parser (McDonald et al., 2005a) that uses the same set of features and learning algorithm.</text>
+              <doc_id>58</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the case of dependency parsing for Czech, (McDonald et al., 2005b) even outperforms projective parsing, and was one of the top systems in the CoNLL-06 shared task in multilingual dependency parsing.</text>
+              <doc_id>59</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 O(n 2 )-time dependency parsing for MT</title>
+            <text>We now formalize weighted non-projective dependency parsing similarly to (McDonald et al., 2005b) and then describe a modified and more efficient version that can be integrated into a phrasebased decoder.
+Given the single-head constraint, parsing an input sentence x = (x 0 ,x 1 ,&#183;&#183;&#183; ,x n ) is reduced to labeling each word x j with an index i identifying its head word x i . We include the dummy root symbol x 0 = &#12296;root&#12297; so that each word can be a modifier. We score each dependency relation using a standard linear model
+s(i, j) = &#955; &#183; f(i, j) (1)
+whose weight vector &#955; is trained using MIRA (Crammer and Singer, 2003) to optimize dependency parsing accuracy (McDonald et al., 2005a). As is commonly the case in statistical parsing, the score of the full tree is decomposed as the sum of the score of all edges:
+s(x,y) =
+&#8721;
+(i, j)&#8712;y
+&#955; &#183; f(i, j) (2)
+When there is no need to ensure projectivity, one can independently select the highest scoring edge (i, j) for each modifier x j , yet we generally want to ensure that the resulting structure is a tree, i.e., that it does not contain any circular dependencies. This optimization problem is a known instance of the maximum spanning tree (MST) problem. In our case, the graph is directed&#8212;indeed, the equality s(i, j) = s( j,i) is generally not true and would be linguistically aberrant&#8212;so the problem constitutes an instance of the less-known MST problem for directed graphs. This problem is solved with the
+Chu-Liu-Edmonds (CLE) algorithm (Chu and Liu, 1965; Edmonds, 1967).
+Formally, we represent the graph G = (V,E) with a vertex set V = x = {x 0 ,&#183;&#183;&#183; ,x n } and a set of directed edges E = [0,n] &#215; [1,n], in which each edge (i, j), representing the dependency x i &#8594; x j , is assigned a score s(i, j). Finding the spanning tree y &#8834; E rooted at x 0 that maximizes s(x,y) as defined in Equation 2 has a straightforward solution in O(n 2 log(n)) time for dense graphs such as G, though Tarjan (1977) shows that the problem can be solved in O(n 2 ). Hence, non-projective dependency parsing is solved in quadratic time. The main idea behind the CLE algorithm is to first greedily select for each word x j the incoming edge (i, j) with highest score, then to successively repeat the following two steps: (a) identify a loop in the graph, and if there is none, halt; (b) contract the loop into a single vertex, and update scores for edges coming in and out of the loop. Once all loops have been eliminated, the algorithm maps back the maximum spanning tree of the contracted graph onto the original graph G, and it can be shown that this yields a spanning tree that is optimal with respect to G and s (Georgiadis, 2003). The greedy approach of selecting the highest scoring edge (i, j) for each modifier x j can easily be applied left-to-right during phrase-based decoding, which proceeds in the same order. For each hypothesis expansion, our decoder generates the following information for the new hypothesis h:
+&#8226; a partial translation x; &#8226; a coverage set of input words c; &#8226; a translation score &#963;.
+In the case of non-projective dependency parsing, we need to maintain additional information for each word x j of the partial translation x:
+&#8226; a predicted POS tag t j ; &#8226; a dependency score s j .
+Dependency scores s j are initialized to &#8722;&#8734;. Each time a new word is added to a partial hypothesis, the decoder executes the routine shown in Table 1. To avoid cluttering the pseudo-code, we make here the simplifying assumption that each hypothesis expansion adds exactly one word, though the real implementation supports the case of phrases of any length. Line 3 determines whether the translation hypothesis is complete, in which case it explicitly builds the graph G and
+Decoding: hypothesis expansion step.
+1. Inferer generates new hypothesis h = (x, c, &#963;) 2. j &#8592; |x| &#8722; 1 3. t j &#8592; tagger(x j&#8722;3 ,&#183;&#183;&#183; ,x j ) 4. if complete(c) 5. Chu-Liu-Edmonds(h) 6. else 7. for i = 1 to j 8. s j = max(s j ,s(i, j)) 9. s i = max(s i ,s( j,i))
+finds the maximum spanning tree. Note that it is impractical to identify loops each time a new word is added to a translation hypothesis, since this requires explicitly storing the dense graph G, which would require an O(n 2 ) copy operation during each hypothesis expansion; this would of course increase time and space complexity (the max operation in lines 8 and 9 only keeps the current best scoring edges). If there is any loop, the dependency score is adjusted in the last hypothesis expansion. In practice, we delay the computation of dependency scores involving word x j until tag t j+1 is generated, since dependency parsing accuracy is particularly low (&#8722;0.8%) when the next tag is unknown.
+We found that dependency scores with or without loop elimination are generally close and highly correlated, and that MT performance without final loop removal was about the same (generally less than 0.2% BLEU). While it seems that loopy graphs are undesirable when the goal is to obtain a syntactic analysis, that is not necessarily the case when one just needs a language modeling score.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We now formalize weighted non-projective dependency parsing similarly to (McDonald et al., 2005b) and then describe a modified and more efficient version that can be integrated into a phrasebased decoder.</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Given the single-head constraint, parsing an input sentence x = (x 0 ,x 1 ,&#183;&#183;&#183; ,x n ) is reduced to labeling each word x j with an index i identifying its head word x i .</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We include the dummy root symbol x 0 = &#12296;root&#12297; so that each word can be a modifier.</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We score each dependency relation using a standard linear model</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>s(i, j) = &#955; &#183; f(i, j) (1)</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>whose weight vector &#955; is trained using MIRA (Crammer and Singer, 2003) to optimize dependency parsing accuracy (McDonald et al., 2005a).</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As is commonly the case in statistical parsing, the score of the full tree is decomposed as the sum of the score of all edges:</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>s(x,y) =</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8721;</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(i, j)&#8712;y</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#955; &#183; f(i, j) (2)</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>When there is no need to ensure projectivity, one can independently select the highest scoring edge (i, j) for each modifier x j , yet we generally want to ensure that the resulting structure is a tree, i.e., that it does not contain any circular dependencies.</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This optimization problem is a known instance of the maximum spanning tree (MST) problem.</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In our case, the graph is directed&#8212;indeed, the equality s(i, j) = s( j,i) is generally not true and would be linguistically aberrant&#8212;so the problem constitutes an instance of the less-known MST problem for directed graphs.</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This problem is solved with the</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Chu-Liu-Edmonds (CLE) algorithm (Chu and Liu, 1965; Edmonds, 1967).</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Formally, we represent the graph G = (V,E) with a vertex set V = x = {x 0 ,&#183;&#183;&#183; ,x n } and a set of directed edges E = [0,n] &#215; [1,n], in which each edge (i, j), representing the dependency x i &#8594; x j , is assigned a score s(i, j).</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Finding the spanning tree y &#8834; E rooted at x 0 that maximizes s(x,y) as defined in Equation 2 has a straightforward solution in O(n 2 log(n)) time for dense graphs such as G, though Tarjan (1977) shows that the problem can be solved in O(n 2 ).</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Hence, non-projective dependency parsing is solved in quadratic time.</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The main idea behind the CLE algorithm is to first greedily select for each word x j the incoming edge (i, j) with highest score, then to successively repeat the following two steps: (a) identify a loop in the graph, and if there is none, halt; (b) contract the loop into a single vertex, and update scores for edges coming in and out of the loop.</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Once all loops have been eliminated, the algorithm maps back the maximum spanning tree of the contracted graph onto the original graph G, and it can be shown that this yields a spanning tree that is optimal with respect to G and s (Georgiadis, 2003).</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The greedy approach of selecting the highest scoring edge (i, j) for each modifier x j can easily be applied left-to-right during phrase-based decoding, which proceeds in the same order.</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each hypothesis expansion, our decoder generates the following information for the new hypothesis h:</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; a partial translation x; &#8226; a coverage set of input words c; &#8226; a translation score &#963;.</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In the case of non-projective dependency parsing, we need to maintain additional information for each word x j of the partial translation x:</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; a predicted POS tag t j ; &#8226; a dependency score s j .</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Dependency scores s j are initialized to &#8722;&#8734;.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Each time a new word is added to a partial hypothesis, the decoder executes the routine shown in Table 1.</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To avoid cluttering the pseudo-code, we make here the simplifying assumption that each hypothesis expansion adds exactly one word, though the real implementation supports the case of phrases of any length.</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Line 3 determines whether the translation hypothesis is complete, in which case it explicitly builds the graph G and</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Decoding: hypothesis expansion step.</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Inferer generates new hypothesis h = (x, c, &#963;) 2. j &#8592; |x| &#8722; 1 3. t j &#8592; tagger(x j&#8722;3 ,&#183;&#183;&#183; ,x j ) 4. if complete(c) 5.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Chu-Liu-Edmonds(h) 6. else 7. for i = 1 to j 8. s j = max(s j ,s(i, j)) 9. s i = max(s i ,s( j,i))</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>finds the maximum spanning tree.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that it is impractical to identify loops each time a new word is added to a translation hypothesis, since this requires explicitly storing the dense graph G, which would require an O(n 2 ) copy operation during each hypothesis expansion; this would of course increase time and space complexity (the max operation in lines 8 and 9 only keeps the current best scoring edges).</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If there is any loop, the dependency score is adjusted in the last hypothesis expansion.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In practice, we delay the computation of dependency scores involving word x j until tag t j+1 is generated, since dependency parsing accuracy is particularly low (&#8722;0.8%) when the next tag is unknown.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We found that dependency scores with or without loop elimination are generally close and highly correlated, and that MT performance without final loop removal was about the same (generally less than 0.2% BLEU).</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>While it seems that loopy graphs are undesirable when the goal is to obtain a syntactic analysis, that is not necessarily the case when one just needs a language modeling score.</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 Features for dependency parsing</title>
+            <text>In our experiments, we use sets of features that are similar to the ones used in the McDonald parser, though we make a key modification that yields an asymptotic speedup that ensures a genuine O(n 2 ) running time.
+The three feature sets that were used in our experiments are shown in Table 2. We write h-word,
+h-pos, m-word, m-pos to refer to head and modifier words and POS tags, and append a numerical value to shift the word offset either to the left or to the right (e.g., h-pos+1 is the POS to the right of the head word). We use the symbol &#8743; to represent feature conjunctions. Each feature in the table has a distinct identifier, so that, e.g., the POS features
+Unigram features: h-word, h-pos, h-word &#8743; h-pos, m-word, m-pos, m-word &#8743; m-pos Bigram features: h-word &#8743; m-word, h-pos &#8743; m-pos, h-word &#8743; h-pos &#8743; m-word, h-word &#8743; h-pos &#8743; m-pos, m-word &#8743; m-pos &#8743; h-word, m-word &#8743; m-pos &#8743; h-pos, h-word &#8743; h-pos &#8743; m-word &#8743; m-pos Adjacent POS features: h-pos &#8743; h-pos+1 &#8743; m-pos&#8722;1 &#8743; m-pos, h-pos &#8743; h-pos+1 &#8743; m-pos &#8743; m-pos+1, h-pos&#8722;1 &#8743; h-pos &#8743; m-pos&#8722;1 &#8743; m-pos, h-pos&#8722;1 &#8743; h-pos &#8743; m-pos &#8743; m-pos+1 In-between POS features: if i &lt; j:
+h-pos &#8743; h-pos+k &#8743; m-pos k &#8712; [i,min(i + 5, j)] h-pos &#8743; m-pos&#8722;k &#8743; m-pos k &#8712; [max(i, j &#8722; 5), j ] if i &gt; j:
+m-pos &#8743; m-pos+k &#8743; h-pos k &#8712; [ j,min( j + 5,i)] m-pos &#8743; h-pos&#8722;k &#8743; h-pos k &#8712; [max( j,i &#8722; 5),i]
+h-pos are all distinct from m-pos features. 3
+The primary difference between our feature sets and the ones of McDonald et al. is that their set of &#8220;in between POS features&#8221; includes the set of all tags appearing between each pair of words. Extracting all these tags takes time O(n) for any arbitrary pair (i, j). Since i and j are both free variables, feature computation in (McDonald et al., 2005b) takes time O(n 3 ), even though parsing itself takes O(n 2 ) time. To make our parser genuinely O(n 2 ), we modified the set of in-between POS features in two ways. First, we restrict extraction of in-between POS tags to those words that appear within a window of five words relative to either the head or the modifier. While this change alone ensures that feature extraction is now O(1) for each word pair, this causes a fairly high drop of performance (dependency accuracy
+3 In addition to these basic features, we follow McDonald
+in conjoining most features with two extra pieces of information: a boolean variable indicating whether the modifier attaches to the left or to the right, and the binned distance between the two words.
+on our test was down 0.9%). To make our genuinely O(n 2 ) parser almost as accurate as the nonprojective parser of McDonald et al., we conjoin each in-between POS with its position relative to (i, j). This relatively simple change reduces the drop in accuracy to only 0.34%. 4</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In our experiments, we use sets of features that are similar to the ones used in the McDonald parser, though we make a key modification that yields an asymptotic speedup that ensures a genuine O(n 2 ) running time.</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The three feature sets that were used in our experiments are shown in Table 2.</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We write h-word,</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>h-pos, m-word, m-pos to refer to head and modifier words and POS tags, and append a numerical value to shift the word offset either to the left or to the right (e.g., h-pos+1 is the POS to the right of the head word).</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use the symbol &#8743; to represent feature conjunctions.</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Each feature in the table has a distinct identifier, so that, e.g., the POS features</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Unigram features: h-word, h-pos, h-word &#8743; h-pos, m-word, m-pos, m-word &#8743; m-pos Bigram features: h-word &#8743; m-word, h-pos &#8743; m-pos, h-word &#8743; h-pos &#8743; m-word, h-word &#8743; h-pos &#8743; m-pos, m-word &#8743; m-pos &#8743; h-word, m-word &#8743; m-pos &#8743; h-pos, h-word &#8743; h-pos &#8743; m-word &#8743; m-pos Adjacent POS features: h-pos &#8743; h-pos+1 &#8743; m-pos&#8722;1 &#8743; m-pos, h-pos &#8743; h-pos+1 &#8743; m-pos &#8743; m-pos+1, h-pos&#8722;1 &#8743; h-pos &#8743; m-pos&#8722;1 &#8743; m-pos, h-pos&#8722;1 &#8743; h-pos &#8743; m-pos &#8743; m-pos+1 In-between POS features: if i &lt; j:</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>h-pos &#8743; h-pos+k &#8743; m-pos k &#8712; [i,min(i + 5, j)] h-pos &#8743; m-pos&#8722;k &#8743; m-pos k &#8712; [max(i, j &#8722; 5), j ] if i &gt; j:</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>m-pos &#8743; m-pos+k &#8743; h-pos k &#8712; [ j,min( j + 5,i)] m-pos &#8743; h-pos&#8722;k &#8743; h-pos k &#8712; [max( j,i &#8722; 5),i]</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>h-pos are all distinct from m-pos features.</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>3</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The primary difference between our feature sets and the ones of McDonald et al. is that their set of &#8220;in between POS features&#8221; includes the set of all tags appearing between each pair of words.</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Extracting all these tags takes time O(n) for any arbitrary pair (i, j).</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since i and j are both free variables, feature computation in (McDonald et al., 2005b) takes time O(n 3 ), even though parsing itself takes O(n 2 ) time.</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To make our parser genuinely O(n 2 ), we modified the set of in-between POS features in two ways.</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>First, we restrict extraction of in-between POS tags to those words that appear within a window of five words relative to either the head or the modifier.</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>While this change alone ensures that feature extraction is now O(1) for each word pair, this causes a fairly high drop of performance (dependency accuracy</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 In addition to these basic features, we follow McDonald</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>in conjoining most features with two extra pieces of information: a boolean variable indicating whether the modifier attaches to the left or to the right, and the binned distance between the two words.</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>on our test was down 0.9%).</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To make our genuinely O(n 2 ) parser almost as accurate as the nonprojective parser of McDonald et al., we conjoin each in-between POS with its position relative to (i, j).</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This relatively simple change reduces the drop in accuracy to only 0.34%.</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>4</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Dependency parsing experiments</title>
+        <text>In this section, we compare the performance of our parsing model to the ones of McDonald et al. Since our MT test sets include newswire, web, and audio, we trained our parser on different genres. Our training data includes newswire from the English translation treebank (LDC2007T02) and the English-Arabic Treebank (LDC2006T10), which are respectively translations of sections of the Chinese treebank (CTB) and Arabic treebank (ATB). We also trained the parser on the broadcastnews treebank available in the OntoNotes corpus (LDC2008T04), and added sections 02-21 of the WSJ Penn treebank. Documents 001-040 of the English CTB data were set aside to constitute a test set for newswire texts. Our other test set is the standard Section 23 of the Penn treebank. The splits and amounts of data used for training are displayed in Table 3.
+Parsing experiments are shown in Table 4. We
+4 We need to mention some practical considerations that
+make feature computation fast enough for MT. Most features are precomputed before actual decoding. All target-language words to appear during beam search can be determined in advance, and all their unigram feature scores are precomputed. For features conditioned on both head and modifier, scores are cached whenever possible. The only features that are not cached are the ones that include contextual POS tags, since their miss rate is relatively high.
+distinguish two experimental conditions: Parsing and MT. For Parsing, sentences are cased and tokenization abides to the PTB segmentation as used in the Penn treebank version 3. For the MT setting, texts are all lower case, and tokenization was changed to improve machine translation (e.g., most hyphenated words were split). For this setting, we also had to harmonize the four treebanks. The most crucial modification was to add NP internal bracketing to the WSJ (Vadas and Curran, 2007), since the three other treebanks contain that information. Treebanks were also transformed to be consistent with MT tokenization. We evaluate
+MT parsing models on CTB rather than on WSJ,
+since CTB contains newswire and is thus more representative of MT evaluation conditions.
+To obtain part-of-speech tags, we use a state-of-the-art maximum-entropy (CMM) tagger (Toutanova et al., 2003). In the Parsing setting, we use its best configuration, which reaches a tagging accuracy of 97.25% on standard WSJ test data. In the MT setting, we need to use a less effective tagger, since we cannot afford to perform Viterbi inference as a by-product of phrase-based decoding. Hence, we use a simpler tagging model that assigns tag t i to word x i by only using features of words x i&#8722;3 &#183;&#183;&#183;x i , and that does not condition any decision based on any preceding or next tags (t i&#8722;1 , etc.). Its performance is 95.02% on the WSJ, and 95.30% on the English CTB. Additional experiments reveal two main contributing factors to this drop on WSJ: tagging uncased texts reduces tagging accuracy by about 1%, and using only wordbased features further reduces it by 0.6%.
+Table 4 shows that the accuracy of our truly
+O(n 2 ) parser is only .25% to .34% worse than the O(n 3 ) implementation of (McDonald et al., 2005b). 5 Compared to the state-of-the-art projective parser as implemented in (McDonald et al., 2005a), performance is 1.28% lower on WSJ, but only 0.95% when training on all our available data and using the MT setting. Overall, we believe that the drop of performance is a reasonable price to pay considering the computational constraints imposed by integrating the dependency parser into an MT decoder.
+The table also shows a gain of more than 1% in dependency accuracy by adding ATB, OntoNotes, and WSJ to the English CTB training set. The four sources were assigned non-uniform weights: we set the weight of the CTB data to be 10 times larger than the other corpora, which seems to work best in our parsing experiments. While this improvement of 1% may seem relatively small considering that the amount of training data is more than 20 times larger in the latter case, it is quite consistent with previous findings in domain adaptation, which is known to be a difficult task. For example, (Daume III, 2007) shows that training a learning algorithm on the weighted union of different data sets (which is basically what we did) performs almost as well as more involved domain adaptation approaches.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this section, we compare the performance of our parsing model to the ones of McDonald et al.</text>
+              <doc_id>123</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since our MT test sets include newswire, web, and audio, we trained our parser on different genres.</text>
+              <doc_id>124</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our training data includes newswire from the English translation treebank (LDC2007T02) and the English-Arabic Treebank (LDC2006T10), which are respectively translations of sections of the Chinese treebank (CTB) and Arabic treebank (ATB).</text>
+              <doc_id>125</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We also trained the parser on the broadcastnews treebank available in the OntoNotes corpus (LDC2008T04), and added sections 02-21 of the WSJ Penn treebank.</text>
+              <doc_id>126</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Documents 001-040 of the English CTB data were set aside to constitute a test set for newswire texts.</text>
+              <doc_id>127</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our other test set is the standard Section 23 of the Penn treebank.</text>
+              <doc_id>128</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>The splits and amounts of data used for training are displayed in Table 3.</text>
+              <doc_id>129</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Parsing experiments are shown in Table 4.</text>
+              <doc_id>130</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We</text>
+              <doc_id>131</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>4 We need to mention some practical considerations that</text>
+              <doc_id>132</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>make feature computation fast enough for MT.</text>
+              <doc_id>133</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Most features are precomputed before actual decoding.</text>
+              <doc_id>134</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>All target-language words to appear during beam search can be determined in advance, and all their unigram feature scores are precomputed.</text>
+              <doc_id>135</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For features conditioned on both head and modifier, scores are cached whenever possible.</text>
+              <doc_id>136</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The only features that are not cached are the ones that include contextual POS tags, since their miss rate is relatively high.</text>
+              <doc_id>137</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>distinguish two experimental conditions: Parsing and MT.</text>
+              <doc_id>138</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For Parsing, sentences are cased and tokenization abides to the PTB segmentation as used in the Penn treebank version 3.</text>
+              <doc_id>139</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For the MT setting, texts are all lower case, and tokenization was changed to improve machine translation (e.g., most hyphenated words were split).</text>
+              <doc_id>140</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For this setting, we also had to harmonize the four treebanks.</text>
+              <doc_id>141</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The most crucial modification was to add NP internal bracketing to the WSJ (Vadas and Curran, 2007), since the three other treebanks contain that information.</text>
+              <doc_id>142</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Treebanks were also transformed to be consistent with MT tokenization.</text>
+              <doc_id>143</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>We evaluate</text>
+              <doc_id>144</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>MT parsing models on CTB rather than on WSJ,</text>
+              <doc_id>145</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>since CTB contains newswire and is thus more representative of MT evaluation conditions.</text>
+              <doc_id>146</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>To obtain part-of-speech tags, we use a state-of-the-art maximum-entropy (CMM) tagger (Toutanova et al., 2003).</text>
+              <doc_id>147</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the Parsing setting, we use its best configuration, which reaches a tagging accuracy of 97.25% on standard WSJ test data.</text>
+              <doc_id>148</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the MT setting, we need to use a less effective tagger, since we cannot afford to perform Viterbi inference as a by-product of phrase-based decoding.</text>
+              <doc_id>149</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Hence, we use a simpler tagging model that assigns tag t i to word x i by only using features of words x i&#8722;3 &#183;&#183;&#183;x i , and that does not condition any decision based on any preceding or next tags (t i&#8722;1 , etc.).</text>
+              <doc_id>150</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Its performance is 95.02% on the WSJ, and 95.30% on the English CTB.</text>
+              <doc_id>151</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Additional experiments reveal two main contributing factors to this drop on WSJ: tagging uncased texts reduces tagging accuracy by about 1%, and using only wordbased features further reduces it by 0.6%.</text>
+              <doc_id>152</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Table 4 shows that the accuracy of our truly</text>
+              <doc_id>153</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>O(n 2 ) parser is only .25% to .34% worse than the O(n 3 ) implementation of (McDonald et al., 2005b).</text>
+              <doc_id>154</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>5 Compared to the state-of-the-art projective parser as implemented in (McDonald et al., 2005a), performance is 1.28% lower on WSJ, but only 0.95% when training on all our available data and using the MT setting.</text>
+              <doc_id>155</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Overall, we believe that the drop of performance is a reasonable price to pay considering the computational constraints imposed by integrating the dependency parser into an MT decoder.</text>
+              <doc_id>156</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The table also shows a gain of more than 1% in dependency accuracy by adding ATB, OntoNotes, and WSJ to the English CTB training set.</text>
+              <doc_id>157</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The four sources were assigned non-uniform weights: we set the weight of the CTB data to be 10 times larger than the other corpora, which seems to work best in our parsing experiments.</text>
+              <doc_id>158</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>While this improvement of 1% may seem relatively small considering that the amount of training data is more than 20 times larger in the latter case, it is quite consistent with previous findings in domain adaptation, which is known to be a difficult task.</text>
+              <doc_id>159</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, (Daume III, 2007) shows that training a learning algorithm on the weighted union of different data sets (which is basically what we did) performs almost as well as more involved domain adaptation approaches.</text>
+              <doc_id>160</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Machine translation experiments</title>
+        <text>In our experiments, we use a re-implementation of the Moses phrase-based decoder (Koehn et al., 2007). We use the standard features implemented almost exactly as in Moses: four translation features (phrase-based translation probabilities and lexically-weighted probabilities), word penalty, phrase penalty, linear distortion, and language model score. We also incorporated the lexicalized reordering features of Moses, in order to experiment with a baseline that is stronger than the default Moses configuration.
+The language pair for our experiments is Chinese-to-English. The training data consists of about 28 million English words and 23.3 million
+5 Note that our results on WSJ are not exactly the same
+as those reported in (McDonald et al., 2005b), since we used slightly different head finding rules. To extract dependencies from treebanks, we used the LTH Penn Converter (http:// nlp.cs.lth.se/pennconverter/), which extracts dependencies that are almost identical to those used for the CoNLL-2008 Shared Task. We constrain the converter not to use functional tags found in the treebanks, in order to make it possible to use automatically parsed texts (i.e., perform selftraining) in future work.
+Chinese words drawn from various news parallel corpora distributed by the Linguistic Data Consortium (LDC). In order to provide experiments comparable to previous work, we used the same corpora as (Wang et al., 2007): LDC2002E18, LDC2003E07, LDC2003E14, LDC2005E83, LDC2005T06, LDC2006E26, LDC2006E8, and LDC2006G05. Chinese words were automatically segmented with a conditional random field (CRF) classifier (Chang et al., 2008) that conforms to the Chinese Treebank (CTB) standard.
+In order to train a competitive baseline given our computational resources, we built a large 5-gram language model using the Xinhua and AFP sections of the Gigaword corpus (LDC2007T40) in addition to the target side of the parallel data. This data represents a total of about 700 million words. We manually removed documents of Gigaword that were released during periods that overlap with those of our development and test sets. The language model was smoothed with the modified Kneser-Ney algorithm as implemented in (Stolcke, 2002), and we only kept 4-grams and 5-grams that occurred at least three times in the training data. 6
+For tuning and testing, we use the official NIST MT evaluation data for Chinese from 2002 to 2008 (MT02 to MT08), which all have four English references for each input sentence. We used the 1082 sentences of MT05 for tuning and all other sets for testing. Parameter tuning was done with minimum error rate training (Och, 2003), which was used to maximize BLEU (Papineni et al., 2001). Since MERT is prone to search errors, especially with large numbers of parameters, we ran each tuning experiment three times with different initial conditions. We used n-best lists of size 200 and a beam size of 200. In the final evaluations, we report results using both TER (Snover et al., 2006) and the original BLEU metric as described in (Papineni et al., 2001). All our evaluations are performed on uncased texts. The results for our translation experiments are shown in Table 5. We compared two systems: one with the set of features described earlier in this section. The second system incorporates one additional feature, which is the dependency language
+6 We found that sections of Gigaword other than Xinhua
+and AFP provide almost no improvement in our experiments. By leaving aside the other sections, we were able to increase the order of the language model to 5-gram and perform relatively little pruning. This LM required 16GB of RAM during training.
+model score computed with the dependency parsing algorithm described in Section 2. We used the dependency model trained on the English CTB and ATB treebank, WSJ, and OntoNotes.
+We see that the Moses decoder with integrated dependency language model systematically outperforms the Moses baseline. For BLEU evaluations, differences are significant in four out of six cases, and in the case of TER, all differences are significant. Regarding the small difference in BLEU scores on MT08, we would like to point out that tuning on MT05 and testing on MT08 had a rather adverse effect with respect to translation length: while the two systems are relatively close in terms of BLEU scores (24.83 and 24.91, respectively), the dependency LM provides a much bigger gain when evaluated with BLEU precision (27.73 vs. 28.79), i.e., by ignoring the brevity penalty. On the other hand, the difference on MT08 is significant in terms of TER. Table 6 provides experimental results on the NIST test data (excluding the tuning set MT05) for each of the three genres: newswire, web data, and speech (broadcast news and conversation). The last column displays results for all test sets combined. Results do not suggest any noticeable difference between genres, and the dependency language model provides significant gains on all genres, despite the fact that this model was primarily trained on news data.
+We wish to emphasize that our positive results are particularly noteworthy because they are achieved over a baseline incorporating a competitive 5-gram language model. As is widely acknowledged in the speech community, it can be difficult to outperform high-order n-gram models in large-scale experiments. Finally, we quantified the effective running time of our phrase-based decoder with and without our dependency language
+seconds 160
+0
+depLM baseline
+10 20 30 40 50 60 70 80 90 sentence length
+model using MT05 (Fig. 2). In both settings, we selected the best tuned model, which yield the performance shown in the first column of Table 5. Our decoder was run on an AMD Opteron Processor 2216 with 16GB of memory, and without resorting to any rescoring method such as cube pruning. In the case of English translations of 40 words and shorter, the baseline system took 6.5 seconds per sentence, whereas the dependency LM system spent 15.6 seconds per sentence, i.e., 2.4 times the baseline running time. In the case of translations
+longer than 40 words, average speeds were respectively 17.5 and 59.5 seconds per sentence, i.e., the dependency was only 3.4 times slower. 7</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In our experiments, we use a re-implementation of the Moses phrase-based decoder (Koehn et al., 2007).</text>
+              <doc_id>161</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use the standard features implemented almost exactly as in Moses: four translation features (phrase-based translation probabilities and lexically-weighted probabilities), word penalty, phrase penalty, linear distortion, and language model score.</text>
+              <doc_id>162</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We also incorporated the lexicalized reordering features of Moses, in order to experiment with a baseline that is stronger than the default Moses configuration.</text>
+              <doc_id>163</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The language pair for our experiments is Chinese-to-English.</text>
+              <doc_id>164</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The training data consists of about 28 million English words and 23.3 million</text>
+              <doc_id>165</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>5 Note that our results on WSJ are not exactly the same</text>
+              <doc_id>166</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>as those reported in (McDonald et al., 2005b), since we used slightly different head finding rules.</text>
+              <doc_id>167</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>To extract dependencies from treebanks, we used the LTH Penn Converter (http:// nlp.cs.lth.se/pennconverter/), which extracts dependencies that are almost identical to those used for the CoNLL-2008 Shared Task.</text>
+              <doc_id>168</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We constrain the converter not to use functional tags found in the treebanks, in order to make it possible to use automatically parsed texts (i.e., perform selftraining) in future work.</text>
+              <doc_id>169</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Chinese words drawn from various news parallel corpora distributed by the Linguistic Data Consortium (LDC).</text>
+              <doc_id>170</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In order to provide experiments comparable to previous work, we used the same corpora as (Wang et al., 2007): LDC2002E18, LDC2003E07, LDC2003E14, LDC2005E83, LDC2005T06, LDC2006E26, LDC2006E8, and LDC2006G05.</text>
+              <doc_id>171</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Chinese words were automatically segmented with a conditional random field (CRF) classifier (Chang et al., 2008) that conforms to the Chinese Treebank (CTB) standard.</text>
+              <doc_id>172</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In order to train a competitive baseline given our computational resources, we built a large 5-gram language model using the Xinhua and AFP sections of the Gigaword corpus (LDC2007T40) in addition to the target side of the parallel data.</text>
+              <doc_id>173</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This data represents a total of about 700 million words.</text>
+              <doc_id>174</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We manually removed documents of Gigaword that were released during periods that overlap with those of our development and test sets.</text>
+              <doc_id>175</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The language model was smoothed with the modified Kneser-Ney algorithm as implemented in (Stolcke, 2002), and we only kept 4-grams and 5-grams that occurred at least three times in the training data.</text>
+              <doc_id>176</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>6</text>
+              <doc_id>177</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>For tuning and testing, we use the official NIST MT evaluation data for Chinese from 2002 to 2008 (MT02 to MT08), which all have four English references for each input sentence.</text>
+              <doc_id>178</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We used the 1082 sentences of MT05 for tuning and all other sets for testing.</text>
+              <doc_id>179</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parameter tuning was done with minimum error rate training (Och, 2003), which was used to maximize BLEU (Papineni et al., 2001).</text>
+              <doc_id>180</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since MERT is prone to search errors, especially with large numbers of parameters, we ran each tuning experiment three times with different initial conditions.</text>
+              <doc_id>181</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>We used n-best lists of size 200 and a beam size of 200.</text>
+              <doc_id>182</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the final evaluations, we report results using both TER (Snover et al., 2006) and the original BLEU metric as described in (Papineni et al., 2001).</text>
+              <doc_id>183</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>All our evaluations are performed on uncased texts.</text>
+              <doc_id>184</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>The results for our translation experiments are shown in Table 5.</text>
+              <doc_id>185</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>We compared two systems: one with the set of features described earlier in this section.</text>
+              <doc_id>186</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>The second system incorporates one additional feature, which is the dependency language</text>
+              <doc_id>187</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>6 We found that sections of Gigaword other than Xinhua</text>
+              <doc_id>188</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>and AFP provide almost no improvement in our experiments.</text>
+              <doc_id>189</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>By leaving aside the other sections, we were able to increase the order of the language model to 5-gram and perform relatively little pruning.</text>
+              <doc_id>190</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This LM required 16GB of RAM during training.</text>
+              <doc_id>191</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>model score computed with the dependency parsing algorithm described in Section 2.</text>
+              <doc_id>192</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We used the dependency model trained on the English CTB and ATB treebank, WSJ, and OntoNotes.</text>
+              <doc_id>193</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We see that the Moses decoder with integrated dependency language model systematically outperforms the Moses baseline.</text>
+              <doc_id>194</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For BLEU evaluations, differences are significant in four out of six cases, and in the case of TER, all differences are significant.</text>
+              <doc_id>195</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Regarding the small difference in BLEU scores on MT08, we would like to point out that tuning on MT05 and testing on MT08 had a rather adverse effect with respect to translation length: while the two systems are relatively close in terms of BLEU scores (24.83 and 24.91, respectively), the dependency LM provides a much bigger gain when evaluated with BLEU precision (27.73 vs. 28.79), i.e., by ignoring the brevity penalty.</text>
+              <doc_id>196</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>On the other hand, the difference on MT08 is significant in terms of TER.</text>
+              <doc_id>197</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Table 6 provides experimental results on the NIST test data (excluding the tuning set MT05) for each of the three genres: newswire, web data, and speech (broadcast news and conversation).</text>
+              <doc_id>198</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>The last column displays results for all test sets combined.</text>
+              <doc_id>199</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Results do not suggest any noticeable difference between genres, and the dependency language model provides significant gains on all genres, despite the fact that this model was primarily trained on news data.</text>
+              <doc_id>200</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We wish to emphasize that our positive results are particularly noteworthy because they are achieved over a baseline incorporating a competitive 5-gram language model.</text>
+              <doc_id>201</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>As is widely acknowledged in the speech community, it can be difficult to outperform high-order n-gram models in large-scale experiments.</text>
+              <doc_id>202</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally, we quantified the effective running time of our phrase-based decoder with and without our dependency language</text>
+              <doc_id>203</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>seconds 160</text>
+              <doc_id>204</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0</text>
+              <doc_id>205</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>depLM baseline</text>
+              <doc_id>206</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>10 20 30 40 50 60 70 80 90 sentence length</text>
+              <doc_id>207</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>model using MT05 (Fig.</text>
+              <doc_id>208</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2).</text>
+              <doc_id>209</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In both settings, we selected the best tuned model, which yield the performance shown in the first column of Table 5.</text>
+              <doc_id>210</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our decoder was run on an AMD Opteron Processor 2216 with 16GB of memory, and without resorting to any rescoring method such as cube pruning.</text>
+              <doc_id>211</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the case of English translations of 40 words and shorter, the baseline system took 6.5 seconds per sentence, whereas the dependency LM system spent 15.6 seconds per sentence, i.e., 2.4 times the baseline running time.</text>
+              <doc_id>212</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the case of translations</text>
+              <doc_id>213</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>longer than 40 words, average speeds were respectively 17.5 and 59.5 seconds per sentence, i.e., the dependency was only 3.4 times slower.</text>
+              <doc_id>214</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>7</text>
+              <doc_id>215</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Related work</title>
+        <text>Perhaps due to the high computational cost of synchronous CFG decoding, there have been various attempts to exploit syntactic knowledge and hierarchical structure in other machine translation experiments that do not require chart parsing. Using a reranking framework, Och et al. (2004) found that various types of syntactic features provided only minor gains in performance, suggesting that phrase-based systems (Och and Ney, 2004) should exploit such information during rather than after decoding. Wang et al. (2007) sidestep the need to operate large-scale word order changes during decoding (and thus lessening the need for syntactic decoding) by rearranging input words in the training data to match the syntactic structure of the target language. Finally, Birch et al. (2007) exploit factored phrase-based translation models to associate each word with a supertag, which contains most of the information needed to build a full parse. When combined with a supertag n-gram language model, it helps enforce grammatical constraints on the target side.
+There have been various attempts to reduce the computational expense of syntactic decoding, including multi-pass decoding approaches (Zhang and Gildea, 2008; Petrov et al., 2008) and rescoring approaches (Huang and Chiang, 2007). In the latter paper, Huang and Chiang introduce rescoring methods named &#8220;cube pruning&#8221; and &#8220;cube growing&#8221;, which first use a baseline decoder (either synchronous CFG or a phrase-based system) and no LM to generate a hypergraph, and then rescoring this hypergraph with a language model. Huang and Chiang show significant speed increases with little impact on translation quality. We believe that their approach is orthogonal (and possibly complementary) to our work, since our paper proposes a new model for fully-integrated decoding that increases MT performance, and does not rely on rescoring.
+7 We note that our Java-based decoder is research rather
+than industrial-strength code and that it could be substantially optimized. Hence, we think the reader should pay more attention to relative speed differences between the two systems rather than absolute timings.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Perhaps due to the high computational cost of synchronous CFG decoding, there have been various attempts to exploit syntactic knowledge and hierarchical structure in other machine translation experiments that do not require chart parsing.</text>
+              <doc_id>216</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Using a reranking framework, Och et al. (2004) found that various types of syntactic features provided only minor gains in performance, suggesting that phrase-based systems (Och and Ney, 2004) should exploit such information during rather than after decoding.</text>
+              <doc_id>217</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Wang et al. (2007) sidestep the need to operate large-scale word order changes during decoding (and thus lessening the need for syntactic decoding) by rearranging input words in the training data to match the syntactic structure of the target language.</text>
+              <doc_id>218</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally, Birch et al. (2007) exploit factored phrase-based translation models to associate each word with a supertag, which contains most of the information needed to build a full parse.</text>
+              <doc_id>219</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>When combined with a supertag n-gram language model, it helps enforce grammatical constraints on the target side.</text>
+              <doc_id>220</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>There have been various attempts to reduce the computational expense of syntactic decoding, including multi-pass decoding approaches (Zhang and Gildea, 2008; Petrov et al., 2008) and rescoring approaches (Huang and Chiang, 2007).</text>
+              <doc_id>221</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the latter paper, Huang and Chiang introduce rescoring methods named &#8220;cube pruning&#8221; and &#8220;cube growing&#8221;, which first use a baseline decoder (either synchronous CFG or a phrase-based system) and no LM to generate a hypergraph, and then rescoring this hypergraph with a language model.</text>
+              <doc_id>222</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Huang and Chiang show significant speed increases with little impact on translation quality.</text>
+              <doc_id>223</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We believe that their approach is orthogonal (and possibly complementary) to our work, since our paper proposes a new model for fully-integrated decoding that increases MT performance, and does not rely on rescoring.</text>
+              <doc_id>224</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>7 We note that our Java-based decoder is research rather</text>
+              <doc_id>225</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>than industrial-strength code and that it could be substantially optimized.</text>
+              <doc_id>226</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Hence, we think the reader should pay more attention to relative speed differences between the two systems rather than absolute timings.</text>
+              <doc_id>227</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 Conclusion and future work</title>
+        <text>In this paper, we presented a non-projective dependency parser whose time-complexity of O(n 2 ) improves upon the cubic time implementation of (McDonald et al., 2005b), and does so with little loss in dependency accuracy (.25% to .34%). Since this parser does not need to enforce projectivity constraints, it can easily be integrated into a phrase-based decoder during search (rather than during rescoring). We use dependency scores as an extra feature in our MT experiments, and found that our dependency model provides significant gains over a competitive baseline that incorporates a large 5-gram language model (0.92% TER and 0.45% BLEU absolute improvements). We plan to pursue other research directions using dependency models discussed in this paper. While we use a dependency language model to exemplify the use of hierarchical structure within phrase based decoders, we could extend this work to incorporate dependency features of both sourceand target side. Since parsing of the source is relatively inexpensive compared to the target side, it would be relatively easy to condition headmodifier dependencies not only on the two target words, but also on their corresponding Chinese words and their relative positions in the Chinese tree. This would enable the decoder to capture syntactic reordering without requiring trees to be isomorphic or even projective. It would also be interesting to apply these models to target languages that have free word order, which would presumably benefit more from the flexibility of non-projective dependency models.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we presented a non-projective dependency parser whose time-complexity of O(n 2 ) improves upon the cubic time implementation of (McDonald et al., 2005b), and does so with little loss in dependency accuracy (.25% to .34%).</text>
+              <doc_id>228</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since this parser does not need to enforce projectivity constraints, it can easily be integrated into a phrase-based decoder during search (rather than during rescoring).</text>
+              <doc_id>229</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use dependency scores as an extra feature in our MT experiments, and found that our dependency model provides significant gains over a competitive baseline that incorporates a large 5-gram language model (0.92% TER and 0.45% BLEU absolute improvements).</text>
+              <doc_id>230</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We plan to pursue other research directions using dependency models discussed in this paper.</text>
+              <doc_id>231</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>While we use a dependency language model to exemplify the use of hierarchical structure within phrase based decoders, we could extend this work to incorporate dependency features of both sourceand target side.</text>
+              <doc_id>232</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since parsing of the source is relatively inexpensive compared to the target side, it would be relatively easy to condition headmodifier dependencies not only on the two target words, but also on their corresponding Chinese words and their relative positions in the Chinese tree.</text>
+              <doc_id>233</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>This would enable the decoder to capture syntactic reordering without requiring trees to be isomorphic or even projective.</text>
+              <doc_id>234</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>It would also be interesting to apply these models to target languages that have free word order, which would presumably benefit more from the flexibility of non-projective dependency models.</text>
+              <doc_id>235</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>7</index>
+        <title>Acknowledgements</title>
+        <text>The authors wish to thank the anonymous reviewers for their helpful comments on an earlier draft of this paper, and Daniel Cer for his implementation of Phrasal, a phrase-based decoder similar to Moses. This paper is based on work funded by the Defense Advanced Research Projects Agency through IBM. The content does not necessarily reflect the views of the U.S. Government, and no official endorsement should be inferred.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The authors wish to thank the anonymous reviewers for their helpful comments on an earlier draft of this paper, and Daniel Cer for his implementation of Phrasal, a phrase-based decoder similar to Moses.</text>
+              <doc_id>236</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This paper is based on work funded by the Defense Advanced Research Projects Agency through IBM.</text>
+              <doc_id>237</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The content does not necessarily reflect the views of the U.S. Government, and no official endorsement should be inferred.</text>
+              <doc_id>238</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 1: Hypothesis expansion with dependency scoring.</caption>
+        <reference_text>In PAGE 3: ... Dependency scores sj are initialized to ??. Each time a new word is added to a partial hy- pothesis, the decoder executes the routine shown in  Table1 . To avoid cluttering the pseudo-code, we make here the simplifying assumption that each hypothesis expansion adds exactly one word, though the real implementation supports the case of phrases of any length....</reference_text>
+        <page_num>4</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>2. j ? |x|?1</cell>
+              <cell>2. j ? |x|?1</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>3. tj ? tagger(xj?3,??? ,xj)</cell>
+              <cell>3. tj ? tagger(xj?3,??? ,xj)</cell>
+            </row>
+            <row>
+              <cell>4. if complete(c)</cell>
+              <cell>4. if complete(c)</cell>
+            </row>
+            <row>
+              <cell>5.</cell>
+              <cell>Chu-Liu-Edmonds(h)</cell>
+            </row>
+            <row>
+              <cell>6. else</cell>
+              <cell>6. else</cell>
+            </row>
+            <row>
+              <cell>7.</cell>
+              <cell>for i = 1 to j</cell>
+            </row>
+            <row>
+              <cell>8.</cell>
+              <cell>sj = max(sj,s(i, j))</cell>
+            </row>
+            <row>
+              <cell>9.</cell>
+              <cell>si = max(si,s(j,i))</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TableSeer</source>
+        <caption>Table 2: Features for dependency parsing. It is quite similar to the McDonald (2005a) feature set, except that it does not include the set of all POS tags that appear between each can- didate head-modifier pair (i, j). This modification is essential in order to make our parser run in true O(n2) time, as opposed to (McDonald et al., 2005b).</caption>
+        <reference_text>In PAGE 4: ...2 Features for dependency parsing In our experiments, we use sets of features that are similar to the ones used in the McDonald parser, though we make a key modification that yields an asymptotic speedup that ensures a genuine O(n2) running time. The three feature sets that were used in our ex- periments are shown in  Table2 . We write h-word, h-pos, m-word, m-pos to refer to head and modi- fier words and POS tags, and append a numerical value to shift the word offset either to the left or to the right (e....</reference_text>
+        <page_num>4</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>SOURCE IDS GENRE</cell>
+              <cell>SENTENCES</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>EnglishCTB 050?325 newswire</cell>
+              <cell>3027</cell>
+            </row>
+            <row>
+              <cell>EnglishATB all newswire</cell>
+              <cell>13628</cell>
+            </row>
+            <row>
+              <cell>OntoNotes all broadcastnews</cell>
+              <cell>14056</cell>
+            </row>
+            <row>
+              <cell>WSJ 02?21 financialnews</cell>
+              <cell>39832</cell>
+            </row>
+            <row>
+              <cell>Total</cell>
+              <cell>70543</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TET</source>
+        <caption>Table 3: Characteristics of our training data. The second column identifies documents and sections selected for training.</caption>
+        <reference_text></reference_text>
+        <page_num>3</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>SOURCE</cell>
+              <cell>IDS</cell>
+              <cell>GENRE</cell>
+              <cell>SENTENCES</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>English CTB</cell>
+              <cell>050&#8211;325</cell>
+              <cell>newswire</cell>
+              <cell>3027</cell>
+            </row>
+            <row>
+              <cell>English ATB</cell>
+              <cell>all</cell>
+              <cell>newswire</cell>
+              <cell>13628</cell>
+            </row>
+            <row>
+              <cell>OntoNotes</cell>
+              <cell>all</cell>
+              <cell>broadcast news</cell>
+              <cell>14056</cell>
+            </row>
+            <row>
+              <cell>WSJ</cell>
+              <cell>02&#8211;21</cell>
+              <cell>financial news</cell>
+              <cell>39832</cell>
+            </row>
+            <row>
+              <cell>Total</cell>
+              <cell></cell>
+              <cell></cell>
+              <cell>70543</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TET</source>
+        <caption>Table 4: Dependency parsing experiments on test sentences of any length. The projective parsing algorithm is the one implemented as in (McDonald et al., 2005a), which is known as one of the top performing dependency parsers for English. The O(n 3 ) non-projective parser of (McDonald et al., 2005b) is slightly more accurate than our version, though ours runs in O(n 2 ) time. &#8220;Local classifier&#8221; refers to non-projective dependency parsing without removing loops as a post-processing step. The result marked with (*) identifies the parser used for our MT experiments, which is only about 1% less accurate than a state-of-the-art dependency parser (**).</caption>
+        <reference_text></reference_text>
+        <page_num>4</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>ALGORITHM</cell>
+              <cell>TIME</cell>
+              <cell>SETUP</cell>
+              <cell>TRAINING</cell>
+              <cell>TESTING</cell>
+              <cell>ACCURACY</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Projective</cell>
+              <cell>O(n 3 )</cell>
+              <cell>Parsing</cell>
+              <cell>WSJ(02-21)</cell>
+              <cell>WSJ(23)</cell>
+              <cell>90.60</cell>
+            </row>
+            <row>
+              <cell>Chu-Liu-Edmonds</cell>
+              <cell>O(n 3 )</cell>
+              <cell>Parsing</cell>
+              <cell>WSJ(02-21)</cell>
+              <cell>WSJ(23)</cell>
+              <cell>89.64</cell>
+            </row>
+            <row>
+              <cell>Chu-Liu-Edmonds</cell>
+              <cell>O(n 2 )</cell>
+              <cell>Parsing</cell>
+              <cell>WSJ(02-21)</cell>
+              <cell>WSJ(23)</cell>
+              <cell>89.32</cell>
+            </row>
+            <row>
+              <cell>Local classifier</cell>
+              <cell>O(n 2 )</cell>
+              <cell>Parsing</cell>
+              <cell>WSJ(02-21)</cell>
+              <cell>WSJ(23)</cell>
+              <cell>89.15</cell>
+            </row>
+            <row>
+              <cell>Projective</cell>
+              <cell>O(n 3 )</cell>
+              <cell>MT</cell>
+              <cell>CTB(050-325)</cell>
+              <cell>CTB(001-049)</cell>
+              <cell>86.33</cell>
+            </row>
+            <row>
+              <cell>Chu-Liu-Edmonds</cell>
+              <cell>O(n 3 )</cell>
+              <cell>MT</cell>
+              <cell>CTB(050-325)</cell>
+              <cell>CTB(001-049)</cell>
+              <cell>85.68</cell>
+            </row>
+            <row>
+              <cell>Chu-Liu-Edmonds</cell>
+              <cell>O(n 2 )</cell>
+              <cell>MT</cell>
+              <cell>CTB(050-325)</cell>
+              <cell>CTB(001-049)</cell>
+              <cell>85.43</cell>
+            </row>
+            <row>
+              <cell>Local classifier</cell>
+              <cell>O(n 2 )</cell>
+              <cell>MT</cell>
+              <cell>CTB(050-325)</cell>
+              <cell>CTB(001-049)</cell>
+              <cell>85.22</cell>
+            </row>
+            <row>
+              <cell>Projective</cell>
+              <cell>O(n 3 )</cell>
+              <cell>MT</cell>
+              <cell>CTB(050-325), WSJ(02-21), ATB, OntoNotes</cell>
+              <cell>CTB(001-049)</cell>
+              <cell>87.40(**)</cell>
+            </row>
+            <row>
+              <cell>Chu-Liu-Edmonds</cell>
+              <cell>O(n 3 )</cell>
+              <cell>MT</cell>
+              <cell>CTB(050-325), WSJ(02-21), ATB, OntoNotes</cell>
+              <cell>CTB(001-049)</cell>
+              <cell>86.79</cell>
+            </row>
+            <row>
+              <cell>Chu-Liu-Edmonds</cell>
+              <cell>O(n 2 )</cell>
+              <cell>MT</cell>
+              <cell>CTB(050-325), WSJ(02-21), ATB, OntoNotes</cell>
+              <cell>CTB(001-049)</cell>
+              <cell>86.45(*)</cell>
+            </row>
+            <row>
+              <cell>Local classifier</cell>
+              <cell>O(n 2 )</cell>
+              <cell>MT</cell>
+              <cell>CTB(050-325), WSJ(02-21), ATB, OntoNotes</cell>
+              <cell>CTB(001-049)</cell>
+              <cell>86.29</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>5</id>
+        <source>TableSeer</source>
+        <caption>Table 5: MT experiments with and without a dependency language model. We use randomization tests (Riezler and Maxwell, 2005) to determine significance: differences marked with a (*) are significant at the p &#8804; .05 level, and those marked as (**) are significant at the p &#8804; .01 level.</caption>
+        <reference_text>In PAGE 6: ...l., 2001). All our evaluations are performed on uncased texts. The results for our translation experiments are shown in  Table5 . We compared two systems: one with the set of features described earlier in this section....</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+              <cell>BLEU[%]</cell>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>DEP. LM</cell>
+              <cell>MT05(tune)#@#@MT05 (tune)</cell>
+              <cell>MT02</cell>
+              <cell>MT03</cell>
+              <cell>MT04</cell>
+              <cell>MT06</cell>
+              <cell>MT08</cell>
+            </row>
+            <row>
+              <cell>no</cell>
+              <cell>33.42</cell>
+              <cell>33.38</cell>
+              <cell>33.13</cell>
+              <cell>36.21</cell>
+              <cell>32.16</cell>
+              <cell>24.83</cell>
+            </row>
+            <row>
+              <cell>yes</cell>
+              <cell>34.19(+.77**)#@#@34.19 (+.77**)</cell>
+              <cell>33.85(+.47)#@#@33.85 (+.47)</cell>
+              <cell>33.73(+.6*)#@#@33.73 (+.6*)</cell>
+              <cell>36.67(+.46*)#@#@36.67 (+.46*)</cell>
+              <cell>32.84(+.68**)#@#@32.84 (+.68**)</cell>
+              <cell>24.91(+.08)#@#@24.91 (+.08)</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+              <cell>TER[%]</cell>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+            </row>
+            <row>
+              <cell>DEP. LM</cell>
+              <cell>MT05(tune)#@#@MT05 (tune)</cell>
+              <cell>MT02</cell>
+              <cell>MT03</cell>
+              <cell>MT04</cell>
+              <cell>MT06</cell>
+              <cell>MT08</cell>
+            </row>
+            <row>
+              <cell>no</cell>
+              <cell>57.41</cell>
+              <cell>58.07</cell>
+              <cell>57.32</cell>
+              <cell>56.09</cell>
+              <cell>57.24</cell>
+              <cell>61.96</cell>
+            </row>
+            <row>
+              <cell>yes</cell>
+              <cell>56.27(?1.14**) 57.15(?.92**) 56.09(?1.23**) 55.30(?.79**) 56.05(?1.19**) 61.41(?.55*)#@#@56.27 (&#8722;1.14**)</cell>
+              <cell>56.27(?1.14**) 57.15(?.92**) 56.09(?1.23**) 55.30(?.79**) 56.05(?1.19**) 61.41(?.55*)#@#@57.15 (&#8722;.92**)</cell>
+              <cell>56.27(?1.14**) 57.15(?.92**) 56.09(?1.23**) 55.30(?.79**) 56.05(?1.19**) 61.41(?.55*)#@#@56.09 (&#8722;1.23**)</cell>
+              <cell>56.27(?1.14**) 57.15(?.92**) 56.09(?1.23**) 55.30(?.79**) 56.05(?1.19**) 61.41(?.55*)#@#@55.30 (&#8722;.79**)</cell>
+              <cell>56.27(?1.14**) 57.15(?.92**) 56.09(?1.23**) 55.30(?.79**) 56.05(?1.19**) 61.41(?.55*)#@#@56.05 (&#8722;1.19**)</cell>
+              <cell>56.27(?1.14**) 57.15(?.92**) 56.09(?1.23**) 55.30(?.79**) 56.05(?1.19**) 61.41(?.55*)#@#@61.41 (&#8722;.55*)</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>MT05(tune)#@#@MT05 (tune)</cell>
+              <cell>MT02</cell>
+              <cell>MT03</cell>
+              <cell>MT04</cell>
+              <cell>MT06</cell>
+              <cell>MT08</cell>
+            </row>
+            <row>
+              <cell>Sentences 1082#@#@Sentences</cell>
+              <cell>Sentences 1082#@#@1082</cell>
+              <cell>878</cell>
+              <cell>919</cell>
+              <cell>1788</cell>
+              <cell>1664</cell>
+              <cell>1357</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>6</id>
+        <source>TableSeer</source>
+        <caption>Table 6: Test set performances on MT02-MT04 and MT06- MT08, where the data was broken down by genre. Given the large amount of test data involved in this table, all these results are statistically highly significant (p &#8804; .01).</caption>
+        <reference_text>In PAGE 7: ... On the other hand, the difference on MT08 is significant in terms of TER.  Table6  provides experimental results on the NIST test data (excluding the tuning set MT05) for each of the three genres: newswire, web data, and speech (broadcast news and conversation). The last column displays results for all test sets com- bined....</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>BLEU[%]</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>DEP. LM</cell>
+              <cell>newswire</cell>
+              <cell>web</cell>
+              <cell>speech</cell>
+              <cell>all</cell>
+            </row>
+            <row>
+              <cell>no</cell>
+              <cell>32.86</cell>
+              <cell>21.75</cell>
+              <cell>36.88</cell>
+              <cell>32.29</cell>
+            </row>
+            <row>
+              <cell>yes</cell>
+              <cell>33.19</cell>
+              <cell>22.64</cell>
+              <cell>37.51</cell>
+              <cell>32.74</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>(+0.33)</cell>
+              <cell>(+0.89)</cell>
+              <cell>(+0.63)</cell>
+              <cell>(+0.45)</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell></cell>
+              <cell>TER[%]</cell>
+              <cell></cell>
+              <cell></cell>
+            </row>
+            <row>
+              <cell>DEP. LM</cell>
+              <cell>newswire</cell>
+              <cell>web</cell>
+              <cell>speech</cell>
+              <cell>all</cell>
+            </row>
+            <row>
+              <cell>no</cell>
+              <cell>57.73</cell>
+              <cell>62.64</cell>
+              <cell>55.16</cell>
+              <cell>58.02</cell>
+            </row>
+            <row>
+              <cell>yes</cell>
+              <cell>56.73</cell>
+              <cell>61.97</cell>
+              <cell>54.26</cell>
+              <cell>57.10</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>(&#8722;1)</cell>
+              <cell>(&#8722;0.67)</cell>
+              <cell>(&#8722;0.9)</cell>
+              <cell>(&#8722;0.92)</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>newswire</cell>
+              <cell>web</cell>
+              <cell>speech</cell>
+              <cell>all</cell>
+            </row>
+            <row>
+              <cell>Sentences</cell>
+              <cell>4006</cell>
+              <cell>1149</cell>
+              <cell>1451</cell>
+              <cell>6606</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>A Birch</author>
+          <author>M Osborne</author>
+          <author>P Koehn</author>
+        </authors>
+        <title>CCG supertags in factored statistical machine translation.</title>
+        <publication>In Proc. of the Workshop on Statistical Machine Translation,</publication>
+        <pages>9--16</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>A Popat Brants</author>
+          <author>P Xu</author>
+          <author>F Och</author>
+          <author>J Dean</author>
+        </authors>
+        <title>Large language models in machine translation.</title>
+        <publication>In Proc. of EMNLP-CoNLL,</publication>
+        <pages>858--867</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>P Chang</author>
+          <author>M Galley</author>
+          <author>C Manning</author>
+        </authors>
+        <title>Optimizing Chinese word segmentation for machine translation performance.</title>
+        <publication>In Proc. of the ACL Workshop on Statistical Machine Translation,</publication>
+        <pages>224--232</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>D Chiang</author>
+        </authors>
+        <title>A hierarchical phrase-based model for statistical machine translation.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>263--270</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>Y J Chu</author>
+          <author>T H Liu</author>
+        </authors>
+        <title>On the shortest arborescence of a directed graph.</title>
+        <publication>None</publication>
+        <pages>1400</pages>
+        <date>1965</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>K Crammer</author>
+          <author>Y Singer</author>
+        </authors>
+        <title>Ultraconservative online algorithms for multiclass problems.</title>
+        <publication>None</publication>
+        <pages>3--951</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>H Daume</author>
+        </authors>
+        <title>Frustratingly easy domain adaptation.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>256--263</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Y Ding</author>
+          <author>M Palmer</author>
+        </authors>
+        <title>Machine translation using probabilistic synchronous dependency insertion grammars.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>541--548</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>J Edmonds</author>
+        </authors>
+        <title>Optimum branchings.</title>
+        <publication>None</publication>
+        <pages>71--233</pages>
+        <date>1967</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>J Eisner</author>
+          <author>G Satta</author>
+        </authors>
+        <title>Efficient parsing for bilexical context-free grammars and headautomaton grammars.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>457--464</pages>
+        <date>1999</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>J Eisner</author>
+        </authors>
+        <title>Three new probabilistic models for dependency parsing: An exploration.</title>
+        <publication>In Proc. of COLING,</publication>
+        <pages>340--345</pages>
+        <date>1996</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>H Fox</author>
+        </authors>
+        <title>Phrasal cohesion and statistical machine translation.</title>
+        <publication>In Proc. of EMNLP,</publication>
+        <pages>304--311</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>L Georgiadis</author>
+        </authors>
+        <title>Arborescence optimization problems solvable by Edmonds&#8217; algorithm.</title>
+        <publication>None</publication>
+        <pages>301--1</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>L Huang</author>
+          <author>D Chiang</author>
+        </authors>
+        <title>Forest rescoring: Faster decoding with integrated language models.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>144--151</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>L Huang</author>
+          <author>H Zhang</author>
+          <author>D Gildea</author>
+        </authors>
+        <title>Machine translation as lexicalized parsing with hooks.</title>
+        <publication>In Proc. of the International Workshop on Parsing Technology,</publication>
+        <pages>65--73</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>K Knight</author>
+        </authors>
+        <title>Decoding complexity in wordreplacement translation models.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>1999</date>
+      </reference>
+      <reference>
+        <id>16</id>
+        <authors>
+          <author>P Koehn</author>
+          <author>F Och</author>
+          <author>D Marcu</author>
+        </authors>
+        <title>Statistical phrase-based translation.</title>
+        <publication>In Proc. of NAACL.</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>17</id>
+        <authors>
+          <author>P Koehn</author>
+          <author>H Hoang</author>
+          <author>A Birch</author>
+          <author>C Callison-Burch</author>
+          <author>M Federico</author>
+          <author>N Bertoldi</author>
+          <author>B Cowan</author>
+          <author>W Shen</author>
+          <author>C Moran</author>
+          <author>R Zens</author>
+          <author>C Dyer</author>
+          <author>O Bojar</author>
+          <author>A Constantin</author>
+          <author>E Herbst</author>
+        </authors>
+        <title>Moses: Open source toolkit for statistical machine translation.</title>
+        <publication>In Proc. of ACL, Demonstration Session.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>18</id>
+        <authors>
+          <author>D Marcu</author>
+          <author>W Wang</author>
+          <author>A Echihabi</author>
+          <author>K Knight</author>
+        </authors>
+        <title>SPMT: Statistical machine translation with syntactified target language phrases.</title>
+        <publication>In Proc. of EMNLP,</publication>
+        <pages>44--52</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>19</id>
+        <authors>
+          <author>R McDonald</author>
+          <author>K Crammer</author>
+          <author>F Pereira</author>
+        </authors>
+        <title>Online large-margin training of dependency parsers.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>91--98</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>20</id>
+        <authors>
+          <author>R McDonald</author>
+          <author>F Pereira</author>
+          <author>K Ribarov</author>
+          <author>J Hajic</author>
+        </authors>
+        <title>Non-projective dependency parsing using spanning tree algorithms.</title>
+        <publication>In Proc. of HLT-EMNLP,</publication>
+        <pages>523--530</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>21</id>
+        <authors>
+          <author>J Nivre</author>
+        </authors>
+        <title>An efficient algorithm for projective dependency parsing.</title>
+        <publication>In Proc. of the International Workshop on Parsing Technologies (IWPT 03),</publication>
+        <pages>149--160</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>22</id>
+        <authors>
+          <author>F Och</author>
+          <author>H Ney</author>
+        </authors>
+        <title>The alignment template approach to statistical machine translation.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>23</id>
+        <authors>
+          <author>F Och</author>
+          <author>D Gildea</author>
+          <author>S Khudanpur</author>
+          <author>A Sarkar</author>
+          <author>K Yamada</author>
+          <author>A Fraser</author>
+          <author>S Kumar</author>
+          <author>L Shen</author>
+          <author>D Smith</author>
+          <author>K Eng</author>
+          <author>V Jain</author>
+          <author>Z Jin</author>
+          <author>D Radev</author>
+        </authors>
+        <title>A smorgasbord of features for statistical machine translation.</title>
+        <publication>In Proceedings of HLT-NAACL.</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>24</id>
+        <authors>
+          <author>F Och</author>
+        </authors>
+        <title>Minimum error rate training for statistical machine translation.</title>
+        <publication>In Proc. of ACL.</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>25</id>
+        <authors>
+          <author>K Papineni</author>
+          <author>S Roukos</author>
+          <author>T Ward</author>
+          <author>W-J Zhu</author>
+        </authors>
+        <title>BLEU: a method for automatic evaluation of machine translation.</title>
+        <publication>In Proc. of ACL.</publication>
+        <pages>None</pages>
+        <date>2001</date>
+      </reference>
+      <reference>
+        <id>26</id>
+        <authors>
+          <author>S Petrov</author>
+          <author>A Haghighi</author>
+          <author>D Klein</author>
+        </authors>
+        <title>Coarseto-fine syntactic machine translation using language projections.</title>
+        <publication>In Proc. of EMNLP,</publication>
+        <pages>108--116</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>27</id>
+        <authors>
+          <author>C Quirk</author>
+          <author>A Menezes</author>
+          <author>C Cherry</author>
+        </authors>
+        <title>Dependency treelet translation: syntactically informed phrasal SMT.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>271--279</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>28</id>
+        <authors>
+          <author>A Ratnaparkhi</author>
+        </authors>
+        <title>A linear observed time statistical parser based on maximum entropy models.</title>
+        <publication>In Proc. of EMNLP.</publication>
+        <pages>None</pages>
+        <date>1997</date>
+      </reference>
+      <reference>
+        <id>29</id>
+        <authors>
+          <author>S Riezler</author>
+          <author>J Maxwell</author>
+        </authors>
+        <title>On some pitfalls in automatic evaluation and significance testing for MT.</title>
+        <publication>In Proc. of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization,</publication>
+        <pages>57--64</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>30</id>
+        <authors>
+          <author>L Shen</author>
+          <author>J Xu</author>
+          <author>R Weischedel</author>
+        </authors>
+        <title>A new string-to-dependency machine translation algorithm with a target dependency language model.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>577--585</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>31</id>
+        <authors>
+          <author>M Snover</author>
+          <author>B Dorr</author>
+          <author>R Schwartz</author>
+          <author>L Micciulla</author>
+          <author>J Makhoul</author>
+        </authors>
+        <title>A study of translation edit rate with targeted human annotation.</title>
+        <publication>In Proc. of AMTA,</publication>
+        <pages>223--231</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>32</id>
+        <authors>
+          <author>A Stolcke</author>
+        </authors>
+        <title>SRILM &#8211; an extensible language modeling toolkit.</title>
+        <publication>In Proc. Intl. Conf. on Spoken Language Processing (ICSLP&#8211;2002).</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>33</id>
+        <authors>
+          <author>R Tarjan</author>
+        </authors>
+        <title>Finding optimum branchings.</title>
+        <publication>None</publication>
+        <pages>7--25</pages>
+        <date>1977</date>
+      </reference>
+      <reference>
+        <id>34</id>
+        <authors>
+          <author>K Toutanova</author>
+          <author>D Klein</author>
+          <author>C Manning</author>
+          <author>Y Singer</author>
+        </authors>
+        <title>Feature-rich part-of-speech tagging with a cyclic dependency network.</title>
+        <publication>In Proc. of NAACL,</publication>
+        <pages>173--180</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>35</id>
+        <authors>
+          <author>D Vadas</author>
+          <author>J Curran</author>
+        </authors>
+        <title>Adding noun phrase structure to the Penn treebank.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>240--247</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>36</id>
+        <authors>
+          <author>C Wang</author>
+          <author>M Collins</author>
+          <author>P Koehn</author>
+        </authors>
+        <title>Chinese syntactic reordering for statistical machine translation.</title>
+        <publication>In Proc. of EMNLP-CoNLL,</publication>
+        <pages>737--745</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>37</id>
+        <authors>
+          <author>D Wu</author>
+        </authors>
+        <title>A polynomial-time algorithm for statistical machine translation.</title>
+        <publication>In Proc. of ACL.</publication>
+        <pages>None</pages>
+        <date>1996</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Birch et al. (2007)</string>
+        <sentence_id>27389</sentence_id>
+        <char_offset>9</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>1</reference_id>
+        <string>Brants et al., 2007</string>
+        <sentence_id>27187</sentence_id>
+        <char_offset>101</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>2</reference_id>
+        <string>Chang et al., 2008</string>
+        <sentence_id>27342</sentence_id>
+        <char_offset>93</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>3</reference_id>
+        <string>Chiang, 2005</string>
+        <sentence_id>27175</sentence_id>
+        <char_offset>100</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>4</reference_id>
+        <string>Chu and Liu, 1965</string>
+        <sentence_id>27191</sentence_id>
+        <char_offset>39</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>4</reference_id>
+        <string>Chu and Liu, 1965</string>
+        <sentence_id>27208</sentence_id>
+        <char_offset>33</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>5</reference_id>
+        <string>Crammer and Singer, 2003</string>
+        <sentence_id>27198</sentence_id>
+        <char_offset>45</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>7</reference_id>
+        <string>Ding and Palmer, 2005</string>
+        <sentence_id>27266</sentence_id>
+        <char_offset>118</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>8</reference_id>
+        <string>Edmonds, 1967</string>
+        <sentence_id>27191</sentence_id>
+        <char_offset>58</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>8</reference_id>
+        <string>Edmonds, 1967</string>
+        <sentence_id>27208</sentence_id>
+        <char_offset>52</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>9</reference_id>
+        <string>Eisner and Satta, 1999</string>
+        <sentence_id>27181</sentence_id>
+        <char_offset>95</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>9</reference_id>
+        <string>Eisner and Satta, 1999</string>
+        <sentence_id>27275</sentence_id>
+        <char_offset>103</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>9</reference_id>
+        <string>Eisner and Satta, 1999</string>
+        <sentence_id>27278</sentence_id>
+        <char_offset>117</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>10</reference_id>
+        <string>Eisner, 1996</string>
+        <sentence_id>27191</sentence_id>
+        <char_offset>283</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>10</reference_id>
+        <string>Eisner, 1996</string>
+        <sentence_id>27275</sentence_id>
+        <char_offset>89</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>11</reference_id>
+        <string>Fox (2002)</string>
+        <sentence_id>27269</sentence_id>
+        <char_offset>8</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>12</reference_id>
+        <string>Georgiadis, 2003</string>
+        <sentence_id>27213</sentence_id>
+        <char_offset>232</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>13</reference_id>
+        <string>Huang and Chiang, 2007</string>
+        <sentence_id>27391</sentence_id>
+        <char_offset>205</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>14</reference_id>
+        <string>Huang et al. (2005)</string>
+        <sentence_id>27181</sentence_id>
+        <char_offset>23</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>15</reference_id>
+        <string>Knight, 1999</string>
+        <sentence_id>27184</sentence_id>
+        <char_offset>40</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>16</reference_id>
+        <string>Koehn et al., 2003</string>
+        <sentence_id>27175</sentence_id>
+        <char_offset>216</char_offset>
+      </citation>
+      <citation>
+        <id>21</id>
+        <reference_id>17</reference_id>
+        <string>Koehn et al., 2007</string>
+        <sentence_id>27262</sentence_id>
+        <char_offset>53</char_offset>
+      </citation>
+      <citation>
+        <id>22</id>
+        <reference_id>17</reference_id>
+        <string>Koehn et al., 2007</string>
+        <sentence_id>27331</sentence_id>
+        <char_offset>82</char_offset>
+      </citation>
+      <citation>
+        <id>23</id>
+        <reference_id>18</reference_id>
+        <string>Marcu et al., 2006</string>
+        <sentence_id>27175</sentence_id>
+        <char_offset>114</char_offset>
+      </citation>
+      <citation>
+        <id>24</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27265</sentence_id>
+        <char_offset>93</char_offset>
+      </citation>
+      <citation>
+        <id>25</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27291</sentence_id>
+        <char_offset>90</char_offset>
+      </citation>
+      <citation>
+        <id>26</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27291</sentence_id>
+        <char_offset>157</char_offset>
+      </citation>
+      <citation>
+        <id>27</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27292</sentence_id>
+        <char_offset>46</char_offset>
+      </citation>
+      <citation>
+        <id>28</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27193</sentence_id>
+        <char_offset>74</char_offset>
+      </citation>
+      <citation>
+        <id>29</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27198</sentence_id>
+        <char_offset>112</char_offset>
+      </citation>
+      <citation>
+        <id>30</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27246</sentence_id>
+        <char_offset>63</char_offset>
+      </citation>
+      <citation>
+        <id>31</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27324</sentence_id>
+        <char_offset>78</char_offset>
+      </citation>
+      <citation>
+        <id>32</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27325</sentence_id>
+        <char_offset>72</char_offset>
+      </citation>
+      <citation>
+        <id>33</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27337</sentence_id>
+        <char_offset>22</char_offset>
+      </citation>
+      <citation>
+        <id>34</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27398</sentence_id>
+        <char_offset>144</char_offset>
+      </citation>
+      <citation>
+        <id>35</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al. (2005</string>
+        <sentence_id>27171</sentence_id>
+        <char_offset>10</char_offset>
+      </citation>
+      <citation>
+        <id>36</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al. (2005</string>
+        <sentence_id>27191</sentence_id>
+        <char_offset>74</char_offset>
+      </citation>
+      <citation>
+        <id>37</id>
+        <reference_id>19</reference_id>
+        <string>McDonald et al. (2005</string>
+        <sentence_id>27278</sentence_id>
+        <char_offset>142</char_offset>
+      </citation>
+      <citation>
+        <id>38</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27265</sentence_id>
+        <char_offset>93</char_offset>
+      </citation>
+      <citation>
+        <id>39</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27291</sentence_id>
+        <char_offset>90</char_offset>
+      </citation>
+      <citation>
+        <id>40</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27291</sentence_id>
+        <char_offset>157</char_offset>
+      </citation>
+      <citation>
+        <id>41</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27292</sentence_id>
+        <char_offset>46</char_offset>
+      </citation>
+      <citation>
+        <id>42</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27193</sentence_id>
+        <char_offset>74</char_offset>
+      </citation>
+      <citation>
+        <id>43</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27198</sentence_id>
+        <char_offset>112</char_offset>
+      </citation>
+      <citation>
+        <id>44</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27246</sentence_id>
+        <char_offset>63</char_offset>
+      </citation>
+      <citation>
+        <id>45</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27324</sentence_id>
+        <char_offset>78</char_offset>
+      </citation>
+      <citation>
+        <id>46</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27325</sentence_id>
+        <char_offset>72</char_offset>
+      </citation>
+      <citation>
+        <id>47</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27337</sentence_id>
+        <char_offset>22</char_offset>
+      </citation>
+      <citation>
+        <id>48</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>27398</sentence_id>
+        <char_offset>144</char_offset>
+      </citation>
+      <citation>
+        <id>49</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al. (2005</string>
+        <sentence_id>27171</sentence_id>
+        <char_offset>10</char_offset>
+      </citation>
+      <citation>
+        <id>50</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al. (2005</string>
+        <sentence_id>27191</sentence_id>
+        <char_offset>74</char_offset>
+      </citation>
+      <citation>
+        <id>51</id>
+        <reference_id>20</reference_id>
+        <string>McDonald et al. (2005</string>
+        <sentence_id>27278</sentence_id>
+        <char_offset>142</char_offset>
+      </citation>
+      <citation>
+        <id>52</id>
+        <reference_id>21</reference_id>
+        <string>Nivre, 2003</string>
+        <sentence_id>27189</sentence_id>
+        <char_offset>164</char_offset>
+      </citation>
+      <citation>
+        <id>53</id>
+        <reference_id>22</reference_id>
+        <string>Och and Ney, 2004</string>
+        <sentence_id>27175</sentence_id>
+        <char_offset>197</char_offset>
+      </citation>
+      <citation>
+        <id>54</id>
+        <reference_id>22</reference_id>
+        <string>Och and Ney, 2004</string>
+        <sentence_id>27387</sentence_id>
+        <char_offset>174</char_offset>
+      </citation>
+      <citation>
+        <id>55</id>
+        <reference_id>23</reference_id>
+        <string>Och et al. (2004)</string>
+        <sentence_id>27387</sentence_id>
+        <char_offset>29</char_offset>
+      </citation>
+      <citation>
+        <id>56</id>
+        <reference_id>24</reference_id>
+        <string>Och, 2003</string>
+        <sentence_id>27350</sentence_id>
+        <char_offset>60</char_offset>
+      </citation>
+      <citation>
+        <id>57</id>
+        <reference_id>25</reference_id>
+        <string>Papineni et al., 2001</string>
+        <sentence_id>27350</sentence_id>
+        <char_offset>105</char_offset>
+      </citation>
+      <citation>
+        <id>58</id>
+        <reference_id>25</reference_id>
+        <string>Papineni et al., 2001</string>
+        <sentence_id>27353</sentence_id>
+        <char_offset>127</char_offset>
+      </citation>
+      <citation>
+        <id>59</id>
+        <reference_id>26</reference_id>
+        <string>Petrov et al., 2008</string>
+        <sentence_id>27391</sentence_id>
+        <char_offset>158</char_offset>
+      </citation>
+      <citation>
+        <id>60</id>
+        <reference_id>27</reference_id>
+        <string>Quirk et al., 2005</string>
+        <sentence_id>27266</sentence_id>
+        <char_offset>141</char_offset>
+      </citation>
+      <citation>
+        <id>61</id>
+        <reference_id>28</reference_id>
+        <string>Ratnaparkhi, 1997</string>
+        <sentence_id>27189</sentence_id>
+        <char_offset>145</char_offset>
+      </citation>
+      <citation>
+        <id>62</id>
+        <reference_id>30</reference_id>
+        <string>Shen et al., 2008</string>
+        <sentence_id>27175</sentence_id>
+        <char_offset>134</char_offset>
+      </citation>
+      <citation>
+        <id>63</id>
+        <reference_id>30</reference_id>
+        <string>Shen et al., 2008</string>
+        <sentence_id>27261</sentence_id>
+        <char_offset>86</char_offset>
+      </citation>
+      <citation>
+        <id>64</id>
+        <reference_id>30</reference_id>
+        <string>Shen et al., 2008</string>
+        <sentence_id>27266</sentence_id>
+        <char_offset>161</char_offset>
+      </citation>
+      <citation>
+        <id>65</id>
+        <reference_id>31</reference_id>
+        <string>Snover et al., 2006</string>
+        <sentence_id>27353</sentence_id>
+        <char_offset>60</char_offset>
+      </citation>
+      <citation>
+        <id>66</id>
+        <reference_id>32</reference_id>
+        <string>Stolcke, 2002</string>
+        <sentence_id>27346</sentence_id>
+        <char_offset>90</char_offset>
+      </citation>
+      <citation>
+        <id>67</id>
+        <reference_id>33</reference_id>
+        <string>Tarjan (1977)</string>
+        <sentence_id>27210</sentence_id>
+        <char_offset>181</char_offset>
+      </citation>
+      <citation>
+        <id>68</id>
+        <reference_id>34</reference_id>
+        <string>Toutanova et al., 2003</string>
+        <sentence_id>27317</sentence_id>
+        <char_offset>87</char_offset>
+      </citation>
+      <citation>
+        <id>69</id>
+        <reference_id>35</reference_id>
+        <string>Vadas and Curran, 2007</string>
+        <sentence_id>27312</sentence_id>
+        <char_offset>76</char_offset>
+      </citation>
+      <citation>
+        <id>70</id>
+        <reference_id>36</reference_id>
+        <string>Wang et al. (2007)</string>
+        <sentence_id>27388</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>71</id>
+        <reference_id>36</reference_id>
+        <string>Wang et al., 2007</string>
+        <sentence_id>27341</sentence_id>
+        <char_offset>90</char_offset>
+      </citation>
+      <citation>
+        <id>72</id>
+        <reference_id>37</reference_id>
+        <string>Wu, 1996</string>
+        <sentence_id>27176</sentence_id>
+        <char_offset>167</char_offset>
+      </citation>
+      <citation>
+        <id>73</id>
+        <reference_id>37</reference_id>
+        <string>Wu, 1996</string>
+        <sentence_id>27180</sentence_id>
+        <char_offset>33</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

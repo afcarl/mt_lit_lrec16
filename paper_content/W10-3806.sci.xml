@@ -1,0 +1,316 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Seeding Statistical Machine Translation with Translation Memory Output through Tree-Based Structural Alignment</TITLE>
+  <AUTHORS>
+    <AUTHOR>Ventsislav Zhechev</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-44243">With the steadily increasing demand for high-quality translation, the localisation industry is constantly searching for technologies that would increase translator throughput, with the current focus on the use of high-quality Statistical Machine Translation (SMT) as a supplement to the established Translation Memory (TM) technology.</A-S>
+    <A-S ID="S-44244">In this paper we present a novel modular approach that utilises state-of-the-art sub-tree alignment to pick out pre-translated segments from a TM match and seed with them an SMT system to produce a final translation.</A-S>
+    <A-S ID="S-44245">We show that the presented system can outperform pure SMT when a good TM match is found.</A-S>
+    <A-S ID="S-44246">It can also be used in a Computer-Aided Translation (CAT) environment to present almost perfect translations to the human user with markup highlighting the segments of the translation that need to be checked manually for correctness.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1. Introduction</HEADER>
+      <P>
+        <S ID="S-44247">As the world becomes increasingly interconnected, the major trend is to try to deliver ideas and products to the widest audience possible.</S>
+        <S ID="S-44248">This requires the localisation of products for as many countries and cultures as possible, with translation being one of the main parts of the localisation process.</S>
+        <S ID="S-44249">Because of this, the amount of data that needs professional high-quality translation is continuing to increase well beyond the capacity of the world&#8217;s human translators.</S>
+        <S ID="S-44250">Thus, current efforts in the localisation industry are mostly directed at the reduction of the amount of data that needs to be translated from scratch by hand.</S>
+        <S ID="S-44251">Such efforts mainly include the use of Translation Memory (TM) systems, where earlier translations are stored in a database and offered as suggestions when new data needs to be translated.</S>
+        <S ID="S-44252">As TM systems were originally limited to providing translations only for (almost) exact matches of the new data, the integration of Machine Translation (MT) techniques is seen as the only feasible development that has the potential to significantly reduce the amount of manual translation required.</S>
+        <S ID="S-44253">At the same time, the use of SMT is frowned upon by the users of CAT tools as they still do not trust the quality of the SMT output.</S>
+        <S ID="S-44254">There are two main reasons for that.</S>
+        <S ID="S-44255">First, currently there is no reliable way to automatically ascertain the quality of SMT-generated translations, so that the user could at a glance make a judgement as to the amount of effort that might be needed to postedit the suggested translation (<REF ID="R-07" RPTR="8">Simard and Isabelle, 2009</REF>).</S>
+        <S ID="S-44256">Not having such automatic quality metrics also has the side effect of it being impossible for a Translation-Services Provider (TSP) company to reliably determine in advance the increase in translator productivity due to the use of MT and to adjust their resources-allocation and cost models correspondingly.</S>
+        <S ID="S-44257">The second major problem for users is that SMTgenerated translations are as a rule only obtained for cases where the TM system could not produce a good-enough translation (cf. <REF ID="R-02" RPTR="2">Heyn, 1996</REF>).</S>
+        <S ID="S-44258">Given that the SMT system used is usually trained only on the data available in the TM, expectedly it also has few examples from which to construct the translation, thus producing low quality output.</S>
+      </P>
+      <P>
+        <S ID="S-44259">in a single integrated tool.</S>
+        <S ID="S-44260">When a new sentence that needs to be translated is supplied, first a Fuzzy-Match Score (FMS &#8211; see Section 2.2) is obtained from the TM backend, together with the suggested matching sentence and its translation.</S>
+        <S ID="S-44261">For sentences that receive a reasonably high FMS, the STA backend is used to find the correspondences between the input sentence and the TM-suggested translation, marking up the parts of the input that are correctly translated by the TM.</S>
+        <S ID="S-44262">The SMT backend is then employed to obtain the final translation from the marked-up input sentence.</S>
+        <S ID="S-44263">In this way we expect to achieve a better result compared to using pure SMT.</S>
+        <S ID="S-44264">In Section 2, we present the technical details of the design of our system, together with motivation for the particular design choices.</S>
+        <S ID="S-44265">Section 3 details the experimental setup and the data set used for the evaluation results in Section 4.</S>
+        <S ID="S-44266">We present improvements that we plan to investigate in further work in Section 5, and provide concluding remarks in Section 6.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2. System Framework</HEADER>
+      <P>
+        <S ID="S-44267">We present a system that uses a TM-match to pre-translate parts of the input sentence and guide an SMT system to the generation of a higher-quality translation.</S>
+      </P>
+      <P>
+        <S ID="S-44268">We are not aware of any published research where TM output is used to improve the performance of an SMT system in a manner similar to the system presented in this paper.</S>
+        <S ID="S-44269">Most closely related to our approach are the systems by <REF ID="R-01" RPTR="1">Bi&#231;ici and Dymetman (2008)</REF> and <REF ID="R-07" RPTR="7">Simard and Isabelle (2009)</REF>, where the authors use the TM output to extract new phrase pairs that supplement the SMT phrase table.</S>
+        <S ID="S-44270">Such an approach, however, does not guarantee that the SMT system will select the TM-motivated phrases even if a heavy bias is applied to them.</S>
+        <S ID="S-44271">Another related system is presented in (<REF ID="R-08" RPTR="9">Smith and Clark, 2009</REF>).</S>
+        <S ID="S-44272">Here the authors use a syntaxbased EBMT system to pre-translate and markup parts of the input sentence and then supply this marked-up input to an SMT system.</S>
+        <S ID="S-44273">This differs to our system in two ways.</S>
+        <S ID="S-44274">First, Smith and Clark use EMBT techniques to obtain partial translations of the input from the complete example base, while we are only looking at the best TM match for the given input.</S>
+        <S ID="S-44275">Second, the authors use dependency structures for EMBT matching, while we employ phrase-based structures.</S>
+        <S ID="S-44276">2.2.</S>
+        <S ID="S-44277">Translation Memory Backend Although the intention is to use a full-scale TM system as the translation memory backend, to have complete control over the process for this initial research we decided to build a simple prototype TM backend ourselves.</S>
+        <S ID="S-44278">We employ a database setup using the PostgreSQL v.8.4.3 1 relational database management (RDBM) system.</S>
+        <S ID="S-44279">The segment pairs from a given TM are stored in this database and assigned unique IDs for further reference.</S>
+        <S ID="S-44280">When a new sentence is supplied for translation, the database is searched for (near) matches, using an FMS based on normalised character-level Levenshtein edit distance (<REF ID="R-04" RPTR="4">Levenshtein, 1965</REF>).</S>
+        <S ID="S-44281">Thus for each input sentence, from the database we obtain the matching segment with the highest FMS, its translation and the score itself.</S>
+      </P>
+      <P>
+        <S ID="S-44282">The system presented in this paper uses phrasebased sub-tree structural alignment (Zhechev, 2010) to discover parts of the input sentence that correspond to parts of the suggested translation extracted from the TM database.</S>
+        <S ID="S-44283">We chose this particular tool, because it can produce aligned phrase-based-tree pairs from unannotated (i.e. unparsed) data.</S>
+        <S ID="S-44284">It can also function fully automatically without the need for any training data.</S>
+        <S ID="S-44285">The only auxiliary requirement it has is for a probabilistic dictionary for the languages that are being aligned.</S>
+        <S ID="S-44286">As described later in this section, in our case this is obtained automatically from the TM data during the training of the SMT backend.</S>
+        <S ID="S-44287">The matching between the input sentence and the TM-suggested translation is done in a threestep process.</S>
+        <S ID="S-44288">First, the plain TM match and its</S>
+      </P>
+      <P>
+        <S ID="S-44289">44 translation are aligned, which produces a subtree-aligned phrase-based tree pair with all nonterminal nodes labelled &#8216;X&#8217; (cf. Zhechev, 2010).</S>
+        <S ID="S-44290">As we are only interested in the relations between the lexical spans of the non-terminal nodes, we can safely ignore their labels.</S>
+        <S ID="S-44291">We call this first step of our algorithm bilingual alignment.</S>
+        <S ID="S-44292">In the second step, called monolingual alignment, the phrase-based tree-annotated version of the TM match is aligned to the unannotated input sentence.</S>
+        <S ID="S-44293">The reuse of the tree structure for the TM match allows us to use it in the third step as an intermediary to establish the available subtree alignments between the input sentence and the translation suggested from the TM.</S>
+        <S ID="S-44294">During this final alignment, we identify matched and mismatched portions of the input sentence and their possible translations in the TM suggestion and, thus, this step is called matching.</S>
+        <S ID="S-44295">Additionally, the sub-tree alignments implicitly provide us with reordering information, telling us where the portions of the input sentence that we translate should be positioned in the final translation.</S>
+        <S ID="S-44296">The alignment process is exemplified in Figure 1.</S>
+        <S ID="S-44297">The tree marked &#8216;I&#8217; corresponds to the input sentence, the one marked &#8216;M&#8217; to the TM match and the one marked &#8216;T&#8217; to the TM translation.</S>
+        <S ID="S-44298">Due to space constraints, we only display the node ID numbers of the non-terminal nodes in the phrasestructure trees &#8212; in reality all nodes carry the label &#8216;X&#8217;.</S>
+        <S ID="S-44299">These IDs are used to identify the subsentential alignment links.</S>
+        <S ID="S-44300">The lexical items corresponding to the leaves of the trees are presented in the table below the graph.</S>
+        <S ID="S-44301">The alignment process can be visually represented as starting at a linked node in the I tree and following the link to the M tree.</S>
+        <S ID="S-44302">Then, if available, we follow the link to the T tree and this leads us to the T-tree node corresponding to the I-tree node we started from.</S>
+        <S ID="S-44303">In Figure 1, this results in the I&#8211;T alignments I1&#8211;T18, I2&#8211;T2, I3&#8211; T1, I4&#8211;T32 and I6&#8211;T34.</S>
+        <S ID="S-44304">The first three links are matches, because the lexical items covered by the I nodes correspond exactly to the lexical items covered by their M node counterparts.</S>
+        <S ID="S-44305">Such alignments provide us with direct TM translations for our input.</S>
+        <S ID="S-44306">The last two links in the group are mismatched, because there is no lexical correspondence between the I and M nodes (node I4 corresponds to the phrase sender email, while the linked node M10 corresponds to sender &#8217;s email).</S>
+        <S ID="S-44307">Such alignments can only be used to infer reordering information.</S>
+        <S ID="S-44308">In particular in this case, we can infer that the target word order for the input sentence is address email sender, which produces the translation adresse &#233;lectronique de l&#8217; exp&#233;diteur.</S>
+      </P>
+      <P>
+        <S ID="S-44309">an input sentence, TM match and TM translation We decided to use sub-tree-based alignment, rather than plain word alignment (e.g. GIZA++ &#8211; <REF ID="R-05" RPTR="5">Och and Ney, 2003</REF>), due to a number of factors.</S>
+        <S ID="S-44310">First, sub-tree-based alignment provides much better handling of long-distance reorderings, while word&#8211; and phrase-based alignment models always have a fixed limit on reordering distance that tends to be relatively low to allow efficient computation.</S>
+        <S ID="S-44311">The alignments produced by a sub-tree alignment model are also precision-oriented, rather than recall-oriented (cf. <REF ID="R-10" RPTR="12">Tinsley, 2010</REF>).</S>
+        <S ID="S-44312">This is important in our case, where we want to only extract those parts of the translation suggested by the TM for which we are most certain that they are good translations.</S>
+        <S ID="S-44313">45 As stated earlier, the only resource necessary for the operation of this system is a probabilistic bilingual dictionary covering the data that needs to be aligned.</S>
+        <S ID="S-44314">For the bilingual alignment step, such a bilingual dictionary is produced as a byproduct of the training of the SMT backend and therefore available.</S>
+        <S ID="S-44315">For the monolingual alignment step, the required probabilistic dictionary is generated by simply listing each unique token seen in the source-language data in the TM as translating only as itself with probability 1.</S>
+      </P>
+      <P>
+        <S ID="S-44316">Once the matching step is completed, we have identified and marked-up the parts of the input sentence for which translations will be extracted from the TM suggestions, as well as the parts that need to be translated from scratch.</S>
+        <S ID="S-44317">The lengths of the non-translated segments vary depending on the FMS, but are in general relatively short (one to three tokens).</S>
+        <S ID="S-44318">The further processing of the input relies on a specific feature of the SMT backend we use, namely the Moses system (<REF ID="R-03" RPTR="3">Koehn et al., 2007</REF>).</S>
+        <S ID="S-44319">We decided to use this particular system as it is the most widely adopted open-source SMT system, both for academic and commercial purposes.</S>
+        <S ID="S-44320">In this approach, we annotate the segments of the input sentence for which translations have been found from the TM suggestion using XML tags with the translation corresponding to each segment given as an attribute to the encapsulating XML tag, similarly to the system described in (<REF ID="R-08" RPTR="10">Smith and Clark, 2009</REF>).</S>
+        <S ID="S-44321">The SMT backend is supplied with marked-up input in the form of a string consisting of the concatenation of the XML-enclosed translated segments and the plain non-translated segments in the targetlanguage word order, as established by the alignment process.</S>
+        <S ID="S-44322">The SMT backend is instructed to translate this input, while keeping the translations supplied via the XML annotation.</S>
+        <S ID="S-44323">This allows the SMT backend to produce translations informed by and conforming to actual examples from the TM, which should result in improvements in translation quality.</S>
+      </P>
+      <P>
+        <S ID="S-44324">It must be noted that in general the SMT backend sees the data it needs to translate in the targetlanguage word order (e.g. it is asked to translate an English sentence that has French word order).</S>
+        <S ID="S-44325">This, however, does not correspond to the data found in the TM, which we use for deriving the SMT models.</S>
+        <S ID="S-44326">Because of this discrepancy, we developed a pre-processing tool that goes over the TM data performing bilingual alignment and outputting reordered versions of the sentences it processes by using the information implicitly encoded in the sub-tree alignments.</S>
+        <S ID="S-44327">In this way we obtain the necessary reordered data to train a translation model where the source language already has the target-language word order.</S>
+        <S ID="S-44328">In our system we than use this model &#8212; together with the proper-word-order model &#8212; for translation.</S>
+        <S ID="S-44329">One specific aspect of real-world TM data that we need to deal with is that they often contain meta-tag annotations of various sorts.</S>
+        <S ID="S-44330">Namely, annotation tags specific to the file format used for storing the TM data, XML tags annotating parts of the text as appearing in Graphical User Interface (GUI) elements, formatting tags specific to the file format the TM data was originally taken from, e.g. RTF, OpenDoc, etc. Letting any MT system try to deal with these tags in a probabilistic manner can easily result in ill-formed, mistranslated and/or out-of-order meta-tags in the translation.</S>
+        <S ID="S-44331">This motivates the implementation of a rudimentary handling of meta-tags in the system presented in this paper, in particular handling the XML tags found in the TM data we work with, as described in Section 3.</S>
+        <S ID="S-44332">The tool we developed for this purpose simply builds a map of all unique XML tags per language and replaces them in the data with short placeholders that are designed in such a way that they would not interfere with the rest of the TM data.</S>
+        <S ID="S-44333">2 A special case that the tool has to take care of is when an XML tag contains an attribute whose value needs to be translated.</S>
+        <S ID="S-44334">In such situations, we decided to not perform any processing, but rather leave the XML tag as is, so that all text may be translated as needed.</S>
+        <S ID="S-44335">A complete treatment of meta-tags, however, is beyond the scope of the current paper.</S>
+        <S ID="S-44336">2 In the current implementation, the XML tags are replaced with the string apple&lt;tag_id&gt;apple, where &lt;tag_id&gt; is a unique numeric identifier for the XML tag that is being replaced.</S>
+        <S ID="S-44337">46 We also had to build a dedicated tokeniser/detokeniser pair to handle real world TM data containing meta-tags, e-mail addresses, file paths, etc., as described in Section 3.</S>
+        <S ID="S-44338">Both tools are implemented as a cascade of regular expression substitutions in Perl.</S>
+        <S ID="S-44339">Finally, we use a tool to extract the textual data from the TM.</S>
+        <S ID="S-44340">That is, we strip all tags specific to the format in which the TM is stored, as they can in general be recreated and thus do not need to be present during translation.</S>
+        <S ID="S-44341">In our particular case the TM is stored in the XML-based TMX format.</S>
+        <S ID="S-44342">3</S>
+      </P>
+      <P>
+        <S ID="S-44343">Besides the components described above, we also performed two further transformations on the data.</S>
+        <S ID="S-44344">First, we lowercase the TM data before using it to train the SMT backend models.</S>
+        <S ID="S-44345">This also means that the alignment steps from Section 2.3 are performed on lowercased data, as the bilingual dictionary used there is obtained during the SMT training process.</S>
+        <S ID="S-44346">4 Additionally, the SMT and sub-tree alignment systems that we use cannot handle certain characters, which we need to mask in the data.</S>
+        <S ID="S-44347">For the SMT backend, this includes &#8216;|&#8217;, &#8216;&lt;&#8217; and &#8216;&gt;&#8217; and for the sub-tree aligner, &#8216;(&#8217; and &#8216;)&#8217;.</S>
+        <S ID="S-44348">The reason these characters cannot be handled is that the SMT system uses &#8216;|&#8217; internally to separate data fields in the trained models and &#8216;&lt;&#8217; and &#8216;&gt;&#8217; cannot be handled whilst using XML tags to annotate pre-translated portions of the input.</S>
+        <S ID="S-44349">The subtree aligner uses &#8216;(&#8217; and &#8216;)&#8217; to represent the phrase-based tree structures it generates and the presence of these characters in the data may create ambiguity when parsing the tree structures.</S>
+        <S ID="S-44350">All these characters are masked by substituting in high-Unicode counterparts, namely &#8216;&#9474;&#8217;, &#8216;&#65533;&#8217;, &#8216;&#65533;&#8217;, &#8216;&#65533;&#8217; and &#8216;&#65533;&#8217;.</S>
+        <S ID="S-44351">Visually, there is a very slight distinction and this is intentionally so to simplify debugging.</S>
+        <S ID="S-44352">However, the fact that the character codes are different alleviates the problems discussed above.</S>
+        <S ID="S-44353">Of course, in the final output, the masking is reversed and the translation contains the regular versions of the characters.</S>
+      </P>
+      <P>
+        <S ID="S-44354">The complete pre-processing workflow is presented in Figure 2, where the rectangles with vertical bars represent the use of open-source tools, while the plain rectangles represent tools developed by the authors of this paper.</S>
+        <S ID="S-44355">First, the textual data is extracted from the original TM format, producing one plain-text file for each language side.</S>
+        <S ID="S-44356">These data can either be pre-loaded in a PostgreSQL database at this time, or during the first run of the translation system.</S>
+        <S ID="S-44357">Next, the meta-tag-handling tool is used to generate the substitution tables for the source and target languages, as well as new files for each language with the tags substituted by the corresponding identifiers (cf. Section 2.5).</S>
+        <S ID="S-44358">These files are then tokenised, lowercased and all conflicting characters are masked, as described above.</S>
+        <S ID="S-44359">The pre-processed files are then used to produce a file containing pairs of sentences in the input format of the sub-tree aligner, as well as to generate the probabilistic dictionary required for</S>
+      </P>
+      <P>
+        <S ID="S-44360">will be added in a future version of the system.</S>
+        <S ID="S-44361">47 the monolingual alignment and to train the SMT model on the data in the proper word order.</S>
+        <S ID="S-44362">The SMT training produces the necessary bilingual dictionary for use by the sub-tree aligner, which is run to obtain a parallel-treebank version of the TM data.</S>
+        <S ID="S-44363">The parallel treebank is then used to retrieve bilingual alignments for the TM data, rather than generate them on the fly during translation.</S>
+        <S ID="S-44364">This is an important design decision, as the complexity of the alignment algorithm is high for plain-text alignment (cf. Zhechev, 2010).</S>
+        <S ID="S-44365">Once we have generated the bilingual parallel treebank, we run the reordering tool, which generates a new plain-text file for the source language, where the sentences are modified to conform to the target-language word order, as implied by the data in the parallel treebank.</S>
+        <S ID="S-44366">This is then matched with the proper-order targetlanguage file to train the SMT backend for the actual use in the translation process.</S>
+      </P>
+      <P>
+        <S ID="S-44367">Once all the necessary files have been generated and all pre-processing steps have been completed, the system is ready for use for translation.</S>
+        <S ID="S-44368">The translation workflow is shown in Figure 3, &#8216;I&#8217;, &#8216;M&#8217; and &#8216;T&#8217; having the same meanings as in Figure 1.</S>
+        <S ID="S-44369">Here, the first step after an input sentence has been read in is to find the TM match with the highest FMS.</S>
+        <S ID="S-44370">This is done using the original plain non-pre-processed data to simulate real-life operation with a proper TM backend.</S>
+        <S ID="S-44371">After the best TM match and its translation are extracted from the TM, they &#8212; together with the input sentence &#8212; are pre-processed by tokenisation, lowercasing, meta-tag and special-character substitution.</S>
+        <S ID="S-44372">Next, the corresponding tree pair is extracted from the bilingual parallel treebank to establish the tree structure for the TM sourcelanguage match.</S>
+        <S ID="S-44373">This tree structure is then used to perform the monolingual alignment, which allows us to perform the matching step next.</S>
+        <S ID="S-44374">After the matching is complete, we generate a final translation as described in Section 2.4.</S>
+        <S ID="S-44375">Finally, the translations are de-tokenised and the XML tags and special characters are unmasked.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3. Experimental Setup</HEADER>
+      <P>
+        <S ID="S-44376">We use real-life TM data from an industrial partner.</S>
+        <S ID="S-44377">The TM was generated during the translation of RTF-formatted customer support documentation.</S>
+        <S ID="S-44378">The data is in TMX format and originally contains 108 967 English&#8211;French translation segments, out of which 14 segments either have an empty language side or have an extreme discrepancy in the number of tokens for each language side and were therefore discarded.</S>
+        <S ID="S-44379">A particular real-life trait of the data is the presence of a large number of XML tags.</S>
+        <S ID="S-44380">Running the tag-mapping tool described in Section 2.6, we gathered 2 049 distinct tags for the English side of the data and 2 653 for the French side.</S>
+        <S ID="S-44381">Still, there were certain XML tags that included a label argument whose value was translated from one language to the other.</S>
+        <S ID="S-44382">These XML tags were left intact so that our system could handle the translation correctly.</S>
+        <S ID="S-44383">The TM data also contain a large number of file paths, e-mail addresses, URLs and others, which makes bespoke tokenisation of the data necessary.</S>
+        <S ID="S-44384">Our tokenisation tool ensures that none of these elements are tokenised, keeps RTF formatting sequences non-tokenised and properly handles non-masked XML tags, minimising their fragmentation.</S>
+        <S ID="S-44385">As translation segments rarely occur more than once in a TM, we observe a high number of unique tokens (measured after pre-processing) &#8212; 41 379 for English and 49 971 for French &#8212; out of 48 108 953 segment pairs.</S>
+        <S ID="S-44386">The average sentence length is 13.2 for English and 15.0 for French.</S>
+        <S ID="S-44387">For evaluation, we use a data set of 4977 English&#8211;French segments from the domain of the TM.</S>
+        <S ID="S-44388">The sentences in the test set are significantly shorter on average, compared to the TM &#8212; 9.2 tokens for English and 10.9 for French.</S>
+        <S ID="S-44389">It must be noted that we used SMT models with maximum phrase length of 3 tokens, rather than the standard 5 tokens, and for decoding we used a 3-gram language model.</S>
+        <S ID="S-44390">This results in much smaller models than the ones usually used in mainstream SMT applications.</S>
+        <S ID="S-44391">(The standard for some tools goes as far as 7-token phaselength limit and 7-gram language models)</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4. Evaluation Results</HEADER>
+      <P>
+        <S ID="S-44392">For the evaluation of our system, we used a number of widely accepted automatic metrics, namely BLEU (<REF ID="R-06" RPTR="6">Papineni et al., 2002</REF>), METEOR (<REF ID="R-00" RPTR="0">Banerjee and Lavie, 2005</REF>), TER (<REF ID="R-09" RPTR="11">Snover et al., 2006</REF>) and inverse F-Score based on token-level precision and recall.</S>
+        <S ID="S-44393">We setup our system to only fully process input sentences for which a TM match with an FMS over 50% was found, although all sentences were translated directly using the SMT backend to check the overall pure SMT performance.</S>
+        <S ID="S-44394">The TM-suggested translations were also output for all input sentences.</S>
+        <S ID="S-44395">The results of the evaluation are given in Figure 4, where the tm and direct scores are also given for the FMS range [0%; 50%)&#8746;{100%}.</S>
+        <S ID="S-44396">Across all metrics we see a uniform drop in the quality of TM-suggested translations, which is what we expected, given that these translations contain one or more wrong words.</S>
+        <S ID="S-44397">We believe that the relatively high scores recorded for the TM-suggested translations at the high end of the FMS scale are a result of the otherwise perfect word order and lexical choice.</S>
+        <S ID="S-44398">For n-grammatch-based metrics like the ones we used such a result is expected and predictable.</S>
+        <S ID="S-44399">Although the inverse F-score results show the potential of our setup to translate the outstanding tokens in a 90%&#8211;100% TM match, it appears that the SMT system produces word order that does not correspond to the reference translation and because of this receives lower scores on the other metrics.</S>
+        <S ID="S-44400">The unexpected drop in scores for perfect TM matches is due to discrepancies between the reference translations in our test set and the translations stored in the TM.</S>
+        <S ID="S-44401">We believe that this issue</S>
+      </P>
+      <P>
+        <S ID="S-44402">for non-perfect matches.</S>
+        <S ID="S-44403">Unfortunately, the exact impact cannot be ascertained without human evaluation.</S>
+        <S ID="S-44404">We observe a significant drop-off in translation quality for the direct output below FMS 50%.</S>
+        <S ID="S-44405">This suggests that sentences with such low FMS should be translated either by a human translator from scratch, or by an SMT system trained on different/more data.</S>
+        <S ID="S-44406">Our system (i.e. the xml setup) clearly outperforms the direct SMT translation for FMS between 80 and 100 and has comparable performance between FMS 70 and 80.</S>
+        <S ID="S-44407">Below FMS 70, the SMT backend has the best performance.</S>
+        <S ID="S-44408">Although these results are positive, we still need to investigate why our system has poor performance at lower FMS ranges.</S>
+        <S ID="S-44409">Theoretically, it should outperform the SMT backend across all ranges, as its output is generated by supplying the SMT backend with good pre-translated fragments.</S>
+        <S ID="S-44410">The Inverse F-Score graph suggest that this is due to worse lexical choice, but only manual evaluation can provide us with clues for solving the issue.</S>
+        <S ID="S-44411">The discrepancy in the results in the Inverse F- Score graph with the other metrics suggest that the biggest problem for our system is producing output in the expected word-order.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5. Future Work</HEADER>
+      <P>
+        <S ID="S-44412">There are a number of possible directions for improvement that can be explored.</S>
+        <S ID="S-44413">As mentioned earlier, we plan to integrate our system with a full-featured open-source or commercial TM product that will supply the TM matches and translations.</S>
+        <S ID="S-44414">We expect this to improve our results, as the quality of the TM matches will better correspond to the reported FMS.</S>
+        <S ID="S-44415">Such an integration will also be the first necessary step to perform a user study evaluating the effect of the use of our system on post-editing speeds.</S>
+        <S ID="S-44416">We expect the findings of such a study to show a significant increase of throughput that will significantly reduce the costs of translation for large-scale projects.</S>
+        <S ID="S-44417">It would be interesting to also conduct a user study where our system is used to additionally mark up the segments that need to be edited in the final SMT translation.</S>
+        <S ID="S-44418">We expect this to provide additional speedup to the post-editing process.</S>
+        <S ID="S-44419">Such a study will require tight integration between our system and a CAT tool and the modular design we presented will facilitate this significantly.</S>
+        <S ID="S-44420">The proposed treatment of meta-tags is currently very rudimentary and may be extended with additional features and to handle additional types of tags.</S>
+        <S ID="S-44421">The design of our system currently allows the meta-tag-handling tool to be developed independently, thus giving the user the choice of using a different meta-tag tool for each type of data they work with.</S>
+        <S ID="S-44422">In addition, the reordering tool needs to be developed further, with emphasis on properly handling situations where the appropriate position of an input-sentence segment cannot be reliably established.</S>
+        <S ID="S-44423">In general, further research is needed into the reordering errors introduced by the SMT system into otherwise good translations.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6. Conclusions</HEADER>
+      <P>
+        <S ID="S-44424">In this paper, we presented a novel modular approach to the utilisation of Translation Memory data to improve the quality of Statistical Machine Translation.</S>
+        <S ID="S-44425">The system we developed uses precise subtree-based alignments to reliably determine and mark up correspondences between an input sentence and a TM-suggested translation, which ensures the utilisation of the high-quality translation data stored in the TM database.</S>
+        <S ID="S-44426">An SMT backend then translates the marked-up input sentence to produce a final translation with improved quality.</S>
+        <S ID="S-44427">Our evaluation shows that the system presented in this paper significantly improves the quality of SMT output when using TM matches with FMS above 80 and produces results on par with the pure SMT output for SMT between 70 and 80.</S>
+        <S ID="S-44428">TM matches with FMS under 70 seem to provide insufficient reordering information and too few matches to improve on the SMT output.</S>
+        <S ID="S-44429">Still, further investigation is needed to properly diagnose the drop in quality for FMS below 70.</S>
+        <S ID="S-44430">We expect further improvements to the reordering functionality of our system to result in higher-quality output even for lower FMS ranges.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-44431">This research is funded under the 7 th Framework Programme of the European Commission within the EuroMatrixPlus project (grant &#8470; 231720).</S>
+      <S ID="S-44432">The data used for evaluation was generously provided by Symantec Ireland.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Satanjeev Banerjee</RAUTHOR>
+      <REFTITLE>METEOR: An Automatic Metric for MT Evaluation with Improved Correlation with Human Judgements.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Ergun Bi&#231;ici</RAUTHOR>
+      <REFTITLE>Dynamic Translation Memory: Using Statistical Machine Translation to improve Translation Memory Fuzzy Matches.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Matthias Heyn</RAUTHOR>
+      <REFTITLE>Integrating Machine Translation into Translation Memory Systems.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Ond&#345;ej Bojar, Alexandra Constantin and Evan Herbst.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Vladimir I Levenshtein</RAUTHOR>
+      <REFTITLE>&#1044;&#1074;&#1086;&#1080;&#1095;&#1085;&#1099;&#1077; &#1082;&#1086;&#1076;&#1099; &#1089; &#1080;&#1089;&#1087;&#1088;&#1072;&#1074;&#1083;&#1077;&#1085;&#1080;&#1077;&#1084; &#1074;&#1099;&#1087;&#1072;&#1076;&#1077;&#1085;&#1080;&#1081;, &#1074;&#1089;&#1090;&#1072;&#1074;&#1086;&#1082; &#1080; &#1079;&#1072;&#1084;&#1077;&#1097;&#1077;&#1085;&#1080;&#1081; &#1089;&#1080;&#1084;&#1074;&#1086;&#1083;&#1086;&#1074; (Binary Codes Capable of Correcting Deletions, Insertions, and Reversals). &#1044;&#1086;&#1082;&#1083;&#1072;&#1076;&#1099; &#1040;&#1082;&#1072;&#1076;&#1077;&#1084;&#1080;&#1081; &#1053;&#1072;&#1091;&#1082; &#1057;&#1057;&#1057;&#1056;,</REFTITLE>
+      <DATE>1965</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>reprinted in: Soviet Physics Doklady,</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: A Method for Automatic Evaluation of Machine Translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Michel Simard</RAUTHOR>
+      <REFTITLE>Phrasebased Machine Translation in a Computer-assisted Translation Environment.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>James Smith</RAUTHOR>
+      <REFTITLE>EBMT for SMT: A New EBMT&#8211;SMT Hybrid.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Matthew Snover</RAUTHOR>
+      <REFTITLE>A Study of Translation Edit Rate with Targeted Human Annotation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>John Tinsley</RAUTHOR>
+      <REFTITLE>Resourcing Machine Translation with Parallel Treebanks. School of Computing, Dublin City Univercity: PhD Thesis.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

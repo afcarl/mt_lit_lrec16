@@ -1,0 +1,759 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Smaller Alignment Models for Better Translations: Unsupervised Word Alignment with the l 0 -norm</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-34626">Two decades after their invention, the IBM word-based translation models, widely available in the GIZA++ toolkit, remain the dominant approach to word alignment and an integral part of many statistical translation systems.</A-S>
+    <A-S ID="S-34627">Although many models have surpassed them in accuracy, none have supplanted them in practice.</A-S>
+    <A-S ID="S-34628">In this paper, we propose a simple extension to the IBM models: an l 0 prior to encourage sparsity in the word-to-word translation model.</A-S>
+    <A-S ID="S-34629">We explain how to implement this extension efficiently for large-scale data (also released as a modification to GIZA++) and demonstrate, in experiments on Czech, Arabic, Chinese, and Urdu to English translation, significant improvements over IBM Model 4 in both word alignment (up to +6.7 F1) and translation quality (up to +1.4 Bleu).</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-34630">Automatic word alignment is a vital component of nearly all current statistical translation pipelines.</S>
+        <S ID="S-34631">Although state-of-the-art translation models use rules that operate on units bigger than words (like phrases or tree fragments), they nearly always use word alignments to drive extraction of those translation rules.</S>
+        <S ID="S-34632">The dominant approach to word alignment has been the IBM models (<REF ID="R-05" RPTR="5">Brown et al., 1993</REF>) together with the HMM model (<REF ID="R-25" RPTR="41">Vogel et al., 1996</REF>).</S>
+        <S ID="S-34633">These models are unsupervised, making them applicable to any language pair for which parallel text is available.</S>
+        <S ID="S-34634">Moreover, they are widely disseminated in the open-source GIZA++ toolkit (<REF ID="R-19" RPTR="26">Och and Ney, 2004</REF>).</S>
+        <S ID="S-34635">These properties make them the default choice for most statistical MT systems.</S>
+      </P>
+      <P>
+        <S ID="S-34636">In the decades since their invention, many models have surpassed them in accuracy, but none has supplanted them in practice.</S>
+        <S ID="S-34637">Some of these models are partially supervised, combining unlabeled parallel text with manually-aligned parallel text (<REF ID="R-18" RPTR="25">Moore, 2005</REF>; <REF ID="R-23" RPTR="36">Taskar et al., 2005</REF>; <REF ID="R-20" RPTR="27">Riesa and Marcu, 2010</REF>).</S>
+        <S ID="S-34638">Although manually-aligned data is very valuable, it is only available for a small number of language pairs.</S>
+        <S ID="S-34639">Other models are unsupervised like the IBM models (<REF ID="R-15" RPTR="20">Liang et al., 2006</REF>; <REF ID="R-12" RPTR="14">Gra&#231;a et al., 2010</REF>; <REF ID="R-10" RPTR="10">Dyer et al., 2011</REF>), but have not been as widely adopted as GIZA++ has.</S>
+      </P>
+      <P>
+        <S ID="S-34640">In this paper, we propose a simple extension to the IBM/HMM models that is unsupervised like the IBM models, is as scalable as GIZA++ because it is implemented on top of GIZA++, and provides significant improvements in both alignment and translation quality.</S>
+        <S ID="S-34641">It extends the IBM/HMM models by incorporating an l 0 prior, inspired by the principle of minimum description length (<REF ID="R-00" RPTR="0">Barron et al., 1998</REF>), to encourage sparsity in the word-to-word translation model (Section 2.2).</S>
+        <S ID="S-34642">This extension follows our previous work on unsupervised part-ofspeech tagging (<REF ID="R-24" RPTR="37">Vaswani et al., 2010</REF>), but enables it to scale to the large datasets typical in word alignment, using an efficient training method based on projected gradient descent (Section 2.3).</S>
+        <S ID="S-34643">Experiments on Czech-, Arabic-, Chinese- and Urdu- English translation (Section 3) demonstrate consistent significant improvements over IBM Model 4 in both word alignment (up to +6.7 F1) and translation quality (up to +1.4 Bleu).</S>
+        <S ID="S-34644">Our implementation has been released as a simple modification to the GIZA++ toolkit that can be used as a drop-in replacement for GIZA++ in any existing MT pipeline.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Method</HEADER>
+      <P>
+        <S ID="S-34774">We start with a brief review of the IBM and HMM word alignment models, then describe how to extend them with a smoothed l 0 prior and how to efficiently train them.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 IBM Models and HMM</HEADER>
+        <P>
+          <S ID="S-34645">Given a French string f = f 1 &#183; &#183; &#183; f j &#183; &#183; &#183; f m and an English string e = e 1 &#183; &#183; &#183; e i &#183; &#183; &#183; e l , these models describe the process by which the French string is generated by the English string via the alignment a = a 1 , .</S>
+          <S ID="S-34646">.</S>
+          <S ID="S-34647">.</S>
+          <S ID="S-34648">, a j , .</S>
+          <S ID="S-34649">.</S>
+          <S ID="S-34650">.</S>
+          <S ID="S-34651">, a m .</S>
+          <S ID="S-34652">Each a j is a hidden variables, indicating which English word e a j the French word f j is aligned to.</S>
+        </P>
+        <P>
+          <S ID="S-34653">In IBM Model 1&#8211;2 and the HMM model, the joint probability of the French sentence and alignment given the English sentence is</S>
+        </P>
+        <P>
+          <S ID="S-34654">P(f, a | e) = m&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-34655">d(a j | a j&#8722;1 , j)t( f j | e a j ).</S>
+          <S ID="S-34656">(1)</S>
+        </P>
+        <P>
+          <S ID="S-34657">j=1</S>
+        </P>
+        <P>
+          <S ID="S-34658">The parameters of these models are the distortion probabilities d(a j | a j&#8722;1 , j) and the translation probabilities t( f j | e a j ).</S>
+          <S ID="S-34659">The three models differ in their estimation of d, but the differences do not concern us here.</S>
+          <S ID="S-34660">All three models, as well as IBM Models 3&#8211;5, share the same t.</S>
+          <S ID="S-34661">For further details of these models, the reader is referred to the original papers describing them (<REF ID="R-05" RPTR="6">Brown et al., 1993</REF>; <REF ID="R-25" RPTR="42">Vogel et al., 1996</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-34662">Let &#952; stand for all the parameters of the model.</S>
+          <S ID="S-34663">The standard training procedure is to find the parameter values that maximize the likelihood, or, equivalently, minimize the negative log-likelihood of the observed data:</S>
+        </P>
+        <P>
+          <S ID="S-34664">This is done using the Expectation-Maximization (EM) algorithm (<REF ID="R-08" RPTR="9">Dempster et al., 1977</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 MAP-EM with the l 0 -norm</HEADER>
+        <P>
+          <S ID="S-34665">Maximum likelihood training is prone to overfitting, especially in models with many parameters.</S>
+          <S ID="S-34666">In word alignment, one well-known manifestation of overfitting is that rare words can act as &#8220;garbage collectors&#8221;</S>
+        </P>
+        <P>
+          <S ID="S-34667">a</S>
+        </P>
+        <P>
+          <S ID="S-34668">(<REF ID="R-17" RPTR="22">Moore, 2004</REF>), aligning to many unrelated words.</S>
+          <S ID="S-34669">This hurts alignment precision and rule-extraction recall.</S>
+          <S ID="S-34670">Previous attempted remedies include early stopping, smoothing (<REF ID="R-17" RPTR="23">Moore, 2004</REF>), and posterior regularization (<REF ID="R-12" RPTR="15">Gra&#231;a et al., 2010</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-34671">We have previously proposed another simple remedy to overfitting in the context of unsupervised part-of-speech tagging (<REF ID="R-24" RPTR="38">Vaswani et al., 2010</REF>), which is to minimize the size of the model using a smoothed l 0 prior.</S>
+          <S ID="S-34672">Applying this prior to an HMM improves tagging accuracy for both Italian and English.</S>
+        </P>
+        <P>
+          <S ID="S-34673">Here, our goal is to apply a similar prior in a word-alignment model to the word-to-word translation probabilities t( f | e).</S>
+          <S ID="S-34674">We leave the distortion models alone, since they are not very large, and there is not much reason to believe that we can profit from compacting them.</S>
+        </P>
+        <P>
+          <S ID="S-34675">With the addition of the l 0 prior, the MAP (maximum a posteriori) objective function is</S>
+        </P>
+        <P>
+          <S ID="S-34676">where</S>
+        </P>
+        <P>
+          <S ID="S-34677">and</S>
+        </P>
+        <P>
+          <S ID="S-34678">( ) &#710;&#952; = arg min &#8722; log P(f | e, &#952;)P(&#952;)</S>
+        </P>
+        <P>
+          <S ID="S-34679">&#952;</S>
+        </P>
+        <P>
+          <S ID="S-34680">P(&#952;) &#8733; exp ( &#8722;&#945;&#8214;&#952;&#8214; &#946; 0</S>
+        </P>
+        <P>
+          <S ID="S-34681">&#8214;&#952;&#8214; &#946; 0 = &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-34682">e, f</S>
+        </P>
+        <P>
+          <S ID="S-34683">)</S>
+        </P>
+        <P>
+          <S ID="S-34684">( 1 &#8722; exp ) &#8722;t( f | e)</S>
+        </P>
+        <P>
+          <S ID="S-34685">&#946;</S>
+        </P>
+        <P>
+          <S ID="S-34686">(4)</S>
+        </P>
+        <P>
+          <S ID="S-34687">(5)</S>
+        </P>
+        <P>
+          <S ID="S-34688">(6)</S>
+        </P>
+        <P>
+          <S ID="S-34689">is a smoothed approximation of the l 0 -norm.</S>
+          <S ID="S-34690">The hyperparameter &#946; controls the tightness of the approximation, as illustrated in Figure 1.</S>
+          <S ID="S-34691">Substituting back into (4) and dropping constant terms, we get the following optimization problem: minimize</S>
+        </P>
+        <P>
+          <S ID="S-34692">&#8721; &#8722; log P(f | e, &#952;) &#8722; &#945; exp</S>
+        </P>
+        <P>
+          <S ID="S-34693">e, f</S>
+        </P>
+        <P>
+          <S ID="S-34694">&#8722;t( f | e) &#946; (7)</S>
+        </P>
+        <P>
+          <S ID="S-34695">f</S>
+        </P>
+        <P>
+          <S ID="S-34696">We can carry out the optimization in (7) with the MAP-EM algorithm (<REF ID="R-02" RPTR="2">Bishop, 2006</REF>).</S>
+          <S ID="S-34697">EM and MAP- EM share the same E-step; the difference lies in the</S>
+        </P>
+        <P>
+          <S ID="S-34698">0.8</S>
+        </P>
+        <P>
+          <S ID="S-34699">0.6</S>
+        </P>
+        <P>
+          <S ID="S-34700">0.4</S>
+        </P>
+        <P>
+          <S ID="S-34701">0.2</S>
+        </P>
+        <P>
+          <S ID="S-34702">0</S>
+        </P>
+        <P>
+          <S ID="S-34703">0 0.2 0.4 0.6 0.8 1</S>
+        </P>
+        <P>
+          <S ID="S-34704">(10); we seek to minimize this function.</S>
+          <S ID="S-34705">As in previous work (<REF ID="R-24" RPTR="39">Vaswani et al., 2010</REF>), we optimize each set of parameters {t(&#183; | e)} separately for each English word type e. The inputs to the PGD are the expected counts E[C(e, f )] and the current word-toword conditional probabilities &#952;.</S>
+          <S ID="S-34706">We run PGD for K iterations, producing a sequence of intermediate parameter vectors &#952; 1 , .</S>
+          <S ID="S-34707">.</S>
+          <S ID="S-34708">.</S>
+          <S ID="S-34709">, &#952; k , .</S>
+          <S ID="S-34710">.</S>
+          <S ID="S-34711">.</S>
+          <S ID="S-34712">, &#952; K .</S>
+          <S ID="S-34713">Each iteration has two steps, a projection step and a line search.</S>
+        </P>
+        <P>
+          <S ID="S-34714">Projection step In this step, we compute:</S>
+        </P>
+        <P>
+          <S ID="S-34715">&#952; k = [ &#952; k &#8722; s&#8711;F(&#952; k ) ] &#8710; (11)</S>
+        </P>
+        <P>
+          <S ID="S-34716">M-step.</S>
+          <S ID="S-34717">For vanilla EM, the M-step is: &#9115; &#9118;</S>
+        </P>
+        <P>
+          <S ID="S-34718">&#8721; &#710;&#952; = arg min &#9116;&#9117; &#8722; E[C(e, f )] log t( f | e) &#9119;&#9120;</S>
+        </P>
+        <P>
+          <S ID="S-34719">&#952; e, f</S>
+        </P>
+        <P>
+          <S ID="S-34720">(9)</S>
+        </P>
+        <P>
+          <S ID="S-34721">again subject to the constraints (8).</S>
+          <S ID="S-34722">The count C(e, f ) is the number of times that f occurs aligned to e. For MAP-EM, it is:</S>
+        </P>
+        <P>
+          <S ID="S-34723">&#710;&#952; = arg min</S>
+        </P>
+        <P>
+          <S ID="S-34724">&#952;</S>
+        </P>
+        <P>
+          <S ID="S-34725">( &#8721; &#8722; E[C(e, f )] log t( f | e) &#8722;</S>
+        </P>
+        <P>
+          <S ID="S-34726">e, f</S>
+        </P>
+        <P>
+          <S ID="S-34727">&#8721; &#945; exp</S>
+        </P>
+        <P>
+          <S ID="S-34728">e, f</S>
+        </P>
+        <P>
+          <S ID="S-34729">) (10) &#8722;t( f | e)</S>
+        </P>
+        <P>
+          <S ID="S-34730">&#946;</S>
+        </P>
+        <P>
+          <S ID="S-34731">This optimization problem is non-convex, and we do not know of a closed-form solution.</S>
+          <S ID="S-34732">Previously (<REF ID="R-24" RPTR="40">Vaswani et al., 2010</REF>), we used ALGENCAN, a nonlinear optimization toolkit, but this solution does not scale well to the number of parameters involved in word alignment models.</S>
+          <S ID="S-34733">Instead, we use a simpler and more scalable method which we describe in the next section.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Projected gradient descent</HEADER>
+        <P>
+          <S ID="S-34734">Following <REF ID="R-21" RPTR="28">Schoenemann (2011</REF><REF ID="R-22" RPTR="32">Schoenemann (2011</REF>b), we use projected gradient descent (PGD) to solve the M-step (but with the l 0 -norm instead of the l 1 -norm).</S>
+          <S ID="S-34735">Gradient projection methods are attractive solutions to constrained optimization problems, particularly when the constraints on the parameters are simple (<REF ID="R-01" RPTR="1">Bertsekas, 1999</REF>).</S>
+          <S ID="S-34736">Let F(&#952;) be the objective function in This moves &#952; in the direction of steepest descent (&#8711;F) with step size s, and then the function [&#183;] &#8710; projects the resulting point onto the simplex; that is, it finds the nearest point that satisfies the constraints (8).</S>
+        </P>
+        <P>
+          <S ID="S-34737">The gradient &#8711;F(&#952; k ) is</S>
+        </P>
+        <P>
+          <S ID="S-34738">&#8706;F E[C( f, e)] = &#8722; + &#945; &#8722;t( f | e) exp &#8706;t( f | e) t( f | e) &#946; &#946; (12)</S>
+        </P>
+        <P>
+          <S ID="S-34739">In contrast to <REF ID="R-21" RPTR="29">Schoenemann (2011</REF><REF ID="R-22" RPTR="33">Schoenemann (2011</REF>b), we use an O(n log n) algorithm for the projection step due to Duchi et.</S>
+          <S ID="S-34740">al. (2008), shown in Pseudocode 1.</S>
+        </P>
+        <P>
+          <S ID="S-34741">Pseudocode 1 Project input vector u &#8712; R n onto the probability simplex.</S>
+        </P>
+        <P>
+          <S ID="S-34742">v = u sorted in non-increasing order &#961; = 0 for i = 1 to n do (&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-34743">if v i &#8722; 1 ir=1</S>
+        </P>
+        <P>
+          <S ID="S-34744">i</S>
+        </P>
+        <P>
+          <S ID="S-34745">v r &#8722; 1 ) &gt; 0 then</S>
+        </P>
+        <P>
+          <S ID="S-34746">&#961; = i</S>
+        </P>
+        <P>
+          <S ID="S-34747">end if end for (&#8721; &#951; = 1 &#961;</S>
+        </P>
+        <P>
+          <S ID="S-34748">&#961; r=1 v r &#8722; 1 )</S>
+        </P>
+        <P>
+          <S ID="S-34749">w r = max{v r &#8722; &#951;, 0} for 1 &#8804; r &#8804; n return w</S>
+        </P>
+        <P>
+          <S ID="S-34750">Line search Next, we move to a point between &#952; k and &#952; k that satisfies the Armijo condition,</S>
+        </P>
+        <P>
+          <S ID="S-34751">F(&#952; k + &#948; m ) &#8804; F(&#952; k ) + &#963; ( &#8711;F(&#952; k ) &#183; &#948; m )</S>
+        </P>
+        <P>
+          <S ID="S-34752">(13)</S>
+        </P>
+        <P>
+          <S ID="S-34753">where &#948; m = &#947; m (&#952; k &#8722; &#952; k ) and &#963; and &#947; are both constants in (0, 1).</S>
+          <S ID="S-34754">We try values m = 1, 2, .</S>
+          <S ID="S-34755">.</S>
+          <S ID="S-34756">.</S>
+          <S ID="S-34757">until the Armijo condition (13) is satisfied or the limit m = 20</S>
+        </P>
+        <P>
+          <S ID="S-34758">Pseudocode 2 Find a point between &#952; k and &#952; k that satisfies the Armijo condition.</S>
+        </P>
+        <P>
+          <S ID="S-34759">F min = F(&#952; k ) &#952; min = &#952; k for m = 1 to( 20 do) &#948; m = &#947; m &#952; k &#8722; &#952; k</S>
+        </P>
+        <P>
+          <S ID="S-34760">if F(&#952; k + &#948; m ) &lt; F min then F min = F(&#952; k + &#948; m ) &#952; min = &#952; k + &#948; m</S>
+        </P>
+        <P>
+          <S ID="S-34761">end if if F(&#952; k + &#948; m ) &#8804; F(&#952; k ) + &#963; ( &#8711;F(&#952; k ) &#183; &#948; m )</S>
+        </P>
+        <P>
+          <S ID="S-34762">then</S>
+        </P>
+        <P>
+          <S ID="S-34763">break</S>
+        </P>
+        <P>
+          <S ID="S-34764">end if end for &#952; k+1 = &#952; min return &#952; k+1</S>
+        </P>
+        <P>
+          <S ID="S-34765">is reached.</S>
+          <S ID="S-34766">(Note that we don&#8217;t allow m = 0 because this can cause &#952; k + &#948; m to land on the boundary of the probability simplex, where the objective function is undefined.</S>
+          <S ID="S-34767">) Then we set &#952; k+1 to the point in {&#952; k } &#8746; {&#952; k + &#948; m | 1 &#8804; m &#8804; 20} that minimizes F. The line search algorithm is summarized in Pseudocode 2.</S>
+        </P>
+        <P>
+          <S ID="S-34768">In our implementation, we set &#947; = 0.5 and &#963; = 0.5.</S>
+          <S ID="S-34769">We keep s fixed for all PGD iterations; we experimented with s &#8712; {0.1, 0.5} and did not observe significant changes in F-score.</S>
+          <S ID="S-34770">We run the projection step and line search alternately for at most K iterations, terminating early if there is no change in &#952; k from one iteration to the next.</S>
+          <S ID="S-34771">We set K = 35 for the large Arabic-English experiment; for all other conditions, we set K = 50.</S>
+          <S ID="S-34772">These choices were made to balance efficiency and accuracy.</S>
+          <S ID="S-34773">We found that values of K between 30 and 75 were generally reasonable.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Experiments</HEADER>
+      <P>
+        <S ID="S-34882">To demonstrate the effect of the l 0 -norm on the IBM models, we performed experiments on four translation tasks: Arabic-English, Chinese-English, and Urdu-English from the NIST Open MT Evaluation, and the Czech-English translation from the Workshop on Machine Translation (WMT) shared task.</S>
+        <S ID="S-34883">We measured the accuracy of word alignments generated by GIZA++ with and without the l 0 -norm, and also translation accuracy of systems trained using the word alignments.</S>
+        <S ID="S-34884">Across all tests, we found strong improvements from adding the l 0 -norm.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Training</HEADER>
+        <P>
+          <S ID="S-34775">We have implemented our algorithm as an opensource extension to GIZA++.</S>
+          <S ID="S-34776">1 Usage of the extension is identical to standard GIZA++, except that the user can switch the l 0 prior on or off, and adjust the hyperparameters &#945; and &#946;.</S>
+        </P>
+        <P>
+          <S ID="S-34777">For vanilla EM, we ran five iterations of Model 1, five iterations of HMM, and ten iterations of Model 4.</S>
+          <S ID="S-34778">For our approach, we first ran one iteration of Model 1, followed by four iterations of Model 1 with smoothed l 0 , followed by five iterations of HMM with smoothed l 0 .</S>
+          <S ID="S-34779">Finally, we ran ten iterations of Model 4.</S>
+          <S ID="S-34780">2</S>
+        </P>
+        <P>
+          <S ID="S-34781">We used the following parallel data:</S>
+        </P>
+        <P>
+          <S ID="S-34782">&#8226; Chinese-English: selected data from the constrained task of the NIST 2009 Open MT Evaluation.</S>
+          <S ID="S-34783">3</S>
+        </P>
+        <P>
+          <S ID="S-34784">&#8226; Arabic-English: all available data for the constrained track of NIST 2009, excluding United Nations proceedings (LDC2004E13), ISI Automatically Extracted Parallel Text (LDC2007E08), and Ummah newswire text (LDC2004T18), for a total of 5.4+4.3 million words.</S>
+          <S ID="S-34785">We also experimented on a larger Arabic-English parallel text of 44+37 million words from the DARPA GALE program.</S>
+        </P>
+        <P>
+          <S ID="S-34786">&#8226; Urdu-English: all available data for the constrained track of NIST 2009.</S>
+        </P>
+        <P>
+          <S ID="S-34787">1 The code can be downloaded from the first author&#8217;s website</S>
+        </P>
+        <P>
+          <S ID="S-34788">at http://www.isi.edu/&#732;avaswani/giza-pp-l0.html.</S>
+          <S ID="S-34789">2 GIZA++ allows changing some heuristic parameters for</S>
+        </P>
+        <P>
+          <S ID="S-34790">efficient training.</S>
+          <S ID="S-34791">Currently, we set two of these to zero: mincountincrease and probcutoff.</S>
+          <S ID="S-34792">In the default setting, both are set to 10 &#8722;7 .</S>
+          <S ID="S-34793">We set probcutoff to 0 because we would like the optimization to learn the parameter values.</S>
+          <S ID="S-34794">For a fair comparison, we applied the same setting to our vanilla EM training as well.</S>
+          <S ID="S-34795">To test, we ran GIZA++ with the default setting on the smaller of our two Arabic-English datasets with the same number of iterations and found no change in F-score.</S>
+          <S ID="S-34796">3 LDC catalog numbers LDC2003E07, LDC2003E14,</S>
+        </P>
+        <P>
+          <S ID="S-34797">LDC2005E83, LDC2005T06, LDC2006E24, LDC2006E34, LDC2006E85, LDC2006E86, LDC2006E92, and LDC2006E93.</S>
+        </P>
+        <P>
+          <S ID="S-34798">president of the u</S>
+        </P>
+        <P>
+          <S ID="S-34799">foreign affairs u u</S>
+        </P>
+        <P>
+          <S ID="S-34800">u institute shuqin liu was also</S>
+        </P>
+        <P>
+          <S ID="S-34801">u u u at the meeting .</S>
+        </P>
+        <P>
+          <S ID="S-34802">present</S>
+        </P>
+        <P>
+          <S ID="S-34803">over 4000</S>
+        </P>
+        <P>
+          <S ID="S-34804">u</S>
+        </P>
+        <P>
+          <S ID="S-34805">u u u</S>
+        </P>
+        <P>
+          <S ID="S-34806">from guests</S>
+        </P>
+        <P>
+          <S ID="S-34807">home and abroad attended the opening ceremony .</S>
+        </P>
+        <P>
+          <S ID="S-34808">it &#8217;s extremely troublesome to get</S>
+        </P>
+        <P>
+          <S ID="S-34809">u via land .</S>
+        </P>
+        <P>
+          <S ID="S-34810">there</S>
+        </P>
+        <P>
+          <S ID="S-34811">r&#250;gu&#466;</S>
+        </P>
+        <P>
+          <S ID="S-34812">u y&#224;o u u l&#249;l&#249; zhu&#462;n</S>
+        </P>
+        <P>
+          <S ID="S-34813">u u q&#249; dehu&#224; ne</S>
+        </P>
+        <P>
+          <S ID="S-34814">u , u h&#283;n u h&#283;n u h&#283;n u h&#283;n</S>
+        </P>
+        <P>
+          <S ID="S-34815">u m&#225;fan</S>
+        </P>
+        <P>
+          <S ID="S-34816">de</S>
+        </P>
+        <P>
+          <S ID="S-34817">u , (c)</S>
+        </P>
+        <P>
+          <S ID="S-34818">u</S>
+        </P>
+        <P>
+          <S ID="S-34819">this was after u care of , four taken</S>
+        </P>
+        <P>
+          <S ID="S-34820">u</S>
+        </P>
+        <P>
+          <S ID="S-34821">blockhouses were blown up .</S>
+          <S ID="S-34822">zh&#232;ge ch&#249;l&#464; w&#225;n y&#464;h&#242;u ne</S>
+        </P>
+        <P>
+          <S ID="S-34823">u , h&#225;i</S>
+        </P>
+        <P>
+          <S ID="S-34824">u u</S>
+        </P>
+        <P>
+          <S ID="S-34825">(d)</S>
+        </P>
+        <P>
+          <S ID="S-34826">u zh&#224; u le</S>
+        </P>
+        <P>
+          <S ID="S-34827">s&#236;ge di&#257;ob&#462;o</S>
+        </P>
+        <P>
+          <S ID="S-34828">u .</S>
+        </P>
+        <P>
+          <S ID="S-34829">&#8226; Czech-English: A corpus of 4 million words of Czech-English data from the News Commentary corpus.</S>
+          <S ID="S-34830">4</S>
+        </P>
+        <P>
+          <S ID="S-34831">We set the hyperparameters &#945; and &#946; by tuning on gold-standard word alignments (to maximize F1) when possible.</S>
+          <S ID="S-34832">For Arabic-English and Chinese- English, we used 346 and 184 hand-aligned sentences from LDC2006E86 and LDC2006E93.</S>
+          <S ID="S-34833">Similarly, for Czech-English, 515 hand-aligned sentences were available (<REF ID="R-04" RPTR="4">Bojar and Prokopov&#225;, 2006</REF>).</S>
+          <S ID="S-34834">But for Urdu-English, since we did not have any gold alignments, we used &#945; = 10 and &#946; = 0.05.</S>
+          <S ID="S-34835">We did not choose a large &#945;, as the dataset was small, and we chose a conservative value for &#946;.</S>
+          <S ID="S-34836">We ran word alignment in both directions and symmetrized using grow-diag-final (<REF ID="R-13" RPTR="16">Koehn et al., 2003</REF>).</S>
+          <S ID="S-34837">For models with the smoothed l 0 prior, we tuned &#945; and &#946; separately in each direction.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Alignment</HEADER>
+        <P>
+          <S ID="S-34838">First, we evaluated alignment accuracy directly by comparing against gold-standard word alignments.</S>
+        </P>
+        <P>
+          <S ID="S-34839">4 This data is available at http://statmt.org/wmt10.</S>
+        </P>
+        <P>
+          <S ID="S-34840">The results are shown in the alignment F1 column of Table 1.</S>
+          <S ID="S-34841">We used balanced F-measure rather than alignment error rate as our metric (<REF ID="R-11" RPTR="12">Fraser and Marcu, 2007</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-34842">Following <REF ID="R-10" RPTR="11">Dyer et al. (2011)</REF>, we also measured the average fertility, &#732;&#966; sing.</S>
+          <S ID="S-34843">, of once-seen source words in the symmetrized alignments.</S>
+          <S ID="S-34844">Our alignments show smaller fertility for once-seen words, suggesting that they suffer from &#8220;garbage collection&#8221; effects less than the baseline alignments do.</S>
+        </P>
+        <P>
+          <S ID="S-34845">The fact that we had to use hand-aligned data to tune the hyperparameters &#945; and &#946; means that our method is no longer completely unsupervised.</S>
+          <S ID="S-34846">However, our observation is that alignment accuracy is actually fairly robust to the choice of these hyperparameters, as shown in Table 2.</S>
+          <S ID="S-34847">As we will see below, we still obtained strong improvements in translation quality when hand-aligned data was unavailable.</S>
+          <S ID="S-34848">We also tried generating 50 word classes using the tool provided in GIZA++.</S>
+          <S ID="S-34849">We found that adding word classes improved alignment quality a little, but more so for the baseline system (see Table 3).</S>
+          <S ID="S-34850">We used the alignments generated by training with word classes for our translation experiments.</S>
+        </P>
+        <P>
+          <S ID="S-34851">&#946;</S>
+        </P>
+        <P>
+          <S ID="S-34852">&#8211;</S>
+        </P>
+        <P>
+          <S ID="S-34853">0.5</S>
+        </P>
+        <P>
+          <S ID="S-34854">0.1</S>
+        </P>
+        <P>
+          <S ID="S-34855">0.05</S>
+        </P>
+        <P>
+          <S ID="S-34856">0.01</S>
+        </P>
+        <P>
+          <S ID="S-34857">0.005</S>
+        </P>
+        <P>
+          <S ID="S-34858">0.001</S>
+        </P>
+        <P>
+          <S ID="S-34859">Figure 2 shows four examples of Chinese- English alignment, comparing the baseline with our smoothed-l 0 method.</S>
+          <S ID="S-34860">In all four cases, the baseline produces incorrect extra alignments that prevent good translation rules from being extracted while the smoothed-l 0 results are correct.</S>
+          <S ID="S-34861">In particular, the baseline system demonstrates typical &#8220;garbage collection&#8221; behavior (<REF ID="R-17" RPTR="24">Moore, 2004</REF>) in all four examples.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Translation</HEADER>
+        <P>
+          <S ID="S-34862">We then tested the effect of word alignments on translation quality using the hierarchical phrasebased translation system Hiero (<REF ID="R-07" RPTR="8">Chiang, 2007</REF>).</S>
+          <S ID="S-34863">We used a fairly standard set of features: seven inherited from Pharaoh (<REF ID="R-13" RPTR="17">Koehn et al., 2003</REF>), a secsetting</S>
+        </P>
+        <P>
+          <S ID="S-34864">ond language model, and penalties for the glue rule, identity rules, unknown-word rules, and two kinds of number/name rules.</S>
+          <S ID="S-34865">The feature weights were discriminatively trained using MIRA (<REF ID="R-06" RPTR="7">Chiang et al., 2008</REF>).</S>
+          <S ID="S-34866">We used two 5-gram language models, one on the combined English sides of the NIST 2009 Arabic-English and Chinese-English constrained tracks (385M words), and another on 2 billion words of English.</S>
+          <S ID="S-34867">For each language pair, we extracted grammar rules from the same data that were used for word alignment.</S>
+          <S ID="S-34868">The development data that were used for discriminative training were: for Chinese-English and Arabic-English, data from the NIST 2004 and NIST 2006 test sets, plus newsgroup data from the</S>
+        </P>
+        <P>
+          <S ID="S-34869">GALE program (LDC2006E92); for Urdu-English, half of the NIST 2008 test set; for Czech-English, a training set of 2051 sentences provided by the WMT10 translation workshop.</S>
+        </P>
+        <P>
+          <S ID="S-34870">The results are shown in the Bleu column of Table 1.</S>
+          <S ID="S-34871">We used case-insensitive IBM Bleu (closest reference length) as our metric.</S>
+          <S ID="S-34872">Significance testing was carried out using bootstrap resampling with 1000 samples (<REF ID="R-14" RPTR="18">Koehn, 2004</REF>; Zhang et al., 2004).</S>
+        </P>
+        <P>
+          <S ID="S-34873">All of the tests showed significant improvements (p &lt; 0.01), ranging from +0.4 Bleu to +1.4 Bleu.</S>
+          <S ID="S-34874">For Urdu, even though we didn&#8217;t have manual alignments to tune hyperparameters, we got significant gains over a good baseline.</S>
+          <S ID="S-34875">This is promising for languages that do not have any manually aligned data.</S>
+        </P>
+        <P>
+          <S ID="S-34876">Ideally, one would want to tune &#945; and &#946; to maximize Bleu.</S>
+          <S ID="S-34877">However, this is prohibitively expensive, especially if we must tune them separately in each alignment direction before symmetrization.</S>
+          <S ID="S-34878">We ran some contrastive experiments to investigate the impact of hyperparameter tuning on translation quality.</S>
+          <S ID="S-34879">For the smaller Arabic-English corpus, we symmetrized all combinations of the two top-scoring alignments (according to F1) in each direction, yielding four sets of alignments.</S>
+          <S ID="S-34880">Table 4 shows Bleu scores for translation models learned from these alignments.</S>
+          <S ID="S-34881">Unfortunately, we find that optimizing F1 is not optimal for Bleu&#8212;using the second-best alignments yields a further improvement of 0.5 Bleu on the NIST 2009 data, which is statistically significant (p &lt; 0.05).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Related Work</HEADER>
+      <P>
+        <S ID="S-34885"><REF ID="R-21" RPTR="30">Schoenemann (2011</REF><REF ID="R-22" RPTR="34">Schoenemann (2011</REF>a), taking inspiration from <REF ID="R-03" RPTR="3">Bodrumlu et al. (2009)</REF>, uses integer linear programming to optimize IBM Model 1&#8211;2 and the HMM with the l 0 -norm.</S>
+        <S ID="S-34886">This method, however, does not outperform GIZA++.</S>
+        <S ID="S-34887">In later work, <REF ID="R-21" RPTR="31">Schoenemann (2011</REF><REF ID="R-22" RPTR="35">Schoenemann (2011</REF>b) used projected gradient descent for the l 1 - norm.</S>
+        <S ID="S-34888">Here, we have adopted his use of projected gradient descent, but using a smoothed l 0 -norm.</S>
+      </P>
+      <P>
+        <S ID="S-34889"><REF ID="R-15" RPTR="19">Liang et al. (2006)</REF> show how to train IBM models in both directions simultaneously by adding a term to the log-likelihood that measures the agreement between the two directions.</S>
+        <S ID="S-34890"><REF ID="R-12" RPTR="13">Gra&#231;a et al. (2010)</REF> explore modifications to the HMM model that encourage bijectivity and symmetry.</S>
+        <S ID="S-34891">The modifications take the form of constraints on the posterior distribution over alignments that is computed during the E-step.</S>
+        <S ID="S-34892"><REF ID="R-16" RPTR="21">Mermer and Sara&#231;lar (2011)</REF> explore a Bayesian version of IBM Model 1, applying sparse Dirichlet priors to t.</S>
+        <S ID="S-34893">However, because this method requires the use of Monte Carlo methods, it is not clear how well it can scale to larger datasets.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusion</HEADER>
+      <P>
+        <S ID="S-34894">We have extended the IBM models and HMM model by the addition of an l 0 prior to the word-to-word translation model, which compacts the word-toword translation table, reducing overfitting, and, in particular, the &#8220;garbage collection&#8221; effect.</S>
+        <S ID="S-34895">We have shown how to perform MAP-EM with this prior efficiently, even for large datasets.</S>
+        <S ID="S-34896">The method is implemented as a modification to the open-source toolkit GIZA++, and we have shown that it significantly improves translation quality across four different language pairs.</S>
+        <S ID="S-34897">Even though we have used a small set of gold-standard alignments to tune our hyperparameters, we found that performance was fairly robust to variation in the hyperparameters, and translation performance was good even when goldstandard alignments were unavailable.</S>
+        <S ID="S-34898">We hope that our method, due to its simplicity, generality, and effectiveness, will find wide application for training better statistical translation systems.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-34899">We are indebted to Thomas Schoenemann for initial discussions and pilot experiments that led to this work, and to the anonymous reviewers for their valuable comments.</S>
+      <S ID="S-34900">We thank Jason Riesa for providing the Arabic-English and Chinese-English hand-aligned data and the alignment visualization tool, and Chris Dyer for the Czech-English handaligned data.</S>
+      <S ID="S-34901">This research was supported in part by DARPA under contract DOI-NBC D11AP00244 and a Google Faculty Research Award to L.</S>
+      <S ID="S-34902">H.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Andrew Barron</RAUTHOR>
+      <REFTITLE>The minimum description length principle in coding and modeling.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Dimitri P Bertsekas</RAUTHOR>
+      <REFTITLE>Nonlinear Programming. Athena Scientific.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Christopher M Bishop</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Tugba Bodrumlu</RAUTHOR>
+      <REFTITLE>A new objective function for word alignment.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Ond&#345;ej Bojar</RAUTHOR>
+      <REFTITLE>CzechEnglish word alignment.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Peter F Brown</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: Parameter estimation. Computational Linguistics,</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Online large-margin training of syntactic and structural translation features.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>A P Dempster</RAUTHOR>
+      <REFTITLE>Maximum likelihood from incomplete data via the EM algorithm.</REFTITLE>
+      <DATE>1977</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>John Duchi</RAUTHOR>
+      <REFTITLE>Efficient projections onto the l 1 -ball for learning in high dimensions.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Chris Dyer</RAUTHOR>
+      <REFTITLE>Unsupervised word alignment with arbitrary features.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Alexander Fraser</RAUTHOR>
+      <REFTITLE>Measuring word alignment quality for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Jo&#227;o V Gra&#231;a</RAUTHOR>
+      <REFTITLE>Learning tractable word alignment models with complex constraints.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical significance tests for machine translation evaluation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Percy Liang</RAUTHOR>
+      <REFTITLE>Alignment by agreement.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Co&#351;kun Mermer</RAUTHOR>
+      <REFTITLE>Bayesian word alignment for statistical machine translation.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Robert C Moore</RAUTHOR>
+      <REFTITLE>Improving IBM wordalignment Model 1.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Robert Moore</RAUTHOR>
+      <REFTITLE>A discriminative framework for bilingual word alignment.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Franz Joseph Och</RAUTHOR>
+      <REFTITLE>The alignment template approach to statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Jason Riesa</RAUTHOR>
+      <REFTITLE>Hierarchical search for word alignment.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Thomas Schoenemann</RAUTHOR>
+      <REFTITLE>Probabilistic word alignment under the L 0 -norm.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Thomas Schoenemann</RAUTHOR>
+      <REFTITLE>Regularizing mono- and bi-word models for word alignment.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Ben Taskar</RAUTHOR>
+      <REFTITLE>A discriminative matching approach to word alignment.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Ashish Vaswani</RAUTHOR>
+      <REFTITLE>Efficient optimization of an MDL-inspired objective function for unsupervised part-of-speech tagging.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Stephan Vogel</RAUTHOR>
+      <REFTITLE>HMM-based word alignment in statistical translation.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

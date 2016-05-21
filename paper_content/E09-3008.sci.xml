@@ -1,0 +1,570 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>A Comparison of Merging Strategies for Translation of German Compounds</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-19126">In this article, compound processing for translation into German in a factored statistical MT system is investigated.</A-S>
+    <A-S ID="S-19127">Compounds are handled by splitting them prior to training, and merging the parts after translation.</A-S>
+    <A-S ID="S-19128">I have explored eight merging strategies using different combinations of external knowledge sources, such as word lists, and internal sources that are carried through the translation process, such as symbols or parts-of-speech.</A-S>
+    <A-S ID="S-19129">I show that for merging to be successful, some internal knowledge source is needed.</A-S>
+    <A-S ID="S-19130">I also show that an extra sequence model for part-ofspeech is useful in order to improve the order of compound parts in the output.</A-S>
+    <A-S ID="S-19131">The best merging results are achieved by a matching scheme for part-of-speech tags.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-19132">In German, as in many other languages, compounds are normally written as single words without spaces or other word boundaries.</S>
+        <S ID="S-19133">Compounds can be binary, i.e., made up of two parts (1a), or have more parts (1b).</S>
+        <S ID="S-19134">There are also coordinated compound constructions (1c).</S>
+        <S ID="S-19135">In a few cases compounds are written with a hyphen (1d), often when one of the parts is a proper name or an abbreviation.</S>
+      </P>
+      <P>
+        <S ID="S-19136">(1) a. Regierungskonferenz intergovernmental conference</S>
+      </P>
+      <P>
+        <S ID="S-19137">b. Fremdsprachenkenntnisse knowledge of foreign languages</S>
+      </P>
+      <P>
+        <S ID="S-19138">c. See- und Binnenh&#228;fen sea and inland ports</S>
+      </P>
+      <P>
+        <S ID="S-19139">d. Kosovo-Konflikt Kosovo conflict e. V&#246;lkermord</S>
+      </P>
+      <P>
+        <S ID="S-19140">genocide</S>
+      </P>
+      <P>
+        <S ID="S-19141">German compounds can have English translations that are compounds, written as separate words (1a), other constructions, possibly with inserted function words and reordering (1b), or single words (1e).</S>
+        <S ID="S-19142">Compound parts sometimes have special compound forms, formed by addition or truncations of letters, by umlaut or by a combination of these, as in (1a), where the letter -s is added to the first part, Regierung.</S>
+        <S ID="S-19143">For an overview of German compound forms, see <REF ID="R-12" RPTR="13">Langer (1998)</REF>.</S>
+      </P>
+      <P>
+        <S ID="S-19144">Compounds are productive and common in German and other Germanic languages, which makes them problematic for many applications including statistical machine translation.</S>
+        <S ID="S-19145">For translation into a compounding language, fewer compounds than in normal texts are often produced, which can be due to the fact that the desired compounds are missing in the training data, or that they have not been aligned correctly.</S>
+        <S ID="S-19146">Where a compound is the idiomatic word choice in the translation, a MT system can instead produce separate words, genitive or other alternative constructions, or only translate one part of the compound.</S>
+      </P>
+      <P>
+        <S ID="S-19147">The most common way to integrate compound processing into statistical machine translation is to split compounds prior to training and translation.</S>
+        <S ID="S-19148">Splitting of compounds has received a lot of focus in the literature, both for machine translation, and targeted at other applications such as information retrieval or speech recognition.</S>
+      </P>
+      <P>
+        <S ID="S-19149">When translating into a compounding language there is a need to merge the split compounds after translation.</S>
+        <S ID="S-19150">In order to do this we have to identify which words that should be merged into compounds, which is complicated by the fact that the translation process is not guaranteed to produce translations where compound parts are kept together.</S>
+      </P>
+      <P>
+        <S ID="S-19151">In this article I explore the effects of merging in a factored phrase-based statistical machine translation system.</S>
+        <S ID="S-19152">The system uses part-of-speech as an output factor.</S>
+        <S ID="S-19153">This factor is used as a knowledge source for merging and to improve word order by using a part-of-speech (POS) sequence model.</S>
+      </P>
+      <P>
+        <S ID="S-19154">There are different knowledge sources for merging.</S>
+        <S ID="S-19155">Some are external, such as frequency lists of words, compounds, and compound parts, that could be compiled at split-time.</S>
+        <S ID="S-19156">It is also possible to have internal knowledge sources, that are carried through the translation process, such as symbols on compound parts, or part-of-speech tags.</S>
+        <S ID="S-19157">Choices made at split-time influence which internal knowledge sources are available at mergetime.</S>
+        <S ID="S-19158">I will explore and compare three markup schemes for compound parts, and eight merging algorithms that use different combinations of knowledge sources.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related Work</HEADER>
+      <P>
+        <S ID="S-19159">Splitting German compounds into their parts prior to translation has been suggested by many researchers.</S>
+        <S ID="S-19160"><REF ID="R-08" RPTR="9">Koehn and Knight (2003)</REF> presented an empirical splitting algorithm that is used to improve translation from German to English.</S>
+        <S ID="S-19161">They split all words in all possible places, and considered a splitting option valid if all the parts are existing words in a monolingual corpus.</S>
+        <S ID="S-19162">They allowed the addition of -s or -es at all splitting points.</S>
+        <S ID="S-19163">If there were several valid splitting options they chose one based on the number of splits, the geometric mean of part frequencies or based on alignment data.</S>
+        <S ID="S-19164"><REF ID="R-20" RPTR="27">Stymne (2008)</REF> extended this algorithm in a number of ways, for instance by allowing more compound forms.</S>
+        <S ID="S-19165">She found that for translation into German, it was better to use the arithmetic mean of part frequencies than the geometric mean.</S>
+        <S ID="S-19166">Using the mean of frequencies can result in no split, if the compound is more frequent than its parts.</S>
+      </P>
+      <P>
+        <S ID="S-19167">Merging has been much less explored than splitting since it is common only to discuss translation from compounding languages.</S>
+        <S ID="S-19168">However, <REF ID="R-16" RPTR="19">Popovi&#263; et al. (2006)</REF><REF ID="R-04" RPTR="3">(2006)</REF> used merging for translation into German.</S>
+        <S ID="S-19169">They did not mark compound parts in any way, so the merging is based on two word lists, with compound parts and full compounds found at split-time.</S>
+        <S ID="S-19170">All words in the translation output that were possible compound parts were merged with the next word if it resulted in a known compound.</S>
+        <S ID="S-19171">They only discussed merging of binary compounds.</S>
+        <S ID="S-19172">The drawback of this method is that novel compounds cannot be merged.</S>
+        <S ID="S-19173">Nevertheless, this strategy led to improved translation measured by three automatic metrics.</S>
+      </P>
+      <P>
+        <S ID="S-19174">In a study of translation between English and Swedish, <REF ID="R-19" RPTR="25">Stymne and Holmqvist (2008)</REF> suggested a merging algorithm based on part-of-speech, which can be used in a factored translation system with part-of-speech as an output factor.</S>
+        <S ID="S-19175">Compound parts had special part-of-speech tags based on the head of the compound, and merging was performed if that part-of-speech tag matched that of the following word.</S>
+        <S ID="S-19176">When compound forms had been normalized the correct compound form was found by using frequency lists of parts and words compiled at split-time.</S>
+        <S ID="S-19177">This method can merge unseen compounds, and the tendency to merge too much is reduced by the restriction that POS-tags need to match.</S>
+        <S ID="S-19178">In addition coordinated compounds were handled by the algorithm.</S>
+        <S ID="S-19179">This strategy resulted in improved scores on automatic metrics, which were confirmed by an error analysis.</S>
+      </P>
+      <P>
+        <S ID="S-19180"><REF ID="R-10" RPTR="11">Koehn et al. (2008)</REF> discussed treatment of hyphened compounds in translation into German by splitting at hyphens and treat the hyphen as a separate token, marked by a symbol.</S>
+        <S ID="S-19181">The impact on translation results was small.</S>
+      </P>
+      <P>
+        <S ID="S-19182">There are also other ways of using compound processing to improve SMT into German.</S>
+        <S ID="S-19183"><REF ID="R-16" RPTR="20">Popovi&#263; et al. (2006)</REF><REF ID="R-04" RPTR="4">(2006)</REF> suggested using compound splitting to improve alignment, or to merge English compounds prior to training.</S>
+      </P>
+      <P>
+        <S ID="S-19184">Some work has discussed merging of not only compounds, but of all morphs.</S>
+        <S ID="S-19185">Virpioja et al. (2007) merged translation output that was split into morphs for Finnish, Swedish and Danish.</S>
+        <S ID="S-19186">They marked split parts with a symbol, and merged every word in the output which had this symbol with the next word.</S>
+        <S ID="S-19187">If morphs were misplaced in the translation output, they were merged anyway, possibly creating non-existent words.</S>
+        <S ID="S-19188">This system was worse than the baseline on Bleu (<REF ID="R-15" RPTR="17">Papineni et al., 2002</REF>), but an error analysis showed some improvements.</S>
+      </P>
+      <P>
+        <S ID="S-19189">El-Kahlout and Oflazer <REF ID="R-04" RPTR="5">(2006)</REF>, discuss merging of morphs in Turkish.</S>
+        <S ID="S-19190">They also mark morphs with a symbol, and in addition normalize affixes to standard form.</S>
+        <S ID="S-19191">In the merging</S>
+      </P>
+      <P>
+        <S ID="S-19192">phase, surface forms were generated following morphographemic rules.</S>
+        <S ID="S-19193">They found that morphs were often translated out of order, and that merging based purely on symbols gave bad results.</S>
+        <S ID="S-19194">To reduce this risk, they constrained splitting to allow only morphologically correct splits, and by grouping some morphemes.</S>
+        <S ID="S-19195">This lead to less ordering problems in the translation output and gave improvements over the baseline.</S>
+        <S ID="S-19196">Compound recombination have also been applied to German speech recognition, e.g. by (<REF ID="R-01" RPTR="0">Berton et al., 1996</REF>), who performed a lexical search to extend the word graph that is output by the speech recogniser.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Compound Processing</HEADER>
+      <P>
+        <S ID="S-19234">German compounds are split in the training data and prior to translation.</S>
+        <S ID="S-19235">After translation, the parts are merged to form full compounds.</S>
+        <S ID="S-19236">The knowledge sources available to the merging process depend on which information is carried through the translation process.</S>
+        <S ID="S-19237">The splitting algorithm of <REF ID="R-20" RPTR="28">Stymne (2008)</REF> will be used throughout this study.</S>
+        <S ID="S-19238">It is slightly modified such that only the 10 most common compound forms from a corpus study of <REF ID="R-12" RPTR="14">Langer (1998)</REF> are allowed, and the hyphen in hyphened compounds is treated as a compound form, analogous to adding for instance the letter s to a part.</S>
+        <S ID="S-19239">The annotation of compound parts influences the merging process.</S>
+        <S ID="S-19240">Choices have to be made concerning the form, markup and part-of-speech of compound parts.</S>
+        <S ID="S-19241">For the form two options have been considered, keeping the original compound form, or normalizing it so that it coincides with a normal word.</S>
+        <S ID="S-19242">Three types of marking have been investigated, no marking at all (unmarked), a marking symbol that is concatenated to all parts but the last (marked), or using a separate symbol between parts (sepmarked).</S>
+        <S ID="S-19243">The sepmarked scheme has different symbols for parts of coordinated compounds than for other compounds.</S>
+        <S ID="S-19244">Parts are normalized in the unmarked and sepmarked schemes, but left in their compound form in the marked scheme, since the symbol separates them from ordinary words in any case.</S>
+      </P>
+      <P>
+        <S ID="S-19245">There is also the issue of which part-of-speech tag to use for compound parts.</S>
+        <S ID="S-19246">The last part of the compound, the head, always has the same part-ofspeech tag as the full compound.</S>
+        <S ID="S-19247">Two schemes are explored for the other parts.</S>
+        <S ID="S-19248">For the marked and unmarked system, a part-of-speech tag that is derived from that of the last part of the word is used.</S>
+        <S ID="S-19249">For the sepmarked scheme the most common part-of-speech tag of the part from the tagged monolingual corpus is used.</S>
+      </P>
+      <P>
+        <S ID="S-19250">In summary, the three markup schemes use the following combinations, exemplified by the result of splitting the word begr&#252;&#223;enswert (welcome, literally worth to welcome)</S>
+      </P>
+      <P>
+        <S ID="S-19251">&#8226; Unmarked: no symbol, normalization, special POS-tags</S>
+      </P>
+      <P>
+        <S ID="S-19252">begr&#252;&#223;en ADJ-PART wert ADJ</S>
+      </P>
+      <P>
+        <S ID="S-19253">&#8226; Marked: symbol on parts, no normalization, special POS-tags</S>
+      </P>
+      <P>
+        <S ID="S-19254">begr&#252;&#223;ens# ADJ-PART wert ADJ</S>
+      </P>
+      <P>
+        <S ID="S-19255">&#8226; Sepmarked: symbol as separate token, normalization, ordinary POS-tags</S>
+      </P>
+      <P>
+        <S ID="S-19256">begr&#252;&#223;en VV @#@ COMP wert ADJ</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Merging</HEADER>
+        <P>
+          <S ID="S-19197">There is no guarantee that compound parts appear in a correct context in the translation output.</S>
+          <S ID="S-19198">This fact complicates merging, since there is a general choice between only merging those words that we know are compounds, and merging all occurrences of compound parts, which will merge unseen compounds, but probably also merge parts that do not form well-formed compounds.</S>
+          <S ID="S-19199">There is also the issue of parts possibly being part of coordinated compounds.</S>
+        </P>
+        <P>
+          <S ID="S-19200">The internal knowledge sources that can be used for merging depends on the markup scheme used.</S>
+          <S ID="S-19201">The available internal sources are markup symbols, part-of-speech tags, and the special tags for compound parts.</S>
+          <S ID="S-19202">The external resources are frequency lists of words, compounds and parts, possibly with normalization, compiled at split-time.</S>
+          <S ID="S-19203">For the unmarked and sepmarked scheme, reverse normalization, i.e., mapping normalized compound parts into correct compound forms, has to be applied in connection with merging.</S>
+          <S ID="S-19204">As in <REF ID="R-19" RPTR="26">Stymne and Holmqvist (2008)</REF>, all combinations of compound forms that are known for each part are looked up in the word frequency list, and the most frequent combination is chosen.</S>
+          <S ID="S-19205">If there are no known combinations, the parts are combined from left to right, at each step choosing the most frequent combination.</S>
+        </P>
+        <P>
+          <S ID="S-19206">Three main types of merging algorithms are investigated in this study.</S>
+          <S ID="S-19207">The first group, inspired</S>
+        </P>
+        <P>
+          <S ID="S-19208">Name word-list</S>
+        </P>
+        <P>
+          <S ID="S-19209">word-list + head-pos compound-list symbol symbol + head-pos symbol + word-list POS-match POS-match + coord Description Merges all tokens that have been seen as compound parts with the next part if it results in a known word, from the training corpus As word-list, but only merges words where the last part is a noun, adjective or verb As word-list, but for known compounds from split-time, not for all known words Merges all tokens that are marked with the next token As symbol, but only merges words where the last part is a noun, adjective or verb A mix of symbol and word-list, where marked compounds are merged, if it results in a known word Merges all tokens with a compound part-of-speech tag, if the tag match the tag of the next token As POS-match, but also adds a hyphen to parts that are followed by the conjunction und (and)</S>
+        </P>
+        <P>
+          <S ID="S-19210">by <REF ID="R-16" RPTR="21">Popovi&#263; et al. (2006)</REF><REF ID="R-04" RPTR="6">(2006)</REF>, is based only on external knowledge sources, frequency lists of words or compounds, and of parts, compiled at splittime.</S>
+          <S ID="S-19211">Novel compounds cannot be merged by these algorithms.</S>
+          <S ID="S-19212">The second group uses symbols to guide merging, inspired by work on morphology merging (Virpioja et al., 2007).</S>
+          <S ID="S-19213">In the unmarked scheme where compound parts are not marked with symbols, the special POS-tags are used to identify parts instead 1 .</S>
+          <S ID="S-19214">The third group is based on special part-of-speech tags for compounds (<REF ID="R-19" RPTR="24">Stymne and Holmqvist, 2008</REF>), and merging is performed if the part-of-speech tags match.</S>
+          <S ID="S-19215">This group of algorithms cannot be applied to the sepmarked scheme.</S>
+        </P>
+        <P>
+          <S ID="S-19216">In addition a restriction that the head of the compound should have a compounding part-ofspeech, that is, a noun, adjective, or verb, and a rule to handle coordinated compounds are used.</S>
+          <S ID="S-19217">By using these additions and combinations of the main algorithms, a total of eight algorithms are explored, as summarized in Table 1.</S>
+          <S ID="S-19218">For all algorithms, compounds can have an arbitrary number of parts.</S>
+        </P>
+        <P>
+          <S ID="S-19219">If there is a marked compound part that cannot be combined with the next word, in any of the algorithms, the markup is removed, and the part is left as a single word.</S>
+          <S ID="S-19220">For the sepmarked system, coordinated compounds are handled as part of the symbol algorithms, by using the special markup symbol that indicates them.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Merging Performance</HEADER>
+        <P>
+          <S ID="S-19221">To give an idea of the potential of the merging algorithms, they are evaluated on the split test reference corpus, using the unmarked scheme.</S>
+          <S ID="S-19222">The corpus has 55580 words, of which 4472 are identified as compounds by the splitting algorithm.</S>
+          <S ID="S-19223">Of these 4160 are known from the corpus, 245 are novel,</S>
+        </P>
+        <P>
+          <S ID="S-19224">1 For the marked scheme using POS-tags to identify compound parts is equivalent to using symbols.</S>
+        </P>
+        <P>
+          <S ID="S-19225">and 67 are coordinated.</S>
+          <S ID="S-19226">For the methods based on symbols or part-of-speech, this merging task is trivial, except for reverse normalization, since all parts are correctly ordered.</S>
+        </P>
+        <P>
+          <S ID="S-19227">Table 2 shows the number of errors.</S>
+          <S ID="S-19228">The POSmatch algorithm with treatment of coordination makes 55 errors, 4 of which are due to coordinated compounds that does not use und as the conjunction.</S>
+          <S ID="S-19229">The other errors are due to errors in the reverse normalization of novel compounds, which has an accuracy of 79% on this text.</S>
+          <S ID="S-19230">The POSmatch and symbol algorithms make additional errors on coordinated compounds.</S>
+          <S ID="S-19231">The head-pos restriction blocks compounds with an adverb as head, which gave better results on translation data, but increased the errors on this evaluation.</S>
+          <S ID="S-19232">The word list method both merges many words that are not compounds, and do not merge any novel compounds.</S>
+          <S ID="S-19233">Using a list of compounds instead of words reduces the errors slightly.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 System Description</HEADER>
+      <P>
+        <S ID="S-19268">The translation system used is a factored phrasebased translation system.</S>
+        <S ID="S-19269">In a factored translation model other factors than surface form can be used, such as lemma or part-of-speech (<REF ID="R-07" RPTR="8">Koehn and Hoang, 2007</REF>).</S>
+        <S ID="S-19270">In the current system part-ofspeech is used only as an output factor in the target language.</S>
+        <S ID="S-19271">Besides the standard language model a sequence model on part-of-speech is used, which can be expected to lead to better word order in the translation output.</S>
+        <S ID="S-19272">There are no input factors, so no tagging has to be performed prior to translation, only the training corpus needs to be tagged.</S>
+        <S ID="S-19273">In addition, the computational overhead is small.</S>
+        <S ID="S-19274">One possible benefit gained by using part-of-speech as an output factor is that ordering, both in general, and of compound parts, can be improved.</S>
+        <S ID="S-19275">This hypothesis is tested by trying two system setups, with and without the part-of-speech sequence model.</S>
+        <S ID="S-19276">In addition part-of-speech is used for postprocess-</S>
+      </P>
+      <P>
+        <S ID="S-19277">ing, both for uppercasing German nouns and as a knowledge source for compound merging.</S>
+      </P>
+      <P>
+        <S ID="S-19278">The tools used are the Moses toolkit (<REF ID="R-09" RPTR="10">Koehn et al., 2007</REF>) for decoding and training, GIZA++ for word alignment (<REF ID="R-13" RPTR="15">Och and Ney, 2003</REF>), and SRILM (<REF ID="R-18" RPTR="23">Stolcke, 2002</REF>) for language models.</S>
+        <S ID="S-19279">A 5-gram model is used for surface form, and a 7-gram model is used for part-of-speech.</S>
+        <S ID="S-19280">To tune feature weights minimum error rate training is used (<REF ID="R-14" RPTR="16">Och, 2003</REF>), optimized against the Neva metric (<REF ID="R-06" RPTR="7">Forsbom, 2003</REF>).</S>
+        <S ID="S-19281">Compound splitting is performed on the training corpus, prior to training.</S>
+        <S ID="S-19282">Merging is performed after translation, both for test, and incorporated into the tuning step.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Corpus</HEADER>
+        <P>
+          <S ID="S-19257">The system is trained and tested on the Europarl corpus (<REF ID="R-11" RPTR="12">Koehn, 2005</REF>).</S>
+          <S ID="S-19258">The training corpus is filtered to remove sentences longer than 40 words and with a length ratio of more than 1 to 7.</S>
+          <S ID="S-19259">The filtered training corpus contains 701157 sentences.</S>
+          <S ID="S-19260">500 sentences are used for tuning and 2000 sentences for testing 2 .</S>
+          <S ID="S-19261">The German side of the training corpus is part-of-speech tagged using TreeTagger (<REF ID="R-17" RPTR="22">Schmid, 1994</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-19262">The German corpus has nearly three times as many types, i.e., unique tokens, as the English corpus despite having a somewhat lower token count, as shown for the training corpus in Table 3.</S>
+          <S ID="S-19263">Compound splitting drastically reduces the number of types, to around half or less, even though it is still larger than for English.</S>
+          <S ID="S-19264">Marking on parts gives 15% more types than no marking.</S>
+        </P>
+        <P>
+          <S ID="S-19265">2 The test set is test2007 from the ACL 2008 Workshop on</S>
+        </P>
+        <P>
+          <S ID="S-19266">Statistical Machine Translation, http://www.statmt.</S>
+          <S ID="S-19267">org/wmt08/shared-task.html</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Evaluation</HEADER>
+      <P>
+        <S ID="S-19351">Two types of evaluation are performed.</S>
+        <S ID="S-19352">The influence of the different merging algorithms on the overall translation quality is evaluated, using two automatic metrics.</S>
+        <S ID="S-19353">In addition the performance of the merging algorithms are analysed in some more detail.</S>
+        <S ID="S-19354">In both cases the effect of the POS sequence model is also discussed.</S>
+        <S ID="S-19355">Even when the POS sequence model is not used, part-of-speech is carried through the translation process, so that it can be used in the merging step.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Evaluation of Translation</HEADER>
+        <P>
+          <S ID="S-19283">Translations are evaluated on two automatic metrics: Bleu (<REF ID="R-15" RPTR="18">Papineni et al., 2002</REF>) and PER, position independent error-rate (<REF ID="R-21" RPTR="29">Tillmann et al., 1997</REF>).</S>
+          <S ID="S-19284">Case-sensitive versions of the metrics are used.</S>
+          <S ID="S-19285">PER does not consider word order, it evaluates the translation as a bag-of-word, and thus the systems without part-of-speech sequence models can be expected to do well on PER.</S>
+          <S ID="S-19286">Note that PER is an error-rate, so lower scores are better, whereas higher scores are better for Bleu.</S>
+        </P>
+        <P>
+          <S ID="S-19287">These metrics have disadvantages, for instance because the same weight is given to all tokens, both to complex compounds, and to function words such as und (and).</S>
+          <S ID="S-19288">Bleu has been criticized, see e.g. (<REF ID="R-02" RPTR="1">Callison-Burch et al., 2006</REF>; <REF ID="R-03" RPTR="2">Chiang et al., 2008</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-19289">Table 4 and 5 shows the translation results using the different merging algorithms.</S>
+          <S ID="S-19290">For the systems with POS sequence models the baseline performs slightly better on Bleu, than the best systems with merging.</S>
+          <S ID="S-19291">Without the POS sequence model, however, merging often leads to improvements, by up to 0.48 Bleu points.</S>
+          <S ID="S-19292">For all systems it is advantageous to use the POS sequence model.</S>
+          <S ID="S-19293">For the baseline, the PER scores are higher for the system without a POS sequence model, which, compared to the Bleu scores, confirms the fact that word order is improved by the sequence model.</S>
+          <S ID="S-19294">The systems with merging are better than the baseline with the POS sequence model.</S>
+          <S ID="S-19295">In all cases, however, the systems with merging performs worse when not using a POS sequence model, indicating that the part-of-speech</S>
+        </P>
+        <P>
+          <S ID="S-19296">sequence model improves the order of compound parts.</S>
+        </P>
+        <P>
+          <S ID="S-19297">When measured by PER, the best results when using merging are achieved by combining symbols and word lists, but when measured by Bleu, the POS-based algorithms are best.</S>
+          <S ID="S-19298">The simpler symbol-based methods, often have similar scores, and in a few cases even better.</S>
+          <S ID="S-19299">Adding treatment of coordinated compounds to the POS-match algorithm changes scores marginally in both directions.</S>
+          <S ID="S-19300">The word list based methods, however, generally give bad results.</S>
+          <S ID="S-19301">Using the head-pos restriction improves it somewhat and using a compound list instead of a word list gives different results in the different markup schemes, but is still worse than the best systems.</S>
+          <S ID="S-19302">This shows that some kind of internal knowledge source, either symbols or part-of-speech, is needed in order for merging to be successful.</S>
+        </P>
+        <P>
+          <S ID="S-19303">On both metrics, the marked and unmarked system perform similarly.</S>
+          <S ID="S-19304">They are better than the sepmarked system on Bleu, but the sepmarked system is a lot better on PER, which is an indication of that word order is problematic in the sepmarked system, with its separate tokens to indicate compounds.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Evaluation of Merging</HEADER>
+        <P>
+          <S ID="S-19305">The results of the different merging algorithms are analysed to find the number of merges and the type</S>
+        </P>
+        <P>
+          <S ID="S-19306">and quality of the merges.</S>
+          <S ID="S-19307">In addition I investigate the effect of using a part-of-speech model on the merging process.</S>
+        </P>
+        <P>
+          <S ID="S-19308">Table 6 shows the reduction of words 3 achieved by applying the different algorithms.</S>
+          <S ID="S-19309">The word list based method produces the highest number of merges in all cases, performing many merges where the parts are not recognized as such by the system.</S>
+          <S ID="S-19310">The number of merges is greatly reduced by the head-pos restriction.</S>
+          <S ID="S-19311">An investigation of the output of the word list based method shows that it often merges common words that incidentally form a new word, such as bei (at) and der (the) to beider (both).</S>
+          <S ID="S-19312">Another type of error is due to errors in the corpus, such as the merge of umwelt (environment) and und (and), which occurs in the corpus, but is not a correct German word.</S>
+          <S ID="S-19313">These two error types are often prohibited by the headpos restrictions.</S>
+          <S ID="S-19314">The compound list method avoids these errors, but it does not merge compounds that were not split by the splitting algorithm, due to a high frequency, giving a very low number of splits in some cases.</S>
+          <S ID="S-19315">There are small differences between the POS-match and symbol algorithms.</S>
+          <S ID="S-19316">Not using the POS sequence model results in a higher number of merges for all systems.</S>
+        </P>
+        <P>
+          <S ID="S-19317">A more detailed analysis was performed of the</S>
+        </P>
+        <P>
+          <S ID="S-19318">3 The reduction of words is higher than the number of produced compounds, since each compound can have more than two parts.</S>
+        </P>
+        <P>
+          <S ID="S-19319">compounds parts in the output.</S>
+          <S ID="S-19320">The result of merging them are classified into four groups: merged compounds that are known from the training corpus (2a) or that are novel (2b), parts that were not merged (2c), and parts of coordinated compounds (2d).</S>
+          <S ID="S-19321">They are classified as bad if the compound/part should have been merged with the next word, does not fit into its context, or has the wrong form.</S>
+        </P>
+        <P>
+          <S ID="S-19322">(2) a. Naturschutzpolitik nature protection policy b. UN-Friedensplan</S>
+        </P>
+        <P>
+          <S ID="S-19323">UN peace plan c.</S>
+          <S ID="S-19324">* West- zulassen</S>
+        </P>
+        <P>
+          <S ID="S-19325">west allow d. Mittel- und Osteuropa</S>
+        </P>
+        <P>
+          <S ID="S-19326">Central and Eastern Europe</S>
+        </P>
+        <P>
+          <S ID="S-19327">For the unmarked and sepmarked systems, the classification was based on the POS-match constraint, where parts are not merged if the POS-tags do not match.</S>
+          <S ID="S-19328">POS-match cannot be used for the sepmarked scheme, which has standard POS-tags.</S>
+        </P>
+        <P>
+          <S ID="S-19329">Table 7 shows the results of this analysis.</S>
+          <S ID="S-19330">The majority of the merged compounds are known from the training corpus for all systems.</S>
+          <S ID="S-19331">There is a marked difference between the two systems that use POS-match, and the sepmarked system that does not.</S>
+          <S ID="S-19332">The sepmarked system found the highest number of novel compounds, but also have the highest error rate for these, which shows that it is useful to match POS-tags.</S>
+          <S ID="S-19333">The other two systems find fewer novel compounds, but also make fewer mistakes.</S>
+          <S ID="S-19334">The marked system has more errors for single parts than the other systems, mainly beacuse the form of compound parts were not normalized.</S>
+          <S ID="S-19335">Very few errors are due to reverse normalization.</S>
+          <S ID="S-19336">In the unmarked system with a POS sequence model, there were only three such errors, which is better than the results on split data in Section 3.2.</S>
+          <S ID="S-19337">Generally the percentage of bad parts or compounds is lower for the systems with a POS sequence model, which shows that the sequence model is useful for the ordering of compound parts.</S>
+          <S ID="S-19338">The number of single compound parts is also much higher for the systems without a POS sequence model.</S>
+          <S ID="S-19339">80% of the merged compounds in the unmarked system are binary, i.e., have two parts, and the highest number of parts in a compound is 5.</S>
+          <S ID="S-19340">The pattern for the other systems is similar.</S>
+        </P>
+        <P>
+          <S ID="S-19341">All systems produce fewer compounds than the 4472 in the German reference text.</S>
+          <S ID="S-19342">However, there might also be compounds in the output, that were not split and merged.</S>
+          <S ID="S-19343">These numbers are not directly comparable to the baseline system, and applying the POS-based splitting algorithm to translation output would not give a fair comparison.</S>
+        </P>
+        <P>
+          <S ID="S-19344">An indication of the number of compounds in a text is the number of long words.</S>
+          <S ID="S-19345">In the reference text there are 351 words with at least 20 characters,</S>
+        </P>
+        <P>
+          <S ID="S-19346">which will be used as the limit for long words.</S>
+          <S ID="S-19347">A manual analysis showed that all these words are compounds.</S>
+          <S ID="S-19348">The baseline system produces 209 long words.</S>
+          <S ID="S-19349">The systems with merging, discussed above, all produce more long words than the baseline, but less than the reference, between 263 and 307, with the highest number in the marked system.</S>
+          <S ID="S-19350">The trend is the same for the systems without a POS sequence model, but with slightly fewer long words than for the systems with merging.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Discussion</HEADER>
+      <P>
+        <S ID="S-19356">The choice of merging method has a large impact on the final translation result.</S>
+        <S ID="S-19357">For merging to be successful some internal knowledge source, such as part-of-speech or symbols is needed.</S>
+        <S ID="S-19358">The pure word list based method performed the worst of all systems on both metrics in most cases, which was not surprising, considering the evaluation of the merging algorithms on split data, where it was shown that the word-list based methods merged many parts that were not compounds.</S>
+      </P>
+      <P>
+        <S ID="S-19359">The combination of symbols and word lists gave good results on the automatic metrics.</S>
+        <S ID="S-19360">An advantage of this method is that it is applicable for translation systems that do not use factors.</S>
+        <S ID="S-19361">However, it has the drawback that it does not merge novel compounds, and finds fewer compounds than most other algorithms.</S>
+        <S ID="S-19362">The error analysis shows that many valid compounds are discarded by this algorithm.</S>
+        <S ID="S-19363">A method that both find novel compounds, and that works well is that based on POS-match.</S>
+        <S ID="S-19364">In its current form it needs a decoder that can handle factored translation models.</S>
+        <S ID="S-19365">It would, however, be possible to use more elaborate symbols with part-of-speech information, which would allow a POS-matching scheme, without the need of factors.</S>
+      </P>
+      <P>
+        <S ID="S-19366">The error analysis of merging performance showed that merging works well, especially for the two schemes where POS-matching is possible, where the proportion of errors is low.</S>
+        <S ID="S-19367">It also showed that using a part-of-speech sequence model was useful in order to get good results, specifically since it increased the number of compound parts that were placed correctly in the translation output.</S>
+      </P>
+      <P>
+        <S ID="S-19368">The sepmarked scheme is best on the PER metric it is worse on Bleu, and the error analysis shows that it performs worse on merging than the other systems.</S>
+        <S ID="S-19369">This could probably be improved by the use of special POS-tags and POS-matching for this scheme as well.</S>
+        <S ID="S-19370">It is hard to judge which is best of the unmarked and marked scheme.</S>
+        <S ID="S-19371">They perform similarly on the metrics, and there is no clear difference in the error analysis.</S>
+        <S ID="S-19372">The unmarked scheme does produce a somewhat higher number of novel compounds, though.</S>
+        <S ID="S-19373">A disadvantage of the marked scheme is that the compound form is kept for single parts.</S>
+        <S ID="S-19374">A solution for this could be to normalize parts in this scheme as well, which could improve performance, since reverse normalization performance is good on translation data.</S>
+      </P>
+      <P>
+        <S ID="S-19375">The systems with splitting and merging have more long words than the baseline, which indicates that they are more successful in creating compounds.</S>
+        <S ID="S-19376">However, they still have fewer long words than the reference text, indicating the need of more work on producing compounds.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion and Future Work</HEADER>
+      <P>
+        <S ID="S-19377">In this study I have shown that the strategy used for merging German compound parts in translation output influences translation results to a large extent.</S>
+        <S ID="S-19378">For merging to be successful, it needs some internal knowledge source, carried through the translation process, such as symbols or partof- speech.</S>
+        <S ID="S-19379">The overall best results were achieved by using matching for part-of-speech.</S>
+        <S ID="S-19380">One factor that affects merging, which was not explored in this work, is the quality of splitting.</S>
+        <S ID="S-19381">If splitting produces less erroneously split compounds than the current method, it is possible that merging also can produce better results, even though it was not clear from the error analysis that bad splits were a problem.</S>
+        <S ID="S-19382">A number of more accurate splitting strategies have been suggested for different tasks, see e.g. Alfonseca et al. (2008), that could be explored in combination with merging for machine translation.</S>
+        <S ID="S-19383">I have compared the performance of different merging strategies in one language, German.</S>
+        <S ID="S-19384">It would be interesting to investigate these methods for other compounding languages as well.</S>
+        <S ID="S-19385">I also want to explore translation between two compounding languages, where splitting and merging would be performed on both languages, not only on one language as in this study.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Enrique Alfonseca</RAUTHOR>
+      <REFTITLE>Decompounding query keywords from compounding languages.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Andr&#233; Berton</RAUTHOR>
+      <REFTITLE>Compound words in largevocabulary German speech recognition systems.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Chris Callison-Burch</RAUTHOR>
+      <REFTITLE>Re-evaluating the role of BLEU in machine translation research.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Decomposability of translation metrics for improved evaluation and efficient algorithms.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>&#304;lknur Durgar El-Kahlout and Kemal Oflazer.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Initial explorations in English to Turkish statistical machine translation.</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Eva Forsbom</RAUTHOR>
+      <REFTITLE>Training a super model lookalike: featuring edit distance, n-gram occurrence, and one reference translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Factored translation models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Empirical methods for compound splitting.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Towards better machine translation quality for the German-English language pairs.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Europarl: a parallel corpus for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Stefan Langer</RAUTHOR>
+      <REFTITLE>Zur Morphologie und Semantik von Nominalkomposita.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Maja Popovi&#263;</RAUTHOR>
+      <REFTITLE>Statistical machine translation of German compound words.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Helmut Schmid</RAUTHOR>
+      <REFTITLE>Probabilistic part-of-speech tagging using decision trees.</REFTITLE>
+      <DATE>1994</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>SRILM - an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Sara Stymne</RAUTHOR>
+      <REFTITLE>Processing of Swedish compounds for phrase-based statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Sara Stymne</RAUTHOR>
+      <REFTITLE>German compounds in factored statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>C Tillmann</RAUTHOR>
+      <REFTITLE>Accelerated DP based search for statistical translation.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

@@ -1,0 +1,947 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Hierarchical Phrase-Based Translation Representations</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-11504">This paper compares several translation representations for a synchronous context-free grammar parse including CFGs/hypergraphs, finite-state automata (FSA), and pushdown automata (PDA).</A-S>
+    <A-S ID="S-11505">The representation choice is shown to determine the form and complexity of target LM intersection and shortest-path algorithms that follow.</A-S>
+    <A-S ID="S-11506">Intersection, shortest path, FSA expansion and RTN replacement algorithms are presented for PDAs.</A-S>
+    <A-S ID="S-11507">Chinese-to- English translation experiments using HiFST and HiPDT, FSA and PDA-based decoders, are presented using admissible (or exact) search, possible for HiFST with compact SCFG rulesets and HiPDT with compact LMs.</A-S>
+    <A-S ID="S-11508">For large rulesets with large LMs, we introduce a two-pass search strategy which we then analyze in terms of search errors and translation performance.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-11518">Hierarchical phrase-based translation, using a synchronous context-free translation grammar (SCFG) together with an n-gram target language model (LM), is a popular approach in machine translation (<REF ID="R-08" RPTR="15">Chiang, 2007</REF>).</S>
+        <S ID="S-11519">Given a SCFG G and an n- gram language model M, this paper focuses on how to decode with them, i.e. how to apply them to the source text to generate a target translation.</S>
+        <S ID="S-11520">Decoding has three basic steps, which we first describe in terms of the formal languages and relations involved, with data representations and algorithms to follow.</S>
+      </P>
+      <P>
+        <S ID="S-11521">1.</S>
+        <S ID="S-11522">Translating the source sentence s with G to give target translations: T = {s} &#9702; G, a (weighted) context-free language resulting</S>
+      </P>
+      <P>
+        <S ID="S-11523">from the composition of a finite language and</S>
+      </P>
+      <P>
+        <S ID="S-11524">the algebraic relation G for SCFG G. 2.</S>
+        <S ID="S-11525">Applying the language model to these target</S>
+      </P>
+      <P>
+        <S ID="S-11526">translations: L = T &#8745;M, a (weighted) contextfree language resulting from the intersection of a context-free language and the regular language M for M.</S>
+        <S ID="S-11527">3.</S>
+        <S ID="S-11528">Searching for the translation and language</S>
+      </P>
+      <P>
+        <S ID="S-11529">model combination with the highest-probablity path: &#710;L=argmax l&#8712;L L</S>
+      </P>
+      <P>
+        <S ID="S-11530">Of course, decoding requires explicit data representations and algorithms for combining and searching them.</S>
+        <S ID="S-11531">In common to the approaches we will consider here, s is applied to G by using the CYK algorithm in Step 1 and M is represented by a finite automaton in Step 2.</S>
+        <S ID="S-11532">The choice of the representation of T in many ways determines the remaining decoder representations and algorithms needed.</S>
+        <S ID="S-11533">Since {s} is a finite language and we assume throughout that G does not allow unbounded insertions, T and L are, in fact, regular languages.</S>
+        <S ID="S-11534">As such, T and L have finite automaton representations T f and L f .</S>
+        <S ID="S-11535">In this case, weighted finite-state intersection and single-source shortest path algorithms (using negative log probabilities) can be used to solve Steps 2 and 3 (<REF ID="R-22" RPTR="29">Mohri, 2009</REF>).</S>
+        <S ID="S-11536">This is the approach taken in (Iglesias et al., 2009a; de Gispert et al., 2010).</S>
+        <S ID="S-11537">Instead T and L can be represented by hypergraphs T h and L h (or very similarly context-free rules, and-or trees, or deductive systems).</S>
+        <S ID="S-11538">In this case, hypergraph intersection with a finite automaton and hypergraph shortest path algorithms can be used to solve Steps 2 and 3 (<REF ID="R-15" RPTR="22">Huang, 2008</REF>).</S>
+        <S ID="S-11539">This is the approach taken by <REF ID="R-08" RPTR="11">Chiang (2007)</REF>.</S>
+        <S ID="S-11540">In this paper, we will consider another representation for context-free languages T and L as well, pushdown automata (PDA) T p and L p , familiar from formal</S>
+      </P>
+      <P>
+        <S ID="S-11541">language theory (<REF ID="R-00" RPTR="0">Aho and Ullman, 1972</REF>).</S>
+        <S ID="S-11542">We will describe PDA intersection with a finite automaton and PDA shortest-path algorithms in Section 2 that can be used to solve Steps 2 and 3.</S>
+        <S ID="S-11543">It cannot be over-emphasized that the CFG, hypergraph and PDA representations of T are used for their compactness rather than for expressing non-regular languages.</S>
+      </P>
+      <P>
+        <S ID="S-11544">As presented so far, the search performed in Step 3 is admissible (or exact) &#8211; the true shortest path is found.</S>
+        <S ID="S-11545">However, the search space in MT can be quite large.</S>
+        <S ID="S-11546">Many systems employ aggressive pruning during the shortest-path computation with little theoretical or empirical guarantees of correctness.</S>
+        <S ID="S-11547">Further, such pruning can greatly complicate any complexity analysis of the underlying representations and algorithms.</S>
+        <S ID="S-11548">In this paper, we will exclude any inadmissible pruning in the shortest-path algorithm itself.</S>
+        <S ID="S-11549">This allows us in Section 3 to compare the computational complexity of using these different representations.</S>
+        <S ID="S-11550">We show that the PDA representation is particularly suited for decoding with large SCFGs and compact LMs.</S>
+      </P>
+      <P>
+        <S ID="S-11551">We present Chinese-English translation results under the FSA and PDA translation representations.</S>
+        <S ID="S-11552">We describe a two-pass translation strategy which we have developed to allow use of the PDA representation in large-scale translation.</S>
+        <S ID="S-11553">In the first pass, translation is done using a lattice-generating version of the shortest path algorithm.</S>
+        <S ID="S-11554">The full translation grammar is used but with a compact, entropy-pruned version (Stolcke, 1998) of the full language model.</S>
+        <S ID="S-11555">This first-step uses admissible pruning and lattice generation under the compact language model.</S>
+        <S ID="S-11556">In the second pass, the original, unpruned LM is simply applied to the lattices produced in the first pass.</S>
+        <S ID="S-11557">We find that entropy-pruning and first-pass translation can be done so as to introduce very few search errors in the overall process; we can identify search errors in this experiment by comparison to exact translation under the full translation grammar and language model using the FSA representation.</S>
+        <S ID="S-11558">We then investigate a translation grammar which is large enough that exact translation under the FSA representation is not possible.</S>
+        <S ID="S-11559">We find that translation is possible using the two-pass strategy with the PDA translation representation and that gains in BLEU score result from using the larger translation grammar.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>1.1 Related Work</HEADER>
+        <P>
+          <S ID="S-11509">There is extensive prior work on computational efficiency and algorithmic complexity in hierarchical phrase-based translation.</S>
+          <S ID="S-11510">The challenge is to find algorithms that can be made to work with large translation grammars and large language models.</S>
+        </P>
+        <P>
+          <S ID="S-11511">Following the original algorithms and analysis of <REF ID="R-08" RPTR="12">Chiang (2007)</REF>, <REF ID="R-13" RPTR="20">Huang and Chiang (2007)</REF><REF ID="R-08" RPTR="13">Chiang (2007)</REF> developed the cube-growing algorithm, and more recently Huang and Mi (2010) developed an incremental decoding approach that exploits left-to-right nature of the language models.</S>
+          <S ID="S-11512">Search errors in hierarchical translation, and in translation more generally, have not been as extensively studied; this is undoubtedly due to the difficulties inherent in finding exact translations for use in comparison.</S>
+          <S ID="S-11513">Using a relatively simple phrasebased translation grammar, Iglesias et al. (2009b) compared search via cube-pruning to an exact FST implementation (<REF ID="R-20" RPTR="26">Kumar et al., 2006</REF>) and found that cube-pruning suffered significant search errors.</S>
+          <S ID="S-11514">For Hiero translation, an extensive comparison of search errors between the cube pruning and FSA implementation was presented by Iglesias et al. (2009a) and de Gispert et al. (2010).</S>
+          <S ID="S-11515">Relaxation techniques have also recently been shown to finding exact solutions in parsing (<REF ID="R-18" RPTR="24">Koo et al., 2010</REF>) and in SMT with tree-to-string translation grammars and trigram language models (<REF ID="R-28" RPTR="38">Rush and Collins, 2011</REF>), much smaller models compared to the work presented in this paper.</S>
+          <S ID="S-11516">Although entropy-pruned language models have been used to produce real-time translation systems (<REF ID="R-27" RPTR="37">Prasad et al., 2007</REF>), we believe our use of entropy-pruned language models in two-pass translation to be novel.</S>
+          <S ID="S-11517">This is an approach that is widelyused in automatic speech recognition (<REF ID="R-21" RPTR="27">Ljolje et al., 1999</REF>) and we note that it relies on efficient representation of very large search spaces T for subsequent rescoring, as is possible with FSAs and PDAs.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Pushdown Automata</HEADER>
+      <P>
+        <S ID="S-11765">In this section, we formally define pushdown automata and give intersection, shortest-path and related algorithms that will be needed later.</S>
+      </P>
+      <P>
+        <S ID="S-11766">Informally, pushdown automata are finite automata that have been augmented with a stack.</S>
+        <S ID="S-11767">Typ-</S>
+      </P>
+      <P>
+        <S ID="S-11768">0</S>
+      </P>
+      <P>
+        <S ID="S-11769">0</S>
+      </P>
+      <P>
+        <S ID="S-11770">(</S>
+      </P>
+      <P>
+        <S ID="S-11771">&#949;</S>
+      </P>
+      <P>
+        <S ID="S-11772">a ( &#949;</S>
+      </P>
+      <P>
+        <S ID="S-11773">)</S>
+      </P>
+      <P>
+        <S ID="S-11774">(a)</S>
+      </P>
+      <P>
+        <S ID="S-11775">a</S>
+      </P>
+      <P>
+        <S ID="S-11776">(</S>
+      </P>
+      <P>
+        <S ID="S-11777">(c)</S>
+      </P>
+      <P>
+        <S ID="S-11778">) b</S>
+      </P>
+      <P>
+        <S ID="S-11779">)</S>
+      </P>
+      <P>
+        <S ID="S-11780">b</S>
+      </P>
+      <P>
+        <S ID="S-11781">0,&#949;</S>
+      </P>
+      <P>
+        <S ID="S-11782">0</S>
+      </P>
+      <P>
+        <S ID="S-11783">&#949;</S>
+      </P>
+      <P>
+        <S ID="S-11784">&#949;</S>
+      </P>
+      <P>
+        <S ID="S-11785">a</S>
+      </P>
+      <P>
+        <S ID="S-11786">( &#949; &#949;</S>
+      </P>
+      <P>
+        <S ID="S-11787">1,(</S>
+      </P>
+      <P>
+        <S ID="S-11788">&#949;</S>
+      </P>
+      <P>
+        <S ID="S-11789">3,&#949;</S>
+      </P>
+      <P>
+        <S ID="S-11790">(b)</S>
+      </P>
+      <P>
+        <S ID="S-11791">a</S>
+      </P>
+      <P>
+        <S ID="S-11792">&#949;</S>
+      </P>
+      <P>
+        <S ID="S-11793">(d)</S>
+      </P>
+      <P>
+        <S ID="S-11794">ically this is done by adding a stack alphabet and labeling each transition with a stack operation (a stack symbol to be pushed onto, popped or read from the stack) in additon to the usual input label (<REF ID="R-00" RPTR="1">Aho and Ullman, 1972</REF>; <REF ID="R-05" RPTR="8">Berstel, 1979</REF>) and weight (<REF ID="R-19" RPTR="25">Kuich and Salomaa, 1986</REF>; <REF ID="R-26" RPTR="36">Petre and Salomaa, 2009</REF>).</S>
+        <S ID="S-11795">Our equivalent representation allows a transition to be labeled by a stack operation or a regular input symbol but not both.</S>
+        <S ID="S-11796">Stack operations are represented by pairs of open and close parentheses (pushing a symbol on and popping it from the stack).</S>
+        <S ID="S-11797">The advantage of this representation is that is identical to the finite automaton representation except that certain symbols (the parentheses) have special semantics.</S>
+        <S ID="S-11798">As such, several finite-state algorithms either immediately generalize to this PDA representation or do so with minimal changes.</S>
+        <S ID="S-11799">The algorithms described in this section have been implemented in the PDT extension (<REF ID="R-01" RPTR="3">Allauzen and Riley, 2011</REF>) of the OpenFst library (<REF ID="R-02" RPTR="4">Allauzen et al., 2007</REF>).</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Definitions</HEADER>
+        <P>
+          <S ID="S-11560">A (restricted) Dyck language consist of &#8220;wellformed&#8221; or &#8220;balanced&#8221; strings over a finite number of pairs of parentheses.</S>
+          <S ID="S-11561">Thus the string ( [ ( ) ( ) ] { } [ ] ) ( ) is in the Dyck language over 3 pairs of parentheses.</S>
+        </P>
+        <P>
+          <S ID="S-11562">More formally, let A and A be two finite alphabets such that there exists a bijection f from A to</S>
+        </P>
+        <P>
+          <S ID="S-11563">) &#949; b</S>
+        </P>
+        <P>
+          <S ID="S-11564">2,(</S>
+        </P>
+        <P>
+          <S ID="S-11565">4,(</S>
+        </P>
+        <P>
+          <S ID="S-11566">&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11567">b</S>
+        </P>
+        <P>
+          <S ID="S-11568">5,(</S>
+        </P>
+        <P>
+          <S ID="S-11569">A.</S>
+          <S ID="S-11570">Intuitively, f maps an open parenthesis to its corresponding close parenthesis.</S>
+          <S ID="S-11571">Let &#257; denote f(a) if a &#8712; A and f &#8722;1 (a) if a &#8712; A.</S>
+          <S ID="S-11572">The Dyck language D A over the alphabet &#194; = A &#8746; A is then the language defined by the following context-free grammar: S &#8594; &#491;, S &#8594; SS and S &#8594; aS&#257; for all a &#8712; A.</S>
+          <S ID="S-11573">We define the mapping c A : &#194; &#8727; &#8594; &#194;&#8727; as follow.</S>
+          <S ID="S-11574">c A (x) is the string obtained by iteratively deleting from x all factors of the form a&#257; with a &#8712; A.</S>
+          <S ID="S-11575">Observe that D A =c &#8722;1 A (&#491;).</S>
+        </P>
+        <P>
+          <S ID="S-11576">Let A and B be two finite alphabets such that B &#8838; A, we define the mapping r B : A &#8727; &#8594; B &#8727; by r B (x 1 .</S>
+          <S ID="S-11577">.</S>
+          <S ID="S-11578">.</S>
+          <S ID="S-11579">x n ) = y 1 .</S>
+          <S ID="S-11580">.</S>
+          <S ID="S-11581">.</S>
+          <S ID="S-11582">y n with y i = x i if x i &#8712; B and y i =&#491; otherwise.</S>
+          <S ID="S-11583">A weighted pushdown automaton (PDA) T over the tropical semiring (R &#8746; {&#8734;}, min, +, &#8734;, 0) is a 9-tuple (&#931;, &#928;, &#928;, Q, E, I, F, &#961;) where &#931; is the finite input alphabet, &#928; and &#928; are the finite open and close parenthesis alphabets, Q is a finite set of states, I &#8712; Q the initial state, F &#8838; Q the set of final states, E &#8838; Q &#215; (&#931; &#8746; &#770;&#928; &#8746; {&#491;}) &#215; (R &#8746; {&#8734;}) &#215; Q a finite set of transitions, and &#961; : F &#8594; R &#8746; {&#8734;} the final weight function.</S>
+          <S ID="S-11584">Let e = (p[e], i[e], w[e], n[e]) denote a transition in E.</S>
+        </P>
+        <P>
+          <S ID="S-11585">A path &#960; is a sequence of transitions &#960; =e 1 .</S>
+          <S ID="S-11586">.</S>
+          <S ID="S-11587">.</S>
+          <S ID="S-11588">e n such that n[e i ]=p[e i+1 ] for 1 &#8804; i &lt; n.</S>
+          <S ID="S-11589">We then define p[&#960;] = p[e 1 ], n[&#960;] = n[e n ], i[&#960;] = i[e 1 ] &#183; &#183; &#183; i[e n ], and w[&#960;]=w[e 1 ] + .</S>
+          <S ID="S-11590">.</S>
+          <S ID="S-11591">.</S>
+          <S ID="S-11592">+ w[e n ].</S>
+        </P>
+        <P>
+          <S ID="S-11593">A path &#960; is accepting if p[&#960;] = I and n[&#960;] &#8712; F .</S>
+          <S ID="S-11594">A path &#960; is balanced if r&#770;&#928;(i[&#960;]) &#8712; D &#928; .</S>
+          <S ID="S-11595">A balanced path &#960; accepts the string x &#8712; &#931; &#8727; if it is a balanced accepting path such that r &#931; (i[&#960;])=x.</S>
+        </P>
+        <P>
+          <S ID="S-11596">The weight associated by T to a string x &#8712; &#931; &#8727; is T (x) = min &#960;&#8712;P (x) w[&#960;] + &#961;(n[&#960;]) where P (x) denotes the set of balanced paths accepting x.</S>
+          <S ID="S-11597">A weighted language is recognizable by a weighted pushdown automaton iff it is context-free.</S>
+          <S ID="S-11598">We define the size of T as |T |=|Q|+|E|.</S>
+        </P>
+        <P>
+          <S ID="S-11599">A PDA T has a bounded stack if there exists K &#8712; N such that for any sub-path &#960; of any balanced path in T : |c &#928; (r&#770;&#928;(i[&#960;]))| &#8804; K.</S>
+          <S ID="S-11600">If T has a bounded stack, then it represents a regular language.</S>
+          <S ID="S-11601">Figure 1 shows non-regular, regular and bounded-stack PDAs.</S>
+        </P>
+        <P>
+          <S ID="S-11602">A weighted finite automaton (FSA) can be viewed as a PDA where the open and close parentheses alphabets are empty, see (<REF ID="R-22" RPTR="30">Mohri, 2009</REF>) for a standalone definition.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Expansion Algorithm</HEADER>
+        <P>
+          <S ID="S-11603">Given a bounded-stack PDA T , the expansion of T is the FSA T &#8242; equivalent to T defined as follows.</S>
+        </P>
+        <P>
+          <S ID="S-11604">A state in T &#8242; is a pair (q, z) where q is a state in T and z &#8712; &#928; &#8727; .</S>
+          <S ID="S-11605">A transition (q, a, w, q &#8242; ) in T results in a transition ((q, z), a &#8242; , w, (q &#8242; , z &#8242; )) in T &#8242; only when: (a) a &#8712; &#931; &#8746; {&#491;}, z &#8242; = z and a &#8242; = a, (b) a &#8712; &#928;, z &#8242; = za and a &#8242; = &#491;, or (c) a &#8712; &#928;, z &#8242; is such that z = z &#8242; a and a &#8242; = &#491;.</S>
+          <S ID="S-11606">The initial state of T &#8242; is I &#8242; = (I, &#491;).</S>
+          <S ID="S-11607">A state (q, z) in T &#8242; is final if q is final in T and z = &#491; (&#961; &#8242; ((q, &#491;))=&#961;(q)).</S>
+          <S ID="S-11608">The set of states of T &#8242; is the set of pairs (q, z) that can be reached from an initial state by transitions defined as above.</S>
+          <S ID="S-11609">The condition that T has a bounded stack ensures that this set is finite (since it implies that for any (q, z), |z| &#8804; K).</S>
+        </P>
+        <P>
+          <S ID="S-11610">The complexity of the algorithm is linear in O(|T &#8242; |) = O(e |T | ).</S>
+          <S ID="S-11611">Figure 1d show the result of the algorithm when applied to the PDA of Figure 1c.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Intersection Algorithm</HEADER>
+        <P>
+          <S ID="S-11612">The class of weighted pushdown automata is closed under intersection with weighted finite automata (<REF ID="R-04" RPTR="6">Bar-Hillel et al., 1964</REF>; <REF ID="R-24" RPTR="34">Nederhof and Satta, 2003</REF>).</S>
+          <S ID="S-11613">Considering a pair (T 1 , T 2 ) where one element is an FSA and the other element a PDA, then there exists a PDA T 1 &#8745;T 2 , the intersection of T 1 and T 2 , such that for all x &#8712; &#931; &#8727; : (T 1 &#8745; T 2 )(x) = T 1 (x)+T 2 (x).</S>
+          <S ID="S-11614">We assume in the following that T 2 is an FSA.</S>
+          <S ID="S-11615">We also assume that T 2 has no input-&#491; transitions.</S>
+          <S ID="S-11616">When T 2 has input-&#491; transitions, an epsilon filter (<REF ID="R-22" RPTR="31">Mohri, 2009</REF>; <REF ID="R-03" RPTR="5">Allauzen et al., 2011</REF>) generalized to handle parentheses can be used.</S>
+        </P>
+        <P>
+          <S ID="S-11617">A state in T =T 1 &#8745;T 2 is a pair (q 1 , q 2 ) where q 1 is a state of T 1 and q 2 a state of T 2 .</S>
+          <S ID="S-11618">The initial state is I =(I 1 , I 2 ).</S>
+          <S ID="S-11619">Given a transition e 1 =(q 1 , a, w 1 , q 1 &#8242; ) in T 1 , transitions out of (q 1 , q 2 ) in T are obtained using the following rules.</S>
+        </P>
+        <P>
+          <S ID="S-11620">If a &#8712; &#931;, then e 1 can be matched with a transition (q 2 , a, w 2 , q 2 &#8242; ) in T 2 resulting a transition ((q 1 , q 2 ), a, w 1 +w 2 , (q 1 &#8242; , q&#8242; 2 )) in T .</S>
+        </P>
+        <P>
+          <S ID="S-11621">If a = &#491;, then e 1 is matched with staying in q 2 resulting in a transition ((q 1 , q 2 ), &#491;, w 1 , (q 1 &#8242; , q 2)).</S>
+        </P>
+        <P>
+          <S ID="S-11622">Finally, if a &#8712; &#770;&#928;, e1 is also matched with staying in q 2 , resulting in a transition ((q 1 , q 2 ), a, w 1 , (q 1 &#8242; , q 2)) in T .</S>
+        </P>
+        <P>
+          <S ID="S-11623">A state (q 1 , q 2 ) in T is final when both q 1 and q 2 are final, and then &#961;((q 1 , q 2 ))=&#961; 1 (q 1 )+&#961; 2 (q 2 ).</S>
+        </P>
+        <P>
+          <S ID="S-11624">SHORTESTDISTANCE(T )</S>
+        </P>
+        <P>
+          <S ID="S-11625">1 for each q &#8712; Q and a &#8712; &#928; do 2 B[q, a] &#8592; &#8709; 3 GETDISTANCE(T, I) 4 return d[f, I]</S>
+        </P>
+        <P>
+          <S ID="S-11626">RELAX(q, s, w, S)</S>
+        </P>
+        <P>
+          <S ID="S-11627">1 if d[q, s] &gt; w then 2 d[q, s] &#8592; w 3 if q &#8713; S then 4 ENQUEUE(S, q)</S>
+        </P>
+        <P>
+          <S ID="S-11628">GETDISTANCE(T, s)</S>
+        </P>
+        <P>
+          <S ID="S-11629">1 for each q &#8712; Q do 2 d[q, s] &#8592; &#8734; 3 d[s, s] &#8592; 0 4 S s &#8592; s 5 while S s &#8800;&#8709; do 6 q &#8592; HEAD(S s) 7 DEQUEUE(S s) 8 for each e &#8712; E[q] do 9 if i[e] &#8712; &#931; &#8746; {&#491;} then 10 RELAX(n[e], s, d[q, s] + w[e], S s) 11 elseif i[e] &#8712; &#928; then 12 B[s, i[e]] &#8592; B[s, i[e]] &#8746; {e} 13 elseif i[e] &#8712; &#928; then 14 if d[n[e], n[e]] is undefined then 15 GETDISTANCE(T, n[e]) 16 for each e &#8242; &#8712; B[n[e], i[e]] do 17 w &#8592; d[q, s] + w[e] + d[p[e &#8242; ], n[e]] + w[e &#8242; ] 18 RELAX(n[e &#8242; ], s, w, S s)</S>
+        </P>
+        <P>
+          <S ID="S-11630">The complexity of the algorithm is in O(|T 1 ||T 2 |).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.4 Shortest Distance and Path Algorithms</HEADER>
+        <P>
+          <S ID="S-11631">A shortest path in a PDA T is a balanced accepting path with minimal weight and the shortest distance in T is the weight of such a path.</S>
+          <S ID="S-11632">We show that when T has a bounded stack, shortest distance and shortest path can be computed in O(|T | 3 log |T |) time (assuming T has no negative weights) and O(|T | 2 ) space.</S>
+        </P>
+        <P>
+          <S ID="S-11633">Given a state s in T with at least one incoming open parenthesis transition, we denote by C s the set of states that can be reached from s by a balanced path.</S>
+          <S ID="S-11634">If s has several incoming open parenthesis transitions, a naive implementation might lead to the states in C s to be visited up to exponentially many times.</S>
+          <S ID="S-11635">The basic idea of the algorithm is to memoize the shortest distance from s to states in C s .</S>
+          <S ID="S-11636">The</S>
+        </P>
+        <P>
+          <S ID="S-11637">pseudo-code is given in Figure 2.</S>
+        </P>
+        <P>
+          <S ID="S-11638">GETDISTANCE(T, s) starts a new instance of the</S>
+        </P>
+        <P>
+          <S ID="S-11639">shortest-distance algorithm from s using the queue S s , initially containing s.</S>
+          <S ID="S-11640">While the queue is not empty, a state is dequeued and its outgoing transitions examined (line 5-9).</S>
+          <S ID="S-11641">Transitions labeled by non-parenthesis are treated as in <REF ID="R-22" RPTR="28">Mohri (2009)</REF><REF ID="R-11" RPTR="18">(2009)</REF> (line 9-10).</S>
+          <S ID="S-11642">When the considered transition e is labeled by a close parenthesis, it is remembered that it balances all incoming open parentheses in s labeled by i[e] by adding e to B[s, i[e]] (line 11-12).</S>
+          <S ID="S-11643">Finally, when e is labeled with an open parenthesis, if its destination has not already been visited, a new instance is started from n[e] (line 14-15).</S>
+          <S ID="S-11644">The destination states of all transitions balancing e are then relaxed (line 16-18).</S>
+        </P>
+        <P>
+          <S ID="S-11645">The space complexity of the algorithm is quadratic for two reasons.</S>
+          <S ID="S-11646">First, the number of non-infinity d[q, s] is |Q| 2 .</S>
+          <S ID="S-11647">Second, the space required for storing B is at most in O(|E| 2 ) since for each open parenthesis transition e, the size of |B[n[e], i[e]]| is O(|E|) in the worst case.</S>
+          <S ID="S-11648">This last observation also implies that the cumulated number of transitions examined at line 16 is in O(N|Q| |E| 2 ) in the worst case, where N denotes the maximal number of times a state is inserted in the queue for a given call of GETDISTANCE.</S>
+          <S ID="S-11649">Assuming the cost of a queue operation is &#915;(n) for a queue containing n elements, the worst-case time complexity of the algorithm can then be expressed as O(N|T | 3 &#915;(|T |)).</S>
+          <S ID="S-11650">When T contains no negative weights, using a shortest-first queue discipline leads to a time complexity in O(|T | 3 log |T |).</S>
+          <S ID="S-11651">When all the C s &#8217;s are acyclic, using a topological order queue discipline leads to a O(|T | 3 ) time complexity.</S>
+          <S ID="S-11652">In effect, we are solving a k-sources shortestpath problem with k single-source solutions.</S>
+          <S ID="S-11653">A potentially better approach might be to solve the k- sources or k-pairs problem directly (<REF ID="R-12" RPTR="19">Hershberger et al., 2003</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-11654">When T has been obtained by converting an RTN or an hypergraph into a PDA (Section 2.5), the polynomial dependency in |T | becomes a linear dependency both for the time and space complexities.</S>
+          <S ID="S-11655">Indeed, for each q in T , there exists a unique s such that d[q, s] is non-infinity.</S>
+          <S ID="S-11656">Moreover, for each close parenthesis transistion e, there exists a unique open parenthesis transition e &#8242; such that e &#8712; B[n[e &#8242; ], i[e &#8242; ]].</S>
+          <S ID="S-11657">When each component of the RTN is acyclic, the complexity of the algorithm is hence in O(|T |) in time and space.</S>
+          <S ID="S-11658">The algorithm can be modified to compute the shortest path by keeping track of parent pointers.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.5 Replacement Algorithm</HEADER>
+        <P>
+          <S ID="S-11659">A recursive transition network (RTN) can be specified by (N, &#931;, (T &#957; ) &#957;&#8712;N , S) where N is an alphabet of nonterminals, &#931; is the input alphabet, (T &#957; ) &#957;&#8712;N is a family of FSAs with input alphabet &#931; &#8746; N, and S &#8712;N is the root nonterminal.</S>
+        </P>
+        <P>
+          <S ID="S-11660">A string x &#8712; &#931; &#8727; is accepted by R if there exists an accepting path &#960; in T S such that recursively replacing any transition with input label &#957; &#8712; N by an accepting path in T &#957; leads to a path &#960; &#8727; with input x.</S>
+          <S ID="S-11661">The weight associated by R is the minimum over all such &#960; &#8727; of w[&#960; &#8727; ]+&#961; S (n[&#960; &#8727; ]).</S>
+        </P>
+        <P>
+          <S ID="S-11662">Given an RTN R, the replacement of R is the PDA T equivalent to R defined by the 9-tuple (&#931;, &#928;, &#928;, Q, E, I, F, &#963;, &#961;) with &#928; = Q = &#8899; &#957;&#8712;N Q &#957;,</S>
+        </P>
+        <P>
+          <S ID="S-11663">&#8899;e&#8712;E &#957;</S>
+        </P>
+        <P>
+          <S ID="S-11664">E e I = I S , F = F S , &#961; = &#961; S , and E = &#8899; &#957;&#8712;N where E e = {e} if i[e] &#8713; N and E e = {(p[e], n[e], w[e], I &#181; ), (f, n[e], &#961; &#181; (f), n[e])|f &#8712; F &#181; } with &#181;=i[e]&#8712;N otherwise.</S>
+        </P>
+        <P>
+          <S ID="S-11665">The complexity of the construction is in O(|T |).</S>
+          <S ID="S-11666">If |F &#957; | = 1, then |T | = O( &#8721; &#957;&#8712;N |T &#957;|) = O(|R|).</S>
+          <S ID="S-11667">Creating a superfinal state for each T &#957; would lead to a T whose size is always linear in the size of R.</S>
+        </P>
+        <P>
+          <S ID="S-11668">3 Hierarchical Phrase-Based Translation Representation</S>
+        </P>
+        <P>
+          <S ID="S-11669">In this section, we compare several different representations for the target translations T of the source sentence s by synchronous CFG G prior to language model M application.</S>
+          <S ID="S-11670">As discussed in the introduction, T is a context-free language.</S>
+          <S ID="S-11671">For example, suppose it corresponds to:</S>
+        </P>
+        <P>
+          <S ID="S-11672">S&#8594;abXdg, S&#8594;acXf g, and X&#8594;bc.</S>
+        </P>
+        <P>
+          <S ID="S-11673">Figure 3 shows several alternative representations of T : Figure 3a shows the hypergraph representation of this grammar; there is a 1:1 correspondence between each production in the CFG and each hyperedge in the hypergraph.</S>
+          <S ID="S-11674">Figure 3b shows the RTN representation of this grammar with a 1:1 correspondence between each production in the CFG and each path in the RTN; this is the translation representation pro-</S>
+        </P>
+        <P>
+          <S ID="S-11675">f 5</S>
+        </P>
+        <P>
+          <S ID="S-11676">S</S>
+        </P>
+        <P>
+          <S ID="S-11677">a 0 1 b</S>
+        </P>
+        <P>
+          <S ID="S-11678">c</S>
+        </P>
+        <P>
+          <S ID="S-11679">X</S>
+        </P>
+        <P>
+          <S ID="S-11680">X</S>
+        </P>
+        <P>
+          <S ID="S-11681">d</S>
+        </P>
+        <P>
+          <S ID="S-11682">f</S>
+        </P>
+        <P>
+          <S ID="S-11683">6 g 7 b 0 1 c 2</S>
+        </P>
+        <P>
+          <S ID="S-11684">0,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11685">a 1,&#949; a</S>
+        </P>
+        <P>
+          <S ID="S-11686">6,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11687">b</S>
+        </P>
+        <P>
+          <S ID="S-11688">c</S>
+        </P>
+        <P>
+          <S ID="S-11689">2,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11690">7,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11691">&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11692">&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11693">11,(</S>
+        </P>
+        <P>
+          <S ID="S-11694">11,[</S>
+        </P>
+        <P>
+          <S ID="S-11695">b</S>
+        </P>
+        <P>
+          <S ID="S-11696">b</S>
+        </P>
+        <P>
+          <S ID="S-11697">(c) PDA</S>
+        </P>
+        <P>
+          <S ID="S-11698">12,(</S>
+        </P>
+        <P>
+          <S ID="S-11699">12,[</S>
+        </P>
+        <P>
+          <S ID="S-11700">c</S>
+        </P>
+        <P>
+          <S ID="S-11701">c</S>
+        </P>
+        <P>
+          <S ID="S-11702">(d) FSA</S>
+        </P>
+        <P>
+          <S ID="S-11703">duced by the HiFST decoder (Iglesias et al., 2009a; de Gispert et al., 2010).</S>
+          <S ID="S-11704">Figure 3c shows the pushdown automaton representation generated from the RTN with the replacement algorithm of Section 2.5.</S>
+          <S ID="S-11705">Since s is a finite language and G does not allow unbounded insertion, T p has a bounded stack and T is, in fact, a regular language.</S>
+          <S ID="S-11706">Figure 3d shows the finite-state automaton representation of T generated by the PDA using the expansion algorithm of Section 2.2.</S>
+          <S ID="S-11707">The HiFST decoder converts its RTN translation representation immediately into the finite-state representation using an algorithm equivalent to converting the RTN into a PDA followed by PDA expansion.</S>
+        </P>
+        <P>
+          <S ID="S-11708">As shown in Figure 4, an advantage of the RTN, PDA, and FSA representations is that they can benefit from FSA epsilon removal, determinization and minimization algorithms applied to their components (for RTNs and PDAs) or their entirety (for FSAs).</S>
+          <S ID="S-11709">For the complexity discussion below, however, we disregard these optimizations.</S>
+          <S ID="S-11710">Instead we focus on the complexity of each MT step described in the introduction:</S>
+        </P>
+        <P>
+          <S ID="S-11711">1.</S>
+          <S ID="S-11712">SCFG Translation: Assuming that the parsing of the input is performed by a CYK parse, then the CFG, hypergraph, RTN and PDA represen-</S>
+        </P>
+        <P>
+          <S ID="S-11713">13,(</S>
+        </P>
+        <P>
+          <S ID="S-11714">13,[</S>
+        </P>
+        <P>
+          <S ID="S-11715">&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11716">&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11717">3,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11718">8,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11719">d</S>
+        </P>
+        <P>
+          <S ID="S-11720">f</S>
+        </P>
+        <P>
+          <S ID="S-11721">4,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11722">9,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11723">g</S>
+        </P>
+        <P>
+          <S ID="S-11724">g</S>
+        </P>
+        <P>
+          <S ID="S-11725">5,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11726">10,&#949;</S>
+        </P>
+        <P>
+          <S ID="S-11727">tations can be generated in O(|s| 3 |G|) time and space (<REF ID="R-00" RPTR="2">Aho and Ullman, 1972</REF>).</S>
+          <S ID="S-11728">The FSA representation can require an additional O(e |s|3 |G| ) time and space since the PDA expansion can be exponential.</S>
+          <S ID="S-11729">2.</S>
+          <S ID="S-11730">Intersection: The intersection of a CFG T h</S>
+        </P>
+        <P>
+          <S ID="S-11731">with a finite automaton M can be performed by the classical Bar-Hillel algorithm (<REF ID="R-04" RPTR="7">Bar-Hillel et al., 1964</REF>) with time and space complexity O(|T h ||M| 3 ).</S>
+          <S ID="S-11732">1 The PDA intersection algorithm from Section 2.3 has time and space complexity O(|T p ||M|).</S>
+          <S ID="S-11733">Finally, the FSA intersection algorithm has time and space complexity O(|T f ||M|) (<REF ID="R-22" RPTR="32">Mohri, 2009</REF>).</S>
+          <S ID="S-11734">3.</S>
+          <S ID="S-11735">Shortest Path: The shortest path algorithm on</S>
+        </P>
+        <P>
+          <S ID="S-11736">the hypergraph, RTN, and FSA representations requires linear time and space (given the underlying acyclicity) (<REF ID="R-15" RPTR="23">Huang, 2008</REF>; <REF ID="R-22" RPTR="33">Mohri, 2009</REF>).</S>
+          <S ID="S-11737">As presented in Section 2.4, the PDA representation can require time cubic and space quadratic in |M|.</S>
+          <S ID="S-11738">2</S>
+        </P>
+        <P>
+          <S ID="S-11739">Table 1 summarizes the complexity results.</S>
+          <S ID="S-11740">Note the PDA representation is equivalent in time and superior in space to the CFG/hypergraph representation, in general, and it can be superior in both space</S>
+        </P>
+        <P>
+          <S ID="S-11741">1 The modified Bar-Hillel construction described by <REF ID="R-08" RPTR="14">Chiang (2007)</REF> has time and space complexity O(|T h ||M| 4 ); the modifications were introduced presumably to benefit the subsequent pruning method employed (but see <REF ID="R-14" RPTR="21">Huang et al. (2005)</REF>).</S>
+          <S ID="S-11742">2 The time (resp.</S>
+          <S ID="S-11743">space) complexity is not cubic (resp.</S>
+        </P>
+        <P>
+          <S ID="S-11744">quadratic) in |T p||M|.</S>
+          <S ID="S-11745">Given a state q in T p, there exists a unique s q such that q belongs to C sq .</S>
+          <S ID="S-11746">Given a state (q 1, q 2) in T p &#8745; M, (q 1, q 2) &#8712; C (s1 ,s 2 ) only if s 1 = s q1 , and hence (q 1, q 2) belongs to at most |M| components.</S>
+        </P>
+        <P>
+          <S ID="S-11747">and time to the FSA representation depending on the relative SCFG and LM sizes.</S>
+          <S ID="S-11748">The FSA representation favors smaller target translation sets and larger language models.</S>
+          <S ID="S-11749">Should a better complexity PDA shortest path algorithm be found, this conclusion could change.</S>
+          <S ID="S-11750">In practice, the PDA and FSA representations benefit hugely from the optimizations mentioned above, these optimizations improve the time and space usage by one order of magnitude.</S>
+        </P>
+        <P>
+          <S ID="S-11751">4 Experimental Framework</S>
+        </P>
+        <P>
+          <S ID="S-11752">We use two hierarchical phrase-based SMT decoders.</S>
+          <S ID="S-11753">The first one is a lattice-based decoder implemented with weighted finite-state transducers (de Gispert et al., 2010) and described in Section 3.</S>
+          <S ID="S-11754">The second decoder is a modified version using PDAs as described in Section 2.</S>
+          <S ID="S-11755">In order to distinguish both decoders we call them HiFST and HiPDT, respectively.</S>
+          <S ID="S-11756">The principal difference between the two decoders is where the finite-state expansion step is done.</S>
+          <S ID="S-11757">In HiFST, the RTN representation is immediately expanded to an FSA.</S>
+          <S ID="S-11758">In HiPDT, this expansion is delayed as late as possible - in the output of the shortest path algorithm.</S>
+          <S ID="S-11759">Another possible configuration is to expand after the LM intersection step but before the shortest path algorithm; in practice this is quite similar to HiFST.</S>
+          <S ID="S-11760">In the following sections we report experiments in Chinese-to-English translation.</S>
+          <S ID="S-11761">For translation model training, we use a subset of the GALE 2008 evaluation parallel text; 3 this is 2.1M sentences and approximately 45M words per language.</S>
+          <S ID="S-11762">We report translation results on a development set tune-nw (1,755 sentences) and a test set test-nw (1,671 sentences).</S>
+          <S ID="S-11763">These contain translations produced by the GALE program and portions of the newswire sections of MT02 through MT06.</S>
+          <S ID="S-11764">In tuning the sys-</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 See http://projects.ldc.upenn.edu/gale/data/catalog.html.</HEADER>
+      <P>
+        <S ID="S-11800"></S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experimental Framework</HEADER>
+      <P>
+        <S ID="S-11801">We use two hierarchical phrase-based SMT decoders.</S>
+        <S ID="S-11802">The first one is a lattice-based decoder implemented with weighted finite-state transducers (de Gispert et al., 2010) and described in Section 3.</S>
+        <S ID="S-11803">The second decoder is a modified version using PDAs as described in Section 2.</S>
+        <S ID="S-11804">In order to distinguish both decoders we call them HiFST and HiPDT, respectively.</S>
+        <S ID="S-11805">The principal difference between the two decoders is where the finite-state expansion step is done.</S>
+        <S ID="S-11806">In HiFST, the RTN representation is immediately expanded to an FSA.</S>
+        <S ID="S-11807">In HiPDT, this expansion is delayed as late as possible - in the output of the shortest path algorithm.</S>
+        <S ID="S-11808">Another possible configuration is to expand after the LM intersection step but before the shortest path algorithm; in practice this is quite similar to HiFST.</S>
+        <S ID="S-11809">In the following sections we report experiments in Chinese-to-English translation.</S>
+        <S ID="S-11810">For translation model training, we use a subset of the GALE 2008 evaluation parallel text; 3 this is 2.1M sentences and approximately 45M words per language.</S>
+        <S ID="S-11811">We report translation results on a development set tune-nw (1,755 sentences) and a test set test-nw (1,671 sentences).</S>
+        <S ID="S-11812">These contain translations produced by the GALE program and portions of the newswire sections of MT02 through MT06.</S>
+        <S ID="S-11813">In tuning the sys-</S>
+      </P>
+      <P>
+        <S ID="S-11814">3 See http://projects.ldc.upenn.edu/gale/data/catalog.html.</S>
+      </P>
+      <P>
+        <S ID="S-11815">We excluded the UN material and the LDC2002E18, LDC2004T08, LDC2007E08 and CUDonga collections.</S>
+      </P>
+      <P>
+        <S ID="S-11816">tems, standard MERT (<REF ID="R-25" RPTR="35">Och, 2003</REF>) iterative parameter estimation under IBM BLEU 4 is performed on the development set.</S>
+      </P>
+      <P>
+        <S ID="S-11817">The parallel corpus is aligned using MTTK (<REF ID="R-10" RPTR="17">Deng and Byrne, 2008</REF>) in both source-to-target and target-to-source directions.</S>
+        <S ID="S-11818">We then follow standard heuristics (<REF ID="R-08" RPTR="16">Chiang, 2007</REF>) and filtering strategies (Iglesias et al., 2009b) to extract hierarchical phrases from the union of the directional word alignments.</S>
+        <S ID="S-11819">We call a translation grammar the set of rules extracted from this process.</S>
+        <S ID="S-11820">We extract two translation grammars:</S>
+      </P>
+      <P>
+        <S ID="S-11821">&#8226; A restricted grammar where we apply the following additional constraint: rules are only considered if they have a forward translation probability p &gt; 0.01.</S>
+        <S ID="S-11822">We call this G 1 .</S>
+        <S ID="S-11823">As will be discussed later, the interest of this grammar is that decoding under it can be exact, that is, without any pruning in search.</S>
+        <S ID="S-11824">&#8226; An unrestricted one without the previous constraint.</S>
+        <S ID="S-11825">We call this G 2 .</S>
+        <S ID="S-11826">This is a superset of the previous grammar, and exact search under it is not feasible for HiFST: pruning is required in search.</S>
+      </P>
+      <P>
+        <S ID="S-11827">The initial English language model is a Kneser- Ney 4-gram estimated over the target side of the parallel text and the AFP and Xinhua portions of monolingual data from the English Gigaword Fourth Edition (LDC2009T13).</S>
+        <S ID="S-11828">This is a total of 1.3B words.</S>
+        <S ID="S-11829">We will call this language model M 1 .</S>
+        <S ID="S-11830">For large language model rescoring we also use the LM M 2 obtained by interpolating M 1 with a zero-cutoff stupidbackoff (<REF ID="R-06" RPTR="9">Brants et al., 2007</REF>) 5-gram estimated using 6.6B words of English newswire text.</S>
+        <S ID="S-11831">We next describe how we build translation systems using entropy-pruned language models.</S>
+      </P>
+      <P>
+        <S ID="S-11832">1.</S>
+        <S ID="S-11833">We build a baseline HiFST system that uses M 1 and a hierarchical grammar G, parameters being optimized with MERT under BLEU.</S>
+      </P>
+      <P>
+        <S ID="S-11834">4 See ftp://jaguar.ncsl.nist.gov/mt/resources/mteval-v13.pl</S>
+      </P>
+      <P>
+        <S ID="S-11835">2.</S>
+        <S ID="S-11836">We then use entropy-based pruning of the language model (Stolcke, 1998) under a relative perplexity threshold of &#952; to reduce the size of M 1 .</S>
+        <S ID="S-11837">We will call the resulting language model as M1 &#952; .</S>
+        <S ID="S-11838">Table 2 shows the number of n-grams (in millions) obtained for different &#952; values.</S>
+        <S ID="S-11839">3.</S>
+        <S ID="S-11840">We translate with M1 &#952; using the same parameters obtained in MERT in step 1, except for the word penalty, tuned over the lattices under BLEU performance.</S>
+        <S ID="S-11841">This produces a translation lattice in the topmost cell that contains hypotheses with exact scores under the translation grammar and M1 &#952;.</S>
+        <S ID="S-11842">4.</S>
+        <S ID="S-11843">Translation lattices in the topmost cell are</S>
+      </P>
+      <P>
+        <S ID="S-11844">pruned with a likelihood-based beam width &#946;.</S>
+        <S ID="S-11845">5.</S>
+        <S ID="S-11846">We remove the M1 &#952; scores from the pruned</S>
+      </P>
+      <P>
+        <S ID="S-11847">translation lattices and reapply M 1 , moving the word penalty back to the original value obtained in MERT.</S>
+        <S ID="S-11848">These operations can be carried out efficiently via standard FSA operations.</S>
+      </P>
+      <P>
+        <S ID="S-11849">6.</S>
+        <S ID="S-11850">Additionally, we can rescore the translation lattices obtained in steps 1 or 5 with the larger language model M 2 .</S>
+        <S ID="S-11851">Again, this can be done via standard FSA operations.</S>
+      </P>
+      <P>
+        <S ID="S-11852">Note that if &#946; = &#8734; or if &#952; = 0, the translation lattices obtained in step 1 should be identical to the ones of step 5.</S>
+        <S ID="S-11853">While the goal is to increase &#952; to reduce the size of the language model used at Step 3, &#946; will have to increase accordingly so as to avoid pruning away desirable hypotheses in Step 4.</S>
+        <S ID="S-11854">If &#946; defines a sufficiently wide beam to contain the hypotheses which would be favoured by M 1 , faster decoding with M1 &#952; would be possible without incurring search errors M 1 .</S>
+        <S ID="S-11855">This is investigated next.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Entropy-Pruned LM in Rescoring</HEADER>
+      <P>
+        <S ID="S-11856">In Table 3 we show translation performance under grammar G 1 for different values of &#952;.</S>
+        <S ID="S-11857">Performance is reported after first-pass decoding with M1 &#952; (see step 3 in Section 4), after rescoring with M 1 (see step 5) and after rescoring with M 2 (see step 6).</S>
+        <S ID="S-11858">The baseline (experiment number 1) uses &#952; = 0 (that is, M 1 ) for decoding.</S>
+      </P>
+      <P>
+        <S ID="S-11859">Under translation grammar G 1 , HiFST is able to generate an FSA with the entire space of possible candidate hypotheses.</S>
+        <S ID="S-11860">Therefore, any degradation in performance is only due to the M1 &#952; involved in decoding and the &#946; applied prior to rescoring.</S>
+      </P>
+      <P>
+        <S ID="S-11861">As shown in row number 2, for &#952; &#8804; 10 &#8722;9 the system provides the same performance to the baseline when &#946; &gt; 8, while decoding time is reduced by roughly 40%.</S>
+        <S ID="S-11862">This is because M1 &#952; is 10% of the size of the original language model M 1 , as shown in Table 2.</S>
+        <S ID="S-11863">As M1 &#952; is further reduced by increasing &#952; (see rows number 3 and 4), decoding time is also reduced.</S>
+        <S ID="S-11864">However, the beam width &#946; required in order to recover the good hypotheses in rescoring increases, reaching 12 for experiment 3 and 15 for experiment 4.</S>
+      </P>
+      <P>
+        <S ID="S-11865">Regarding rescoring with the larger M 2 (step 6 in Section 4), the system is also able to match the baseline performance as long as &#946; is wide enough, given the particular M1 &#952; used in first-pass decoding.</S>
+        <S ID="S-11866">Interestingly, results show that a similar &#946; value is needed when rescoring either with M 1 or M 2 .</S>
+      </P>
+      <P>
+        <S ID="S-11867">The usage of entropy-pruned language models increments speed at the risk of search errors.</S>
+        <S ID="S-11868">For instance, comparing the outputs of systems 1 and 2 with &#946; =10 in Table 3 we find 45 different 1-best hypotheses, even though the BLEU score is identical.</S>
+        <S ID="S-11869">In other words, we have 45 cases in which system 2 is not able to recover the baseline output because the 1st-pass likelihood beam &#946; is not wide enough.</S>
+        <S ID="S-11870">Similarly, system 3 fails in 101 cases (&#946; = 12) and system 4 fails in 95 cases.</S>
+        <S ID="S-11871">Interestingly, some of these sentences would require impractically huge beams.</S>
+        <S ID="S-11872">This might be due to the Kneser-Ney smoothing, which interacts badly with entropy pruning (<REF ID="R-07" RPTR="10">Chelba et al., 2010</REF>).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Hiero with PDAs and FSAs</HEADER>
+      <P>
+        <S ID="S-11873">In this section we contrast HiFST with HiPDT under the same translation grammar and entropy-pruned language models.</S>
+        <S ID="S-11874">Under the constrained grammar G 1 their performance is identical as both decoders can generate the entire search space which can then be rescored with M 1 or M 2 as shown in the previous section.</S>
+        <S ID="S-11875">Therefore, we now focus on the unconstrained grammar G 2 , where exact search is not feasible for HiFST.</S>
+        <S ID="S-11876">In order to evaluate this problem, we run both decoders over tune-nw, restricting memory usage to 10 gigabytes.</S>
+        <S ID="S-11877">If this limit is reached in decod-</S>
+      </P>
+      <P>
+        <S ID="S-11878">ing, the process is killed 5 .</S>
+        <S ID="S-11879">We report what internal decoding operation caused the system to crash.</S>
+        <S ID="S-11880">For HiFST, these include expansion into an FSA (Expand) and subsequent intersection with the language model (Compose).</S>
+        <S ID="S-11881">For HiPDT, these include PDA intersection with the language model (Compose) and subsequent expansion into an FSA (Expand), using algorithms described in Section 2.</S>
+      </P>
+      <P>
+        <S ID="S-11882">Table 4 shows the number of times each decoder succeeds in finding a hypothesis given the memory limit, and the operations being carried out when they fail to do so, when decoding with various M &#952; 1 .</S>
+        <S ID="S-11883">With &#952; =7.5 &#215; 10 &#8722;9 (row 2), HiFST can only decode 218 sentences, while HiPDT succeeds in 703 cases.</S>
+        <S ID="S-11884">The</S>
+      </P>
+      <P>
+        <S ID="S-11885">5 We used ulimit command.</S>
+        <S ID="S-11886">The experiment was carried out</S>
+      </P>
+      <P>
+        <S ID="S-11887">over machines with different configurations and load.</S>
+        <S ID="S-11888">Therefore, these numbers must be considered as approximate values.</S>
+      </P>
+      <P>
+        <S ID="S-11889">differences between both decoders increase as the M1 &#952; is more reduced, and for &#952; =7.5&#215;10&#8722;7 (row 4), HiPDT is able to perform exact search over all but three sentences.</S>
+        <S ID="S-11890">Table 5 shows performance using the latter configuration (Table 4, row 4).</S>
+        <S ID="S-11891">After large language model rescoring, HiPDT improves 0.5 BLEU over baseline with G 1 (Table 3, row 1).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Discussion and Conclusion</HEADER>
+      <P>
+        <S ID="S-11892">HiFST fails to decode mainly because the expansion into an FST leads to far too big search spaces (e.g. fails 938 times under &#952; = 7.5 &#215; 10 &#8722;8 ).</S>
+        <S ID="S-11893">If it succeeds in expanding the search space into an FST, the decoder still has to compose with the language model, which is also critical in terms of memory us-</S>
+      </P>
+      <P>
+        <S ID="S-11894">age (fails 536 times).</S>
+        <S ID="S-11895">In contrast, HiPDT creates a PDA, which is a more compact representation of the search space and allows efficient intersection with the language model before expansion into an FST.</S>
+        <S ID="S-11896">Therefore, the memory usage is considerably lower.</S>
+        <S ID="S-11897">Nevertheless, the complexity of the language model is critical for the PDA intersection and very specially the PDA expansion into an FST (fails 403 times for &#952; =7.5 &#215; 10 &#8722;8 ).</S>
+        <S ID="S-11898">With the algorithms presented in this paper, decoding with PDAs is possible for any translation grammar as long as an entropy pruned LM is used.</S>
+        <S ID="S-11899">While this allows exact decoding, it comes at the cost of making decisions based on less complex LMs, although this has been shown to be an adequate strategy when applying compact CFG rulesets.</S>
+        <S ID="S-11900">On the other hand, HiFST cannot decode under large translation grammars, thus requiring pruning during lattice construction, but it can apply an unpruned LM in this process.</S>
+        <S ID="S-11901">We find that with carefully designed pruning strategies, HiFST can match the performance of HiPDT reported in Table 5.</S>
+        <S ID="S-11902">But without pruning in search, expansion directly into an FST would lead to an explosion in terms of memory usage.</S>
+        <S ID="S-11903">Of course, without memory constraints both strategies would reach the same performance.</S>
+      </P>
+      <P>
+        <S ID="S-11904">Overall, these results suggest that HiPDT is more robust than HiFST when using complex hierarchical grammars.</S>
+        <S ID="S-11905">Conversely, FSTs might be more efficient for search spaces described by more constrained hierarchical grammars.</S>
+        <S ID="S-11906">This suggests that a hybrid solution could be effective: we could use PDAs or FSTs e.g. depending on the number of states of the FST representing the expanded search space, or other conditions.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-11907">The research leading to these results has received funding from the European Union Seventh Framework</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Alfred V Aho</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>1972</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Cyril Allauzen</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Cyril Allauzen</RAUTHOR>
+      <REFTITLE>OpenFst: A general and efficient weighted finite-state transducer library.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Cyril Allauzen</RAUTHOR>
+      <REFTITLE>Filters for efficient composition of weighted finite-state transducers.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Y Bar-Hillel</RAUTHOR>
+      <REFTITLE>On formal properties of simple phrase structure grammars.</REFTITLE>
+      <DATE>1964</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Jean Berstel</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>1979</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Thorsten Brants</RAUTHOR>
+      <REFTITLE>Large language models in machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Ciprian Chelba</RAUTHOR>
+      <REFTITLE>Study on interaction between entropy pruning and kneser-ney smoothing.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Adri&#224; de Gispert</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation with weighted finite state transducers and shallow-n grammars.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>HMM word and phrase alignment for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>John Hershberger</RAUTHOR>
+      <REFTITLE>On the difficulty of some shortest path problems.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Forest rescoring: Faster decoding with integrated language models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Machine translation as lexicalized parsing with hooks.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Advanced dynamic programming in semiring and hypergraph frameworks.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Gonzalo Iglesias</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation with weighted finite state transducers.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Gonzalo Iglesias</RAUTHOR>
+      <REFTITLE>Rule filtering by pattern for efficient hierarchical translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Terry Koo</RAUTHOR>
+      <REFTITLE>Dual decomposition for parsing with non-projective head automata.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Werner Kuich</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>1986</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Shankar Kumar</RAUTHOR>
+      <REFTITLE>A weighted finite state transducer translation template model for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Andrej Ljolje</RAUTHOR>
+      <REFTITLE>Efficient general lattice generation and rescoring.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Mehryar Mohri</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>In Drosde</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Mark-Jan Nederhof</RAUTHOR>
+      <REFTITLE>Probabilistic parsing as intersection.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Ion Petre</RAUTHOR>
+      <REFTITLE>Algebraic systems and pushdown automata.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>R Prasad</RAUTHOR>
+      <REFTITLE>Real-time speechto-speech translation for pdas.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Alexander M Rush</RAUTHOR>
+      <REFTITLE>Exact decoding of syntactic translation models through lagrangian relaxation.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

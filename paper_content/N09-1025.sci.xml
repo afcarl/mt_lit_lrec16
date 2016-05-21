@@ -1,0 +1,735 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>11,001 New Features for Statistical Machine Translation &#8727;</TITLE>
+  <AUTHORS>
+    <AUTHOR>David Chiang</AUTHOR>
+    <AUTHOR>Kevin Knight</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-22541">We use the Margin Infused Relaxed Algorithm of Crammer et al. to add a large number of new features to two machine translation systems: the Hiero hierarchical phrasebased translation system and our syntax-based translation system.</A-S>
+    <A-S ID="S-22542">On a large-scale Chinese- English translation task, we obtain statistically significant improvements of +1.5 BLEU and +1.1 BLEU, respectively.</A-S>
+    <A-S ID="S-22543">We analyze the impact of the new features and the performance of the learning algorithm.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-22544">What linguistic features can improve statistical machine translation (MT)?</S>
+        <S ID="S-22545">This is a fundamental question for the discipline, particularly as it pertains to improving the best systems we have.</S>
+        <S ID="S-22546">Further:</S>
+      </P>
+      <P>
+        <S ID="S-22547">&#8226; Do syntax-based translation systems have unique and effective levers to pull when designing new features?</S>
+      </P>
+      <P>
+        <S ID="S-22548">&#8226; Can large numbers of feature weights be learned efficiently and stably on modest amounts of data?</S>
+      </P>
+      <P>
+        <S ID="S-22549">In this paper, we address these questions by experimenting with a large number of new features.</S>
+        <S ID="S-22550">We add more than 250 features to improve a syntaxbased MT system&#8212;already the highest-scoring single system in the NIST 2008 Chinese-English common-data track&#8212;by +1.1 BLEU.</S>
+        <S ID="S-22551">We also add more than 10,000 features to Hiero (<REF ID="R-07" RPTR="16">Chiang, 2005</REF>) and obtain a +1.5 BLEU improvement.</S>
+      </P>
+      <P>
+        <S ID="S-22552">&#8727; This research was supported in part by DARPA contract</S>
+      </P>
+      <P>
+        <S ID="S-22553">HR0011-06-C-0022 under subcontract to BBN Technologies.</S>
+      </P>
+      <P>
+        <S ID="S-22554">Many of the new features use syntactic information, and in particular depend on information that is available only inside a syntax-based translation model.</S>
+        <S ID="S-22555">Thus they widen the advantage that syntaxbased models have over other types of models.</S>
+      </P>
+      <P>
+        <S ID="S-22556">The models are trained using the Margin Infused Relaxed Algorithm or MIRA (<REF ID="R-10" RPTR="20">Crammer et al., 2006</REF>) instead of the standard minimum-error-rate training or MERT algorithm (<REF ID="R-25" RPTR="37">Och, 2003</REF>).</S>
+        <S ID="S-22557">Our results add to a growing body of evidence (<REF ID="R-33" RPTR="52">Watanabe et al., 2007</REF>; <REF ID="R-05" RPTR="10">Chiang et al., 2008</REF>) that MIRA is preferable to MERT across languages and systems, even for very large-scale tasks.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related Work</HEADER>
+      <P>
+        <S ID="S-22558">The work of Och et al <REF ID="R-24" RPTR="36">(2004)</REF> is perhaps the bestknown study of new features and their impact on translation quality.</S>
+        <S ID="S-22559">However, it had a few shortcomings.</S>
+        <S ID="S-22560">First, it used the features for reranking n-best lists of translations, rather than for decoding or forest reranking (<REF ID="R-15" RPTR="26">Huang, 2008</REF>).</S>
+        <S ID="S-22561">Second, it attempted to incorporate syntax by applying off-the-shelf part-ofspeech taggers and parsers to MT output, a task these tools were never designed for.</S>
+        <S ID="S-22562">By contrast, we incorporate features directly into hierarchical and syntaxbased decoders.</S>
+      </P>
+      <P>
+        <S ID="S-22563">A third difficulty with Och et al.&#8217;s study was that it used MERT, which is not an ideal vehicle for feature exploration because it is observed not to perform well with large feature sets.</S>
+        <S ID="S-22564">Others have introduced alternative discriminative training methods (<REF ID="R-30" RPTR="46">Tillmann and Zhang, 2006</REF>; <REF ID="R-18" RPTR="29">Liang et al., 2006</REF>; <REF ID="R-31" RPTR="47">Turian et al., 2007</REF>; <REF ID="R-00" RPTR="0">Blunsom et al., 2008</REF>; <REF ID="R-19" RPTR="30">Macherey et al., 2008</REF>), in which a recurring challenge is scalability: to train many features, we need many train-</S>
+      </P>
+      <P>
+        <S ID="S-22565">Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the ACL, pages 218&#8211;226, Boulder, Colorado, June 2009. c&#9675;2009 Association for Computational Linguistics</S>
+      </P>
+      <P>
+        <S ID="S-22566">ing examples, and to train discriminatively, we need to search through all possible translations of each training example.</S>
+        <S ID="S-22567">Another line of research (<REF ID="R-33" RPTR="53">Watanabe et al., 2007</REF>; <REF ID="R-05" RPTR="11">Chiang et al., 2008</REF>) tries to squeeze as many features as possible from a relatively small dataset.</S>
+        <S ID="S-22568">We follow this approach here.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Systems Used</HEADER>
+      <P>
+        <S ID="S-22626"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Hiero</HEADER>
+        <P>
+          <S ID="S-22569">Hiero (<REF ID="R-07" RPTR="17">Chiang, 2005</REF>) is a hierarchical, string-tostring translation system.</S>
+          <S ID="S-22570">Its rules, which are extracted from unparsed, word-aligned parallel text, are synchronous CFG productions, for example:</S>
+        </P>
+        <P>
+          <S ID="S-22571">X &#8594; X 1 de X 2 , X 2 of X 1</S>
+        </P>
+        <P>
+          <S ID="S-22572">As the number of nonterminals is limited to two, the grammar is equivalent to an inversion transduction grammar (<REF ID="R-34" RPTR="55">Wu, 1997</REF>).</S>
+          <S ID="S-22573">The baseline model includes 12 features whose weights are optimized using MERT.</S>
+          <S ID="S-22574">Two of the features are n-gram language models, which require intersecting the synchronous CFG with finite-state automata representing the language models.</S>
+          <S ID="S-22575">This grammar can be parsed efficiently using cube pruning (<REF ID="R-08" RPTR="18">Chiang, 2007</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Syntax-based system</HEADER>
+        <P>
+          <S ID="S-22576">Our syntax-based system transforms source Chinese strings into target English syntax trees.</S>
+          <S ID="S-22577">Following previous work in statistical MT (Brown et al., 1993), we envision a noisy-channel model in which a language model generates English, and then a translation model transforms English trees into Chinese.</S>
+          <S ID="S-22578">We represent the translation model as a tree transducer (<REF ID="R-16" RPTR="27">Knight and Graehl, 2005</REF>).</S>
+          <S ID="S-22579">It is obtained from bilingual text that has been word-aligned and whose English side has been syntactically parsed.</S>
+          <S ID="S-22580">From this data, we use the the GHKM minimal-rule extraction algorithm of (<REF ID="R-13" RPTR="24">Galley et al., 2004</REF>) to yield rules like:</S>
+        </P>
+        <P>
+          <S ID="S-22581">NP-C(x 0 :NPB PP(IN(of x 1 :NPB)) &#8596; x 1 de x 0</S>
+        </P>
+        <P>
+          <S ID="S-22582">Though this rule can be used in either direction, here we use it right-to-left (Chinese to English).</S>
+          <S ID="S-22583">We follow <REF ID="R-14" RPTR="25">Galley et al. (2006)</REF> in allowing unaligned Chinese words to participate in multiple translation rules, and in collecting larger rules composed of minimal rules.</S>
+          <S ID="S-22584">These larger rules have been shown to substantially improve translation accuracy (Galley et al., 2006; <REF ID="R-11" RPTR="22">DeNeefe et al., 2007</REF>).</S>
+          <S ID="S-22585">We apply Good-Turing discounting to the transducer rule counts and obtain probability estimates:</S>
+        </P>
+        <P>
+          <S ID="S-22586">P(rule) =</S>
+        </P>
+        <P>
+          <S ID="S-22587">count(rule) count(LHS-root(rule))</S>
+        </P>
+        <P>
+          <S ID="S-22588">When we apply these probabilities to derive an English sentence e and a corresponding Chinese sentence c, we wind up with the joint probability P(e, c).</S>
+        </P>
+        <P>
+          <S ID="S-22589">The baseline model includes log P(e, c), the two n-gram language models log P(e), and other features for a total of 25.</S>
+          <S ID="S-22590">For example, there is a pair of features to punish rules that drop Chinese content words or introduce spurious English content words.</S>
+          <S ID="S-22591">All features are linearly combined and their weights are optimized using MERT.</S>
+        </P>
+        <P>
+          <S ID="S-22592">For efficient decoding with integrated n-gram language models, all transducer rules must be binarized into rules that contain at most two variables and can be incrementally scored by the language model (Zhang et al., 2006).</S>
+          <S ID="S-22593">Then we use a CKY-style parser (<REF ID="R-35" RPTR="56">Yamada and Knight, 2002</REF>; Galley et al., 2006) with cube pruning to decode new sentences.</S>
+        </P>
+        <P>
+          <S ID="S-22594">We include two other techniques in our baseline.</S>
+          <S ID="S-22595">To get more general translation rules, we restructure our English training trees using expectationmaximization (<REF ID="R-32" RPTR="48">Wang et al., 2007</REF>), and to get more specific translation rules, we relabel the trees with up to 4 specialized versions of each nonterminal symbol, again using expectation-maximization and the split/merge technique of <REF ID="R-26" RPTR="38">Petrov et al. (2006)</REF>.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 MIRA training</HEADER>
+        <P>
+          <S ID="S-22596">We incorporate all our new features into a linear model (<REF ID="R-22" RPTR="35">Och and Ney, 2002</REF>) and train them using MIRA (<REF ID="R-10" RPTR="21">Crammer et al., 2006</REF>), following previous work (<REF ID="R-33" RPTR="54">Watanabe et al., 2007</REF>; <REF ID="R-05" RPTR="12">Chiang et al., 2008</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-22597">Let e stand for output strings or their derivations, and let h(e) stand for the feature vector for e. Initialize the feature weights w.</S>
+          <S ID="S-22598">Then, repeatedly:</S>
+        </P>
+        <P>
+          <S ID="S-22599">&#8226; Select a batch of input sentences f 1 , .</S>
+          <S ID="S-22600">.</S>
+          <S ID="S-22601">.</S>
+          <S ID="S-22602">, f m and decode each f i to obtain a forest of translations.</S>
+        </P>
+        <P>
+          <S ID="S-22603">&#8226; For each i, select from the forest a set of hypothesis translations e i1 , .</S>
+          <S ID="S-22604">.</S>
+          <S ID="S-22605">.</S>
+          <S ID="S-22606">, e in , which are the</S>
+        </P>
+        <P>
+          <S ID="S-22607">10-best translations according to each of:</S>
+        </P>
+        <P>
+          <S ID="S-22608">h(e) &#183; w</S>
+        </P>
+        <P>
+          <S ID="S-22609">BLEU(e) + h(e) &#183; w</S>
+        </P>
+        <P>
+          <S ID="S-22610">&#8722;BLEU(e) + h(e) &#183; w</S>
+        </P>
+        <P>
+          <S ID="S-22611">&#8226; For each i, select an oracle translation:</S>
+        </P>
+        <P>
+          <S ID="S-22612">(1) e &#8727; = arg max (BLEU(e) + h(e) &#183; w) (2)</S>
+        </P>
+        <P>
+          <S ID="S-22613">e</S>
+        </P>
+        <P>
+          <S ID="S-22614">Let &#8710;h i j = h(e &#8727; i ) &#8722; h(e i j).</S>
+        </P>
+        <P>
+          <S ID="S-22615">&#8226; For each e i j , compute the loss</S>
+        </P>
+        <P>
+          <S ID="S-22616">l i j = BLEU(e &#8727; i ) &#8722; BLEU(e i j) (3)</S>
+        </P>
+        <P>
+          <S ID="S-22617">&#8226; Update w to the value of w &#8242; that minimizes:</S>
+        </P>
+        <P>
+          <S ID="S-22618">1 m&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-22619">2 &#8214;w&#8242; &#8722; w&#8214; 2 + C max (l i j &#8722; &#8710;h i j &#183; w &#8242; ) (4)</S>
+        </P>
+        <P>
+          <S ID="S-22620">1&#8804; j&#8804;n i=1</S>
+        </P>
+        <P>
+          <S ID="S-22621">where C = 0.01.</S>
+          <S ID="S-22622">This minimization is performed by a variant of sequential minimal optimization (<REF ID="R-27" RPTR="40">Platt, 1998</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-22623">Following <REF ID="R-05" RPTR="8">Chiang et al. (2008)</REF><REF ID="R-06" RPTR="13">(2008)</REF><REF ID="R-20" RPTR="31">(2008)</REF>, we calculate the sentence BLEU scores in (1), (2), and (3) in the context of some previous 1-best translations.</S>
+          <S ID="S-22624">We run 20 of these learners in parallel, and when training is finished, the weight vectors from all iterations of all learners are averaged together.</S>
+        </P>
+        <P>
+          <S ID="S-22625">Since the interface between the trainer and the decoder is fairly simple&#8212;for each sentence, the decoder sends the trainer a forest, and the trainer returns a weight update&#8212;it is easy to use this algorithm with a variety of CKY-based decoders: here, we are using it in conjunction with both the Hiero decoder and our syntax-based decoder.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Features</HEADER>
+      <P>
+        <S ID="S-22680">In this section, we describe the new features introduced on top of our baseline systems.</S>
+      </P>
+      <P>
+        <S ID="S-22681">Discount features Both of our systems calculate several features based on observed counts of rules in the training data.</S>
+        <S ID="S-22682">Though the syntax-based system uses Good-Turing discounting when computing the P(e, c) feature, we find, as noted above, that it uses quite a few one-count rules, suggesting that their probabilities have been overestimated.</S>
+        <S ID="S-22683">We can directly attack this problem by adding features count i that reward or punish rules seen i times, or features count [i, j] for rules seen between i and j times.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Target-side features</HEADER>
+        <P>
+          <S ID="S-22627">String-to-tree MT offers some unique levers to pull, in terms of target-side features.</S>
+          <S ID="S-22628">Because the system outputs English trees, we can analyze output trees on the tuning set and design new features to encourage the decoder to produce more grammatical trees.</S>
+        </P>
+        <P>
+          <S ID="S-22629">Rule overlap features While individual rules observed in decoder output are often quite reasonable, two adjacent rules can create problems.</S>
+          <S ID="S-22630">For example, a rule that has a variable of type IN (preposition) needs another rule rooted with IN to fill the position.</S>
+          <S ID="S-22631">If the second rule supplies the wrong preposition, a bad translation results.</S>
+          <S ID="S-22632">The IN node here is an overlap point between rules.</S>
+          <S ID="S-22633">Considering that certain nonterminal symbols may be more reliable overlap points than others, we create a binary feature for each nonterminal.</S>
+          <S ID="S-22634">A rule like:</S>
+        </P>
+        <P>
+          <S ID="S-22635">IN(at) &#8596; zai</S>
+        </P>
+        <P>
+          <S ID="S-22636">will have feature rule-root-IN set to 1 and all other rule-root features set to 0.</S>
+          <S ID="S-22637">Our rule root features range over the original (non-split) nonterminal set; we have 105 in total.</S>
+          <S ID="S-22638">Even though the rule root features are locally attached to individual rules&#8212;and therefore cause no additional problems for the decoder search&#8212;they are aimed at problematic rule/rule interactions.</S>
+        </P>
+        <P>
+          <S ID="S-22639">Bad single-level rewrites Sometimes the decoder uses questionable rules, for example:</S>
+        </P>
+        <P>
+          <S ID="S-22640">PP(x 0 :VBN x 1 :NP-C) &#8596; x 0 x 1</S>
+        </P>
+        <P>
+          <S ID="S-22641">This rule is learned from 62 cases in our training data, where the VBN is almost always the word given.</S>
+          <S ID="S-22642">However, the decoder misuses this rule with other VBNs.</S>
+          <S ID="S-22643">So we can add a feature that penalizes any rule in which a PP dominates a VBN and NP-C.</S>
+          <S ID="S-22644">The feature class bad-rewrite comprises penalties for the following configurations based on our analysis of the tuning set:</S>
+        </P>
+        <P>
+          <S ID="S-22645">PP &#8594; VBN NP-C</S>
+        </P>
+        <P>
+          <S ID="S-22646">PP-BAR &#8594; NP-C IN</S>
+        </P>
+        <P>
+          <S ID="S-22647">VP &#8594; NP-C PP</S>
+        </P>
+        <P>
+          <S ID="S-22648">CONJP &#8594; RB IN</S>
+        </P>
+        <P>
+          <S ID="S-22649">Node count features It is possible that the decoder creates English trees with too many or too few nodes of a particular syntactic category.</S>
+          <S ID="S-22650">For example, there may be an tendency to generate too many determiners or past-tense verbs.</S>
+          <S ID="S-22651">We therefore add a count feature for each of the 109 (non-split) English nonterminal symbols.</S>
+          <S ID="S-22652">For a rule like</S>
+        </P>
+        <P>
+          <S ID="S-22653">NPB(NNP(us) NNP(president) x 0 :NNP)</S>
+        </P>
+        <P>
+          <S ID="S-22654">&#8596; meiguo zongtong x 0</S>
+        </P>
+        <P>
+          <S ID="S-22655">the feature node-count-NPB gets value 1, nodecount-NNP gets value 2, and all others get 0.</S>
+        </P>
+        <P>
+          <S ID="S-22656">Insertion features Among the rules we extract from bilingual corpora are target-language insertion rules, which have a word on the English side, but no words on the source Chinese side.</S>
+          <S ID="S-22657">Sample syntaxbased insertion rules are:</S>
+        </P>
+        <P>
+          <S ID="S-22658">NPB(DT(the) x 0 :NN) &#8596; x 0</S>
+        </P>
+        <P>
+          <S ID="S-22659">S(x 0 :NP-C VP(VBZ(is) x 1 :VP-C)) &#8596; x 0 x 1</S>
+        </P>
+        <P>
+          <S ID="S-22660">We notice that our decoder, however, frequently fails to insert words like is and are, which often have no equivalent in the Chinese source.</S>
+          <S ID="S-22661">We also notice that the-insertion rules sometimes have a good effect, as in the translation &#8220;in the bloom of youth,&#8221; but other times have a bad effect, as in &#8220;people seek areas of the conspiracy.&#8221;</S>
+        </P>
+        <P>
+          <S ID="S-22662">Each time the decoder uses (or fails to use) an insertion rule, it incurs some risk.</S>
+          <S ID="S-22663">There is no guarantee that the interaction of the rule probabilities and the language model provides the best way to manage this risk.</S>
+          <S ID="S-22664">We therefore provide MIRA with a feature for each of the most common English words appearing in insertion rules, e.g., insert-the and insert-is.</S>
+          <S ID="S-22665">There are 35 such features.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Source-side features</HEADER>
+        <P>
+          <S ID="S-22666">We now turn to features that make use of source-side context.</S>
+          <S ID="S-22667">Although these features capture dependencies that cross boundaries between rules, they are still local in the sense that no new states need to be added to the decoder.</S>
+          <S ID="S-22668">This is because the entire source sentence, being fixed, is always available to every feature.</S>
+        </P>
+        <P>
+          <S ID="S-22669">Soft syntactic constraints Neither of our systems uses source-side syntactic information; hence, both could potentially benefit from soft syntactic constraints as described by <REF ID="R-21" RPTR="34">Marton and Resnik (2008)</REF><REF ID="R-06" RPTR="14">(2008)</REF><REF ID="R-20" RPTR="32">(2008)</REF>.</S>
+          <S ID="S-22670">In brief, these features use the output of an independent syntactic parser on the source sentence, rewarding decoder constituents that match syntactic constituents and punishing decoder constituents that cross syntactic constituents.</S>
+          <S ID="S-22671">We use separatelytunable features for each syntactic category.</S>
+        </P>
+        <P>
+          <S ID="S-22672">Structural distortion features Both of our systems have rules with variables that generalize over possible fillers, but neither system&#8217;s basic model conditions a rule application on the size of a filler, making it difficult to distinguish long-distance reorderings from short-distance reorderings.</S>
+          <S ID="S-22673">To remedy this problem, <REF ID="R-05" RPTR="9">Chiang et al. (2008)</REF><REF ID="R-06" RPTR="15">(2008)</REF><REF ID="R-20" RPTR="33">(2008)</REF> introduce a structural distortion model, which we include in our experiment.</S>
+          <S ID="S-22674">Our syntax-based baseline includes the generative version of this model already.</S>
+        </P>
+        <P>
+          <S ID="S-22675">Word context During rule extraction, we retain word alignments from the training data in the extracted rules.</S>
+          <S ID="S-22676">(If a rule is observed with more than one set of word alignments, we keep only the most frequent one.</S>
+          <S ID="S-22677">) We then define, for each triple ( f, e, f +1 ), a feature that counts the number of times that f is aligned to e and f +1 occurs to the right of f ; and similarly for triples ( f, e, f &#8722;1 ) with f &#8722;1 occurring to the left of f .</S>
+          <S ID="S-22678">In order to limit the size of the model, we restrict words to be among the 100 most frequently occurring words from the training data; all other words are replaced with a token &lt;unk&gt;.</S>
+          <S ID="S-22679">These features are somewhat similar to features used by <REF ID="R-33" RPTR="49">Watanabe et al. (2007)</REF><REF ID="R-03" RPTR="2">(2007)</REF><REF ID="R-29" RPTR="41">(2007)</REF>, but more in the spirit of features used in the word sense disambiguation model introduced by <REF ID="R-17" RPTR="28">Lee and Ng (2002)</REF> and incorporated as a submodel of a translation system by <REF ID="R-02" RPTR="1">Chan et al. (2007)</REF><REF ID="R-03" RPTR="3">(2007)</REF><REF ID="R-29" RPTR="42">(2007)</REF>; here, we are incorporating some of its features directly into the translation model.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiments</HEADER>
+      <P>
+        <S ID="S-22684">For our experiments, we used a 260 million word Chinese/English bitext.</S>
+        <S ID="S-22685">We ran GIZA++ on the entire bitext to produce IBM Model 4 word alignments, and then the link deletion algorithm (<REF ID="R-12" RPTR="23">Fossum et al., 2008</REF>) to yield better-quality alignments.</S>
+        <S ID="S-22686">For</S>
+      </P>
+      <P>
+        <S ID="S-22687">the syntax-based system, we ran a reimplementation of the Collins parser (<REF ID="R-09" RPTR="19">Collins, 1997</REF>) on the English half of the bitext to produce parse trees, then restructured and relabeled them as described in Section 3.2.</S>
+        <S ID="S-22688">Syntax-based rule extraction was performed on a 65 million word subset of the training data.</S>
+        <S ID="S-22689">For Hiero, rules with up to two nonterminals were extracted from a 38 million word subset and phrasal rules were extracted from the remainder of the training data.</S>
+      </P>
+      <P>
+        <S ID="S-22690">We trained three 5-gram language models: one on the English half of the bitext, used by both systems, one on one billion words of English, used by the syntax-based system, and one on two billion words of English, used by Hiero.</S>
+        <S ID="S-22691">Modified Kneser-Ney smoothing (<REF ID="R-04" RPTR="7">Chen and Goodman, 1998</REF>) was applied to all language models.</S>
+        <S ID="S-22692">The language models are represented using randomized data structures similar to those of Talbot et al. <REF ID="R-03" RPTR="4">(2007)</REF><REF ID="R-29" RPTR="43">(2007)</REF>.</S>
+      </P>
+      <P>
+        <S ID="S-22693">Our tuning set (2010 sentences) and test set (1994 sentences) were drawn from newswire data from the NIST 2004 and 2005 evaluations and the GALE program (with no overlap at either the segment or document level).</S>
+        <S ID="S-22694">For the source-side syntax features, we used the Berkeley parser (<REF ID="R-26" RPTR="39">Petrov et al., 2006</REF>) to parse the Chinese side of both sets.</S>
+      </P>
+      <P>
+        <S ID="S-22695">We implemented the source-side context features for Hiero and the target-side syntax features for the syntax-based system, and the discount features for both.</S>
+        <S ID="S-22696">We then ran MIRA on the tuning set with 20 parallel learners for Hiero and 73 parallel learners for the syntax-based system.</S>
+        <S ID="S-22697">We chose a stopping iteration based on the BLEU score on the tuning set, and used the averaged feature weights from all iter-</S>
+      </P>
+      <P>
+        <S ID="S-22698">ations of all learners to decode the test set.</S>
+        <S ID="S-22699">The results (Table 1) show significant improvements in both systems (p &lt; 0.01) over already very strong MERT baselines.</S>
+        <S ID="S-22700">Adding the source-side and discount features to Hiero yields a +1.5 BLEU improvement, and adding the target-side syntax and discount features to the syntax-based system yields a +1.1 BLEU improvement.</S>
+        <S ID="S-22701">The results also show that for Hiero, the various classes of features contributed roughly equally; for the syntax-based system, we see that two of the feature classes make small contributions but time constraints unfortunately did not permit isolated testing of all feature classes.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Analysis</HEADER>
+      <P>
+        <S ID="S-22751">How did the various new features improve the translation quality of our two systems?</S>
+        <S ID="S-22752">We begin by examining the discount features.</S>
+        <S ID="S-22753">For these features, we used slightly different schemes for the two systems, shown in Table 2 with their learned feature weights.</S>
+        <S ID="S-22754">We see in both cases that one-count rules are strongly penalized, as expected.</S>
+      </P>
+      <P>
+        <S ID="S-22755">.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Syntax features</HEADER>
+        <P>
+          <S ID="S-22702">Table 3 shows word-insertion feature weights.</S>
+          <S ID="S-22703">The system rewards insertion of forms of be; examples 1&#8211;3 in Figure 1 show typical improved translations that result.</S>
+          <S ID="S-22704">Among determiners, inserting a is rewarded, while inserting the is punished.</S>
+          <S ID="S-22705">This seems to be because the is often part of a fixed phrase, such as the White House, and therefore comes naturally as part of larger phrasal rules.</S>
+          <S ID="S-22706">Inserting the outside these fixed phrases is a risk that the generative model is too inclined to take.</S>
+          <S ID="S-22707">We also note that the system learns to punish unmotivated insertions of commas and periods, which get into our grammar via quirks in the MT training data.</S>
+          <S ID="S-22708">Table 4 shows weights for rule-overlap features.</S>
+          <S ID="S-22709">MIRA punishes the case where rules overlap with an IN (preposition) node.</S>
+          <S ID="S-22710">This makes sense: if a rule has a variable that can be filled by any English preposition, there is a risk that an incorrect preposition will fill it.</S>
+          <S ID="S-22711">On the other hand, splitting at a period is a safe bet, and frees the model to use rules that dig deeper into NP and VP trees when constructing a top-level S.</S>
+          <S ID="S-22712">Table 5 shows weights for generated English nonterminals: SBAR-C nodes are rewarded and commas are punished.</S>
+        </P>
+        <P>
+          <S ID="S-22713">The combined effect of all weights is subtle.</S>
+          <S ID="S-22714">To interpret them further, it helps to look at gross changes in the system&#8217;s behavior.</S>
+          <S ID="S-22715">For example, a major error in the baseline system is to move &#8220;X said&#8221; or &#8220;X asked&#8221; from the beginning of the Chinese input to the middle or end of the English trans- .</S>
+        </P>
+        <P>
+          <S ID="S-22716">.</S>
+        </P>
+        <P>
+          <S ID="S-22717">.</S>
+        </P>
+        <P>
+          <S ID="S-22718">.</S>
+        </P>
+        <P>
+          <S ID="S-22719">.</S>
+        </P>
+        <P>
+          <S ID="S-22720">lation.</S>
+          <S ID="S-22721">The error occurs with many speaking verbs, and each time, we trace it to a different rule.</S>
+          <S ID="S-22722">The problematic rules can even be non-lexical, e.g.:</S>
+        </P>
+        <P>
+          <S ID="S-22723">S(x 0 :NP-C x 1 :VP x 2 :, x 3 :NP-C x 4 :VP x 5 :.</S>
+          <S ID="S-22724">)</S>
+        </P>
+        <P>
+          <S ID="S-22725">&#8596; x 3 x 4 x 2 x 0 x 1 x 5</S>
+        </P>
+        <P>
+          <S ID="S-22726">It is therefore difficult to come up with a straightforward feature to address the problem.</S>
+          <S ID="S-22727">However, when we apply MIRA with the features already listed, these translation errors all disappear, as demonstrated by examples 4&#8211;5 in Figure 1.</S>
+          <S ID="S-22728">Why does this happen?</S>
+          <S ID="S-22729">It turns out that in translation hypotheses that move &#8220;X said&#8221; or &#8220;X asked&#8221; away from the beginning of the sentence, more commas appear, and fewer S-C and SBAR-C nodes appear.</S>
+          <S ID="S-22730">Therefore, the new features work to discourage these hypotheses.</S>
+          <S ID="S-22731">Example 6 shows additionally that commas next to speaking verbs are now correctly deleted.</S>
+        </P>
+        <P>
+          <S ID="S-22732">Examples 7&#8211;8 in Figure 1 show other kinds of unanticipated improvements.</S>
+          <S ID="S-22733">We do not have space for a fuller analysis, but we note that the specific effects we describe above account for only part of the overall BLEU improvement.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Word context features</HEADER>
+        <P>
+          <S ID="S-22734">In Table 6 are shown feature weights learned for the word-context features.</S>
+          <S ID="S-22735">A surprising number of the highest-weighted features have to do with translations of dates and bylines.</S>
+          <S ID="S-22736">Many of the penalties seem to discourage spurious insertion or deletion of frequent words (for, &#8217;s, said, parentheses, and quotes).</S>
+          <S ID="S-22737">Finally, we note that several of the features (the third- and eighth-ranked reward and twelfthranked penalty) shape the translation of shuo &#8216;said&#8217;, preferring translations with an overt complementizer that and without a comma.</S>
+          <S ID="S-22738">Thus these features work together to attack a frequent problem that our targetsyntax features also addressed.</S>
+        </P>
+        <P>
+          <S ID="S-22739">Figure 2 shows the performance of Hiero with all of its features on the tuning and test sets over time.</S>
+          <S ID="S-22740">The scores on the tuning set rise rapidly, and the scores on the test set also rise, but much more slowly, and there appears to be slight degradation after the 18th pass through the tuning data.</S>
+          <S ID="S-22741">This seems in line with the finding of <REF ID="R-33" RPTR="50">Watanabe et al. (2007)</REF><REF ID="R-03" RPTR="5">(2007)</REF><REF ID="R-29" RPTR="44">(2007)</REF> that with on the order of 10,000 features, overfitting is possible, but we can still improve accuracy on new data.</S>
+        </P>
+        <P>
+          <S ID="S-22742">BLEU</S>
+        </P>
+        <P>
+          <S ID="S-22743">38.5</S>
+        </P>
+        <P>
+          <S ID="S-22744">37.5</S>
+        </P>
+        <P>
+          <S ID="S-22745">36.5</S>
+        </P>
+        <P>
+          <S ID="S-22746">35.5</S>
+        </P>
+        <P>
+          <S ID="S-22747">Tune Test</S>
+        </P>
+        <P>
+          <S ID="S-22748">35 0 5 10 15 20 25 Epoch</S>
+        </P>
+        <P>
+          <S ID="S-22749">Early stopping would have given +0.2 BLEU over the results reported in Table 1.</S>
+          <S ID="S-22750">1</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion</HEADER>
+      <P>
+        <S ID="S-22756">We have described a variety of features for statistical machine translation and applied them to syntaxbased and hierarchical systems.</S>
+        <S ID="S-22757">We saw that these features, discriminatively trained using MIRA, led to significant improvements, and took a closer look at the results to see how the new features qualitatively improved translation quality.</S>
+        <S ID="S-22758">We draw three conclusions from this study.</S>
+        <S ID="S-22759">First, we have shown that these new features can improve the performance even of top-scoring MT systems.</S>
+        <S ID="S-22760">Second, these results add to a growing body of evidence that MIRA is preferable to MERT for discriminative training.</S>
+        <S ID="S-22761">When training over 10,000 features on a modest amount of data, we, like <REF ID="R-33" RPTR="51">Watanabe et al. (2007)</REF><REF ID="R-03" RPTR="6">(2007)</REF><REF ID="R-29" RPTR="45">(2007)</REF>, did observe overfitting, yet saw improvements on new data.</S>
+        <S ID="S-22762">Third, we have shown that syntax-based machine translation offers possibilities for features not available in other models, making syntax-based MT and MIRA an especially strong combination for future work.</S>
+        <S ID="S-22763">1 It was this iteration, in fact, which was used to derive the combined feature count used in the title of this paper.</S>
+        <S ID="S-22764">224 1 MERT: the united states pending israeli clarification on golan settlement plan MIRA: the united states is waiting for israeli clarification on golan settlement plan</S>
+      </P>
+      <P>
+        <S ID="S-22765">2 MERT: .</S>
+        <S ID="S-22766">.</S>
+        <S ID="S-22767">.</S>
+        <S ID="S-22768">the average life expectancy of only 18 months , canada &#8217;s minority goverment will .</S>
+        <S ID="S-22769">.</S>
+        <S ID="S-22770">.</S>
+        <S ID="S-22771">MIRA: .</S>
+        <S ID="S-22772">.</S>
+        <S ID="S-22773">.</S>
+        <S ID="S-22774">the average life expectancy of canada&#8217;s previous minority government is only 18 months .</S>
+        <S ID="S-22775">.</S>
+        <S ID="S-22776">.</S>
+        <S ID="S-22777">3 MERT: .</S>
+        <S ID="S-22778">.</S>
+        <S ID="S-22779">.</S>
+        <S ID="S-22780">since un inspectors expelled by north korea .</S>
+        <S ID="S-22781">.</S>
+        <S ID="S-22782">.</S>
+        <S ID="S-22783">MIRA: .</S>
+        <S ID="S-22784">.</S>
+        <S ID="S-22785">.</S>
+        <S ID="S-22786">since un inspectors were expelled by north korea .</S>
+        <S ID="S-22787">.</S>
+        <S ID="S-22788">.</S>
+        <S ID="S-22789">4 MERT: another thing is .</S>
+        <S ID="S-22790">.</S>
+        <S ID="S-22791">.</S>
+        <S ID="S-22792">, " he said , " obviously , the first thing we need to do .</S>
+        <S ID="S-22793">.</S>
+        <S ID="S-22794">.</S>
+        <S ID="S-22795">.</S>
+        <S ID="S-22796">MIRA: he said : " obviously , the first thing we need to do .</S>
+        <S ID="S-22797">.</S>
+        <S ID="S-22798">.</S>
+        <S ID="S-22799">, and another thing is .</S>
+        <S ID="S-22800">.</S>
+        <S ID="S-22801">.</S>
+        <S ID="S-22802">.</S>
+        <S ID="S-22803">" 5 MERT: the actual timing .</S>
+        <S ID="S-22804">.</S>
+        <S ID="S-22805">.</S>
+        <S ID="S-22806">reopened in january , yoon said .</S>
+        <S ID="S-22807">MIRA: yoon said the issue of the timing .</S>
+        <S ID="S-22808">.</S>
+        <S ID="S-22809">.</S>
+        <S ID="S-22810">6 MERT: .</S>
+        <S ID="S-22811">.</S>
+        <S ID="S-22812">.</S>
+        <S ID="S-22813">us - led coalition forces , said today that the crash .</S>
+        <S ID="S-22814">.</S>
+        <S ID="S-22815">.</S>
+        <S ID="S-22816">MIRA: .</S>
+        <S ID="S-22817">.</S>
+        <S ID="S-22818">.</S>
+        <S ID="S-22819">us - led coalition forces said today that a us military .</S>
+        <S ID="S-22820">.</S>
+        <S ID="S-22821">.</S>
+        <S ID="S-22822">7 MERT: .</S>
+        <S ID="S-22823">.</S>
+        <S ID="S-22824">.</S>
+        <S ID="S-22825">and others will feel the danger .</S>
+        <S ID="S-22826">MIRA: .</S>
+        <S ID="S-22827">.</S>
+        <S ID="S-22828">.</S>
+        <S ID="S-22829">and others will not feel the danger .</S>
+        <S ID="S-22830">8 MERT: in residential or public activities within 200 meters of the region , .</S>
+        <S ID="S-22831">.</S>
+        <S ID="S-22832">.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Phil Blunsom</RAUTHOR>
+      <REFTITLE>A discriminative latent variable model for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Pietra</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: Parameter estimation.</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Yee Seng Chan</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Word sense disambiguation improves statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Stanley F Chen</RAUTHOR>
+      <REFTITLE>An empirical study of smoothing techniques for language modeling.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Online large-margin training of syntactic and structural translation features.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>A hierarchical phrase-based model for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Michael Collins</RAUTHOR>
+      <REFTITLE>Three generative, lexicalized models for statistical parsing.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Koby Crammer</RAUTHOR>
+      <REFTITLE>Online passiveaggressive algorithms.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Steve DeNeefe</RAUTHOR>
+      <REFTITLE>What can syntax-based MT learn from phrase-based MT? In</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Victoria Fossum</RAUTHOR>
+      <REFTITLE>Using syntax to improve word alignment for syntaxbased statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>What&#8217;s in a translation rule?</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Scalable inference and training of context-rich syntactic models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Forest reranking: Discriminative parsing with non-local features.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Kevin Knight</RAUTHOR>
+      <REFTITLE>An overview of probabilistic tree transducers for natural language processing.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Yoong Keok Lee</RAUTHOR>
+      <REFTITLE>An empirical evaluation of knowledge sources and learning algorithms for word sense disambiguation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Percy Liang</RAUTHOR>
+      <REFTITLE>An end-to-end discriminative approach to machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Wolfgang Macherey</RAUTHOR>
+      <REFTITLE>Lattice-based minimum error rate training for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Yuval Marton</RAUTHOR>
+      <REFTITLE>Soft syntactic constraints for hierarchical phrased-based translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Discriminative training and maximum entropy models for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Sanjeev Khudanpur, Anoop Sarkar, Kenji Yamada, Alex Fraser, Shankar Kumar,</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Slav Petrov</RAUTHOR>
+      <REFTITLE>Learning accurate, compact, and interpretable tree annotation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>John C Platt</RAUTHOR>
+      <REFTITLE>Fast training of support vector machines using sequential minimal optimization.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>David Talbot</RAUTHOR>
+      <REFTITLE>Randomised language modelling for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="30">
+      <RAUTHOR>Christoph Tillmann</RAUTHOR>
+      <REFTITLE>A discriminative global training algorithm for statistical MT.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="31">
+      <RAUTHOR>Joseph Turian</RAUTHOR>
+      <REFTITLE>Scalable discriminative learning for natural language parsing and translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="32">
+      <RAUTHOR>Wei Wang</RAUTHOR>
+      <REFTITLE>Binarizing syntax trees to improve syntax-based machine translation accuracy.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="33">
+      <RAUTHOR>Taro Watanabe</RAUTHOR>
+      <REFTITLE>Online large-margin training for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="34">
+      <RAUTHOR>Dekai Wu</RAUTHOR>
+      <REFTITLE>Stochastic inversion transduction grammars and bilingual parsing of parallel corpora.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="35">
+      <RAUTHOR>Kenji Yamada</RAUTHOR>
+      <REFTITLE>A decoder for syntax-based statistical MT.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

@@ -1,0 +1,978 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Regularized Minimum Error Rate Training</TITLE>
+  <AUTHORS>
+    <AUTHOR>Michel Galley</AUTHOR>
+    <AUTHOR>Chris Quirk</AUTHOR>
+    <AUTHOR>Colin Cherry</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-17592">Minimum Error Rate Training (MERT) remains one of the preferred methods for tuning linear parameters in machine translation systems, yet it faces significant issues.</A-S>
+    <A-S ID="S-17593">First, MERT is an unregularized learner and is therefore prone to overfitting.</A-S>
+    <A-S ID="S-17594">Second, it is commonly used on a noisy, non-convex loss function that becomes more difficult to optimize as the number of parameters increases.</A-S>
+    <A-S ID="S-17595">To address these issues, we study the addition of a regularization term to the MERT objective function.</A-S>
+    <A-S ID="S-17596">Since standard regularizers such as l 2 are inapplicable to MERT due to the scale invariance of its objective function, we turn to two regularizers&#8212;l 0 and a modification of l 2 &#8212; and present methods for efficiently integrating them during search.</A-S>
+    <A-S ID="S-17597">To improve search in large parameter spaces, we also present a new direction finding algorithm that uses the gradient of expected BLEU to orient MERT&#8217;s exact line searches.</A-S>
+    <A-S ID="S-17598">Experiments with up to 3600 features show that these extensions of MERT yield results comparable to PRO, a learner often used with large feature sets.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-17599">Minimum Error Rate Training emerged a decade ago (<REF ID="R-24" RPTR="49">Och, 2003</REF>) as a superior training method for small numbers of linear model parameters of machine translation systems, improving over prior work using maximum likelihood criteria (<REF ID="R-23" RPTR="48">Och and Ney, 2002</REF>).</S>
+        <S ID="S-17600">This technique quickly rose to prominence, becoming standard in many research and commercial MT systems.</S>
+        <S ID="S-17601">Variants operating over lattices (<REF ID="R-20" RPTR="41">Macherey et al., 2008</REF>) or hypergraphs (<REF ID="R-16" RPTR="36">Kumar et al., 2009</REF>) were subsequently developed, with the benefit of reducing the approximation error from n-best lists.</S>
+      </P>
+      <P>
+        <S ID="S-17602">The primary advantages of MERT are twofold.</S>
+        <S ID="S-17603">It directly optimizes the evaluation metric under consideration (e.g., BLEU) instead of some surrogate loss.</S>
+        <S ID="S-17604">Secondly, it offers a globally optimal line search.</S>
+        <S ID="S-17605">Unfortunately, there are several potential difficulties in scaling MERT to larger numbers of features, due to its non-convex loss function and its lack of regularization.</S>
+        <S ID="S-17606">These challenges have prompted some researchers to move away from MERT, in favor of linearly decomposable approximations of the evaluation metric (<REF ID="R-05" RPTR="12">Chiang et al., 2009</REF>; <REF ID="R-11" RPTR="20">Hopkins and May, 2011</REF>; <REF ID="R-02" RPTR="5">Cherry and Foster, 2012</REF>), which correspond to easier optimization problems and which naturally incorporate regularization.</S>
+        <S ID="S-17607">In particular, recent work (<REF ID="R-05" RPTR="13">Chiang et al., 2009</REF>) has shown that adding thousands or tens of thousands of features can improve MT quality when weights are optimized using a margin-based approximation.</S>
+        <S ID="S-17608">On simulated datasets, <REF ID="R-11" RPTR="25">Hopkins and May (2011)</REF> found that conventional MERT struggles to find reasonable parameter vectors, where a smooth loss function based on Pairwise Ranking Optimization (PRO) performs much better; on real data, this PRO method appears at least as good as MERT on small feature sets, and also scales better as the number of features increases.</S>
+      </P>
+      <P>
+        <S ID="S-17609">In this paper, we seek to preserve the advantages of MERT while addressing its shortcomings in terms of regularization and search.</S>
+        <S ID="S-17610">The idea of adding a regularization term to the MERT objective function can be perplexing at first, because the most common regularizers, such as l 1 and l 2 , are not directly applicable to MERT.</S>
+        <S ID="S-17611">Indeed, these regularizers are scale sensitive, while the MERT objective function is not: scaling the weight vector neither changes the predictions of the linear model nor affects the error count.</S>
+        <S ID="S-17612">Hence, MERT can hedge any regularization penalty by maximally scaling down linear model weights.</S>
+      </P>
+      <P>
+        <S ID="S-17613">The first contribution of this paper is to analyze various forms of regularization that are not susceptible to this scaling problem.</S>
+        <S ID="S-17614">We analyze and experiment with l 0 , a form of regularization that is scale insensitive.</S>
+        <S ID="S-17615">We also present new parameterizations of l 2</S>
+      </P>
+      <P>
+        <S ID="S-17616">regularization, where we apply l 2 regularization to scale-senstive linear transforms of the original linear model.</S>
+        <S ID="S-17617">In addition, we introduce efficient methods of incorporating regularization in <REF ID="R-24" RPTR="55">Och (2003)</REF>&#8217;s exact line searches.</S>
+        <S ID="S-17618">For all of these regularizers, our methods let us find the true optimum of the regularized objective function along the line.</S>
+      </P>
+      <P>
+        <S ID="S-17619">Finally, we address the issue of searching in a high-dimensional space by using the gradient of expected BLEU (<REF ID="R-30" RPTR="65">Smith and Eisner, 2006</REF>) to find better search directions for our line searches.</S>
+        <S ID="S-17620">This direction finder addresses one of the serious concerns raised by <REF ID="R-11" RPTR="26">Hopkins and May (2011)</REF>: MERT widely failed to reach the optimum of a synthetic linear objective function.</S>
+        <S ID="S-17621">In replicating Hopkins and May&#8217;s experiments, we confirm that existing search algorithms for MERT&#8212;including coordinate ascent, Powell&#8217;s algorithm (<REF ID="R-27" RPTR="61">Powell, 1964</REF>), and random direction sets (<REF ID="R-01" RPTR="1">Cer et al., 2008</REF>)&#8212;perform poorly in this experimental condition.</S>
+        <S ID="S-17622">However, when using our gradient-based direction finder, MERT has no problem finding the true optimum even in a 1000-dimensional space.</S>
+      </P>
+      <P>
+        <S ID="S-17623">Our results suggest that the combination of a regularized objective function and a gradient-informed line search algorithm enables MERT to scale well with a large number of features.</S>
+        <S ID="S-17624">Experiments with up to 3600 features show that these extensions of MERT yield results comparable to PRO (<REF ID="R-11" RPTR="21">Hopkins and May, 2011</REF>), a parameter tuning method known to be effective with large feature sets.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Unregularized MERT</HEADER>
+      <P>
+        <S ID="S-17625">Prior to introducing regularized MERT, we briefly review standard unregularized MERT (<REF ID="R-24" RPTR="50">Och, 2003</REF>).</S>
+        <S ID="S-17626">We use f S 1 = {f 1 .</S>
+        <S ID="S-17627">.</S>
+        <S ID="S-17628">.</S>
+        <S ID="S-17629">f S } to denote the S input sentences of a given tuning set.</S>
+        <S ID="S-17630">For each sentence f s , let C s = {e s,1 .</S>
+        <S ID="S-17631">.</S>
+        <S ID="S-17632">.</S>
+        <S ID="S-17633">e s,M } denote the list of M-best candidate translations.</S>
+        <S ID="S-17634">Each input and output sentence pair (f s , e s,m ) is weighted using a linear model that applies model parameters w = (w 1 .</S>
+        <S ID="S-17635">.</S>
+        <S ID="S-17636">.</S>
+        <S ID="S-17637">w D ) &#8712; R D to D feature functions h 1 (f, e, &#8764;) .</S>
+        <S ID="S-17638">.</S>
+        <S ID="S-17639">.</S>
+        <S ID="S-17640">h D (f, e, &#8764;), where &#8764; is the hidden state associated with the derivation from f to e, such as phrase segmentation and alignment.</S>
+        <S ID="S-17641">Furthermore, let h s,m &#8712; R D denote the feature vector representing the translation pair (f s , e s,m ).</S>
+      </P>
+      <P>
+        <S ID="S-17642">In MERT, the goal is to minimize a loss function E(r, e) that scores translation hypotheses against a set of reference translations r S 1 = {r 1 .</S>
+        <S ID="S-17643">.</S>
+        <S ID="S-17644">.</S>
+        <S ID="S-17645">r S }.</S>
+        <S ID="S-17646">This yields the following optimization problem:</S>
+      </P>
+      <P>
+        <S ID="S-17647">{ &#8721; S } &#373; = arg min E(r s , &#234;(f s ; w)) =</S>
+      </P>
+      <P>
+        <S ID="S-17648">w</S>
+      </P>
+      <P>
+        <S ID="S-17649">{ &#8721; S arg min</S>
+      </P>
+      <P>
+        <S ID="S-17650">w</S>
+      </P>
+      <P>
+        <S ID="S-17651">where</S>
+      </P>
+      <P>
+        <S ID="S-17652">s=1 m=1 s=1</S>
+      </P>
+      <P>
+        <S ID="S-17653">M&#8721; }</S>
+      </P>
+      <P>
+        <S ID="S-17654">E(r s , e s,m )&#948;(e s,m , &#234;(f s ; w))</S>
+      </P>
+      <P>
+        <S ID="S-17655">{ &#234;(f s ; w) = arg max w &#8890; } h s,m</S>
+      </P>
+      <P>
+        <S ID="S-17656">m&#8712;{1...M}</S>
+      </P>
+      <P>
+        <S ID="S-17657">(1)</S>
+      </P>
+      <P>
+        <S ID="S-17658">(2)</S>
+      </P>
+      <P>
+        <S ID="S-17659">While the error surface of Equation 1 is only an approximation of the true error surface of the MT decoder, the quality of this approximation depends on the size of the hypothesis space represented by the M-best list.</S>
+        <S ID="S-17660">Therefore, the hypothesis list is grown iteratively: decoding with an initial parameter vector seeds the M-best lists; next, parameter estimation and M-best list gathering alternate until the cumulative M-best list no longer grows, or until changes of w between two decoding runs are deemed too small.</S>
+        <S ID="S-17661">To increase the size of the hypothesis space, subsequent work (<REF ID="R-20" RPTR="42">Macherey et al., 2008</REF>) instead operated on lattices, but this paper focuses on M-best lists.</S>
+      </P>
+      <P>
+        <S ID="S-17662">A crucial observation is that the unsmoothed error count represented in Equation 1 is a piecewise constant function.</S>
+        <S ID="S-17663">This enabled <REF ID="R-24" RPTR="56">Och (2003)</REF> to devise a line search algorithm guaranteed to find the optimum point along the line.</S>
+        <S ID="S-17664">To extend the search from one to multiple dimensions, MERT applies a sequence of line optimizations along some fixed or variable set of search directions {d t } until some convergence criteria are met.</S>
+        <S ID="S-17665">Considering a given point w t and a given direction d t at iteration t, finding the most probable translation hypothesis in the set of candidates translations C s = {e s,1 .</S>
+        <S ID="S-17666">.</S>
+        <S ID="S-17667">.</S>
+        <S ID="S-17668">e s,M } corresponds to solving the following optimization problem: }</S>
+      </P>
+      <P>
+        <S ID="S-17669">&#234;(f s ; &#947;) = arg max {(w t + &#947; &#183; d t ) &#8890; h s,m (3)</S>
+      </P>
+      <P>
+        <S ID="S-17670">m&#8712;{1...M}</S>
+      </P>
+      <P>
+        <S ID="S-17671">The function in this equation is piecewise linear (<REF ID="R-26" RPTR="60">Papineni, 1999</REF>), which enables an efficient exhaustive computation.</S>
+        <S ID="S-17672">Specifically, this function is optimized by enumerating the up to M hypotheses that form the upper envelope of the model score function.</S>
+        <S ID="S-17673">The error count, then, is a piecewise constant function</S>
+      </P>
+      <P>
+        <S ID="S-17674">defined by the points &#947;1 fs &lt; &#183; &#183; &#183; &lt; &#947;fs M at which an increase in &#947; causes a change of optimum in Equation 3.</S>
+        <S ID="S-17675">Error counts for the whole corpus are simply the sums of sentence-level piecewise constant functions aggregated over all sentences of the corpus.</S>
+        <S ID="S-17676">1 The optimal &#947; is finally computed by enumerating all piecewise constant intervals of the corpus-level error function, and by selecting the one that has the lowest error count (or, correspondingly, highest BLEU score).</S>
+        <S ID="S-17677">Assuming the optimum is found in the interval [&#947; k&#8722;1 , &#947; k ], we define &#947; opt = (&#947; k&#8722;1 + &#947; k )/2 and change the parameters using the update w t+1 = w t + &#947; opt &#183; d t .</S>
+      </P>
+      <P>
+        <S ID="S-17678">Finally, this method is turned into a global D- dimensional search using algorithms that repeatedly use the aforementioned exact line search algorithm.</S>
+        <S ID="S-17679"><REF ID="R-24" RPTR="57">Och (2003)</REF> first advocated the use of Powell&#8217;s method (<REF ID="R-27" RPTR="62">Powell, 1964</REF>; <REF ID="R-28" RPTR="63">Press et al., 2007</REF>).</S>
+        <S ID="S-17680">Pharaoh (<REF ID="R-15" RPTR="34">Koehn, 2004</REF>) and subsequently Moses (<REF ID="R-14" RPTR="31">Koehn et al., 2007</REF>) instead use coordinate ascent, and more recent work often uses random search directions (<REF ID="R-01" RPTR="2">Cer et al., 2008</REF>; <REF ID="R-20" RPTR="43">Macherey et al., 2008</REF>).</S>
+        <S ID="S-17681">In Section 4, we will present a novel direction finder for maximum-BLEU optimization, which uses the gradient of expected BLEU to find directions where the BLEU score is most likely to increase.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Regularization for MERT</HEADER>
+      <P>
+        <S ID="S-17719">Because MERT is prone to overfitting when a large number of parameters must be optimized, we study the addition of a regularization term to the objective function.</S>
+        <S ID="S-17720">One conventional approach is to regularize the objective function with a penalty based on the</S>
+      </P>
+      <P>
+        <S ID="S-17721">Euclidean norm ||w|| 2 = &#8730; &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-17722">i w2 i , also known as l 2</S>
+      </P>
+      <P>
+        <S ID="S-17723">regularization.</S>
+        <S ID="S-17724">In the case of MERT, this yields the following objective function: 2</S>
+      </P>
+      <P>
+        <S ID="S-17725">{ &#8721; S } &#373; = arg min E(r s , &#234;(f s ; w)) + ||w||2 2</S>
+      </P>
+      <P>
+        <S ID="S-17726">w 2&#963; 2 s=1</S>
+      </P>
+      <P>
+        <S ID="S-17727">(4)</S>
+      </P>
+      <P>
+        <S ID="S-17728">1 This assumes that the sufficient statistics of the metric under</S>
+      </P>
+      <P>
+        <S ID="S-17729">consideration are additively decomposable by sentence, which is the case with most popular evaluation metrics such as BLEU (<REF ID="R-25" RPTR="58">Papineni et al., 2001</REF>).</S>
+        <S ID="S-17730">2 The l 2 regularizer is often used in conjunction with loglikelihood objectives.</S>
+        <S ID="S-17731">The regularization term of Equation 4 could similarly be added to the log of an objective&#8212;e.g., log(BLEU) instead of BLEU&#8212;but we found that the distinction doesn&#8217;t have much of an impact in practice.</S>
+      </P>
+      <P>
+        <S ID="S-17732">1.4 1.2</S>
+      </P>
+      <P>
+        <S ID="S-17733">0.8 1 0.6 0.4 0.2</S>
+      </P>
+      <P>
+        <S ID="S-17734">-0.2 0</S>
+      </P>
+      <P>
+        <S ID="S-17735">1.4 1.2</S>
+      </P>
+      <P>
+        <S ID="S-17736">0.8 1 0.6 0.4 0.2</S>
+      </P>
+      <P>
+        <S ID="S-17737">-0.2 0</S>
+      </P>
+      <P>
+        <S ID="S-17738">1.4 1.2</S>
+      </P>
+      <P>
+        <S ID="S-17739">0.8 1 0.6 0.4 0.2</S>
+      </P>
+      <P>
+        <S ID="S-17740">-0.2 0 MERT Max at 0.225</S>
+      </P>
+      <P>
+        <S ID="S-17741">-0.4 -0.3 -0.2 -0.1 0 0.1 0.2 0.3 0.4</S>
+      </P>
+      <P>
+        <S ID="S-17742">-0.4 -0.3 -0.2 -0.1 0 0.1 0.2 0.3 0.4</S>
+      </P>
+      <P>
+        <S ID="S-17743">&#215;</S>
+      </P>
+      <P>
+        <S ID="S-17744">MERT &#8722; l 2 Max at -0.018 &#8722;l 2 &#215;</S>
+      </P>
+      <P>
+        <S ID="S-17745">&#215; MERT &#8722; l 0</S>
+      </P>
+      <P>
+        <S ID="S-17746">Max at 0</S>
+      </P>
+      <P>
+        <S ID="S-17747">-0.4 -0.3 -0.2 -0.1 0 0.1 0.2 0.3 0.4 &#947;, the step size in the current direction</S>
+      </P>
+      <P>
+        <S ID="S-17748">where the regularization term 1/2&#963; 2 is a free parameter that controls the strength of the regularization penalty.</S>
+        <S ID="S-17749">Similar regularizers have also been used in conjunction with other norms, such as l 1 and l 0 norms.</S>
+        <S ID="S-17750">The l 1 norm, defined as ||w|| 1 = &#8721; i |w i|, applies a constant force toward zero, preferring vectors with fewer non-zero components; l 0 , defined as ||w|| 0 = |{i | w i &#8800; 0}|, simply counts the number of non-zero components of the weight vector, encoding a preference for sparse vectors.</S>
+      </P>
+      <P>
+        <S ID="S-17751">Geometrically, l 2 is a parabola, l 1 is the wedgeshaped absolute value function, and l 0 is an impulse function with a spike at 0.</S>
+        <S ID="S-17752">The original formulation (Equation 1) of MERT consists of a piecewise constant representation of the loss, as a function of the step size in a given direction.</S>
+        <S ID="S-17753">But with these three reg- l 0</S>
+      </P>
+      <P>
+        <S ID="S-17754">&#215;</S>
+      </P>
+      <P>
+        <S ID="S-17755">&#215;</S>
+      </P>
+      <P>
+        <S ID="S-17756">&#215;</S>
+      </P>
+      <P>
+        <S ID="S-17757">ularization terms, the function respectively becomes piecewise quadratic, piecewise linear, or piecewise constant with a potential impulse jump for each distinct choice of regularizer.</S>
+        <S ID="S-17758">Figure 1 demonstrates this effect graphically.</S>
+      </P>
+      <P>
+        <S ID="S-17759">As discussed in (<REF ID="R-21" RPTR="45">McAllester and Keshet, 2011</REF>), the problem with optimizing Equation 4 directly is that the output of the underlying linear classifier, and therefore the error count, are not sensitive to the scale of w. Moreover, l 2 regularization (as well as l 1 regularization) is scale sensitive, which means any optimizer of this function can drive the regularization term down to zero by scaling down w.</S>
+        <S ID="S-17760">As special treatments for l 2 , we evaluate three linear transforms of the weight vector, where the vector w of the regularization term ||w|| 2 2 /2&#963;2 is replaced with either:</S>
+      </P>
+      <P>
+        <S ID="S-17761">1. an affine transform: w &#8722; w 0 2. a vector with only (D &#8722; 1) free parameters, e.g.,</S>
+      </P>
+      <P>
+        <S ID="S-17762">(1, w &#8242; 2 , &#183; &#183; &#183; , w&#8242; D ) 3. an l 1 renormalization: w/||w|| 1</S>
+      </P>
+      <P>
+        <S ID="S-17763">In (1), regularization is biased towards w 0 , a weight vector previously optimized using a competitive yet much smaller feature set, such as core features of a phrase-based (<REF ID="R-14" RPTR="32">Koehn et al., 2007</REF>) or hierarchical (<REF ID="R-06" RPTR="14">Chiang, 2007</REF>) system.</S>
+        <S ID="S-17764">The requirement that this feature set be small is to prevent overfitting.</S>
+        <S ID="S-17765">Otherwise, any regularization toward an overfit parameter vector w 0 would defeat the purpose of introducing a regularization term in the first place.</S>
+        <S ID="S-17766">3 In (2), the transformation is motivated by the observation that the D-parameter linear model of Equation 2 only needs (D &#8722; 1) degrees of freedom.</S>
+        <S ID="S-17767">Fixing one of the components of w to any non-zero constant and allowing the others to vary, the new linear model retains the same modeling power, but the (D &#8722; 1) free parameters are no longer scale invariant, i.e., scaling the (D &#8722; 1)-dimensional vector now has an effect on linear model predictions.</S>
+        <S ID="S-17768">In (3), the weight vector is normalized as to have an l 1 -norm equal to 1.</S>
+        <S ID="S-17769">In contrast, the l 0 norm is scale insensitive, thus not affected by this problem.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Exact line search with regularization</HEADER>
+        <P>
+          <S ID="S-17682">Optimizing with a regularized error surface requires a change in the line search algorithm presented in</S>
+        </P>
+        <P>
+          <S ID="S-17683">3 (<REF ID="R-09" RPTR="18">Gimpel and Smith, 2012</REF>, footnote 6) briefly mentions the</S>
+        </P>
+        <P>
+          <S ID="S-17684">use of such a regularizer with its ramp loss objective function.</S>
+        </P>
+        <P>
+          <S ID="S-17685">Section 2, but the other aspects of MERT remain the same, and we can still use global search algorithms such as coordinate ascent, Powell, and random directions exactly the same way as with unregularized MERT.</S>
+          <S ID="S-17686">Line search with a regularization term is still as efficient as in (<REF ID="R-24" RPTR="51">Och, 2003</REF>), and it is still guaranteed to find the optimum of the (now regularized) objective function along the line.</S>
+          <S ID="S-17687">Considering again a given point w t and a given direction d t at line search iteration t, finding the optimum &#947; opt corresponds to finding &#947; that minimizes:</S>
+        </P>
+        <P>
+          <S ID="S-17688">S&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-17689">s=1</S>
+        </P>
+        <P>
+          <S ID="S-17690">E(r s , &#234;(f s ; &#947;)) + ||w t + &#947; &#183; d t || 2 2 2&#963; 2 (5)</S>
+        </P>
+        <P>
+          <S ID="S-17691">Since regularization does not affect the points at which &#234;(f s ; &#947;) changes its optimum, the points &#947;1 fs &lt; &#183; &#183; &#183; &lt; &#947;fs M of intersection in the upper envelope remain the same, so the points of discontinuity in the error surface remain the same.</S>
+          <S ID="S-17692">The difference now is that the error count on each segment [&#947; i&#8722;1 , &#947; i ] is no longer constant.</S>
+          <S ID="S-17693">This means we need to adjust the final step of line search, which consists of enumerating all [&#947; i&#8722;1 , &#947; i ], and keeping the optimum of Equation 5 for each segment.</S>
+          <S ID="S-17694">&#234;(f s ; &#947;) remains constant within the segment, so we only need to consider the expression ||w t + &#947; &#183; d t || 2 2 to select a segment point.</S>
+          <S ID="S-17695">The optimum is either at the left edge, the right edge, or in the middle if the vertex of the parabola happens to lie within that segment.</S>
+          <S ID="S-17696">4 We compute this optimum by finding the value &#947; for which the derivative of the regularization term is zero.</S>
+          <S ID="S-17697">There is an easy closed-form solution:</S>
+        </P>
+        <P>
+          <S ID="S-17698">[ d ||wt + &#947; &#183; d t || 2 ]</S>
+        </P>
+        <P>
+          <S ID="S-17699">d&#947; 2&#963; 2 = 0</S>
+        </P>
+        <P>
+          <S ID="S-17700">[ d &#8721; ] (wt,i 2 + 2 &#183; &#947; &#183; w t,i &#183; d t,i + &#947; 2 &#183; d 2</S>
+        </P>
+        <P>
+          <S ID="S-17701">d&#947;</S>
+        </P>
+        <P>
+          <S ID="S-17702">t,i) = 0 i</S>
+        </P>
+        <P>
+          <S ID="S-17703">&#8721; (2 &#183; w t,i &#183; d t,i + 2 &#183; &#947; &#183; d 2 t,i) = 0</S>
+        </P>
+        <P>
+          <S ID="S-17704">i</S>
+        </P>
+        <P>
+          <S ID="S-17705">i</S>
+        </P>
+        <P>
+          <S ID="S-17706">&#947; = &#8722; ( &#8721; )/( &#8721; w t,i &#183; d t,i d 2 ) w &#8890; t d t</S>
+        </P>
+        <P>
+          <S ID="S-17707">t,i = &#8722;</S>
+        </P>
+        <P>
+          <S ID="S-17708">d &#8890; t d t</S>
+        </P>
+        <P>
+          <S ID="S-17709">This closed-form solution is computed in time proportional to D, which doesn&#8217;t slow down the com-</S>
+        </P>
+        <P>
+          <S ID="S-17710">4 When the optimum is either at the left edge &#947; i&#8722;1 or right</S>
+        </P>
+        <P>
+          <S ID="S-17711">edge &#947; i of a segment, we select a point at a small relative distance within the segment (.999&#947; i&#8722;1 + .001&#947; i, in the former case) to avoid ties in objective values.</S>
+        </P>
+        <P>
+          <S ID="S-17712">i</S>
+        </P>
+        <P>
+          <S ID="S-17713">putation of Equation 5 for each segment (the construction of each segment of the upper envelope is proportional to D anyway).</S>
+        </P>
+        <P>
+          <S ID="S-17714">We also use l 0 regularization.</S>
+          <S ID="S-17715">While minimization of the l 0 -norm is known to be NP-hard in general (<REF ID="R-12" RPTR="30">Hyder and Mahata, 2009</REF>), this optimization is relatively trivial in the case of a line search.</S>
+          <S ID="S-17716">Indeed, for a given segment, the value in Equation 5 is constant everywhere except where we intersect any of the coordinate hyperplanes, i.e., where one of the coordinates is zero.</S>
+          <S ID="S-17717">Thus, our method consists of evaluating Equation 5 at the intersection points between the line and coordinate hyperplanes, returning the optimal point within the given segment.</S>
+          <S ID="S-17718">For any segment that doesn&#8217;t cross any of these hyperplanes, we evaluate the objective function at any point of the segment (since the value is constant across the entire segment).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Direction finding</HEADER>
+      <P>
+        <S ID="S-17854"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 A Gradient-based direction finder</HEADER>
+        <P>
+          <S ID="S-17770">Perhaps the greatest obstacle in scaling MERT to many dimensions is finding good search directions.</S>
+          <S ID="S-17771">In problems of lower dimensions, iterating through all the coordinates is computationally feasible, though not guaranteed to find a global maximum even in the case of a perfect line search.</S>
+          <S ID="S-17772">As the number of dimensions increases by orders of magnitude, this coordinate direction approach becomes less and less tractable, and the quality of the search also suffers (<REF ID="R-11" RPTR="22">Hopkins and May, 2011</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-17773">Optimization has traditionally relied on finding the direction of steepest ascent: the gradient.</S>
+          <S ID="S-17774">Unfortunately, the objective function optimized by MERT is piecewise constant; while it may admit a subgradient, this direction is generally not very informative.</S>
+          <S ID="S-17775">Instead we may consider a smoothed variation of the original approximation.</S>
+          <S ID="S-17776">While some variants have been considered (<REF ID="R-24" RPTR="52">Och, 2003</REF>; <REF ID="R-07" RPTR="15">Flanigan et al., 2013</REF>), we use an expected BLEU approximation, assuming hypotheses are drawn from a log-linear distribution according to their parameter values (<REF ID="R-30" RPTR="66">Smith and Eisner, 2006</REF>).</S>
+          <S ID="S-17777">That is, we assume the probability of a translation candidate e s,m is proportional to (exp (w &#8890; h s,m )) &#181; , where w are the parameters being optimized, h s,m is the vector of the features for e s,m , and &#181; is a scaling parameter.</S>
+          <S ID="S-17778">As &#181; approaches infinity, the distribution places all its weight on the highest scoring candidate.</S>
+        </P>
+        <P>
+          <S ID="S-17779">The log of the BLEU score may be written as:</S>
+        </P>
+        <P>
+          <S ID="S-17780">min (1 &#8722; RC ) , 0 + 1 N&#8721; (log m n &#8722; log c n ) N</S>
+        </P>
+        <P>
+          <S ID="S-17781">n=1</S>
+        </P>
+        <P>
+          <S ID="S-17782">where R is the sum of reference lengths across the corpus, C is the sum of candidate lengths, m n is the number of matched n-grams (potentially clipped), and c n is the number of n-grams in all candidates.</S>
+        </P>
+        <P>
+          <S ID="S-17783">Given a distribution over candidates, we can use the expected value of the log of the BLEU score.</S>
+          <S ID="S-17784">This is a smooth approximation to the BLEU score, which asymptotically approaches the true BLEU score as the scaling parameter &#181; approaches infinity.</S>
+          <S ID="S-17785">While this expectation is difficult to compute exactly, we can compute approximations thereof using Taylor series.</S>
+          <S ID="S-17786">Although prior work demonstrates that a secondorder Taylor approximation is feasible to compute (<REF ID="R-30" RPTR="67">Smith and Eisner, 2006</REF>), we find that a first-order approximation is faster and very close to the secondorder approximation.</S>
+          <S ID="S-17787">5 The first order Taylor approximation is as follows:</S>
+        </P>
+        <P>
+          <S ID="S-17788">( min 1 &#8722; R ) E[C] , 0 + 1 N&#8721; (log E[m n ] &#8722; log E[c n ]) N</S>
+        </P>
+        <P>
+          <S ID="S-17789">n=1</S>
+        </P>
+        <P>
+          <S ID="S-17790">where E is the expectation operator using the probability distribution P (h; w, &#181;).</S>
+        </P>
+        <P>
+          <S ID="S-17791">&#8706;</S>
+        </P>
+        <P>
+          <S ID="S-17792">First we note that the gradient</S>
+        </P>
+        <P>
+          <S ID="S-17793">&#8706;w i</S>
+        </P>
+        <P>
+          <S ID="S-17794">P (h; w, &#181;) is ( )</S>
+        </P>
+        <P>
+          <S ID="S-17795">P (h; w, &#181;) h i &#8722; &#8721; h &#8242; h &#8242; iP (h &#8242; ; w, &#181;)</S>
+        </P>
+        <P>
+          <S ID="S-17796">Using the chain rule, the gradient of the first order approximation to BLEU is as follows:</S>
+        </P>
+        <P>
+          <S ID="S-17797">+</S>
+        </P>
+        <P>
+          <S ID="S-17798">1 N</S>
+        </P>
+        <P>
+          <S ID="S-17799">N&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-17800">n=1</S>
+        </P>
+        <P>
+          <S ID="S-17801">( 1</S>
+        </P>
+        <P>
+          <S ID="S-17802">E[m n ] &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-17803">h</S>
+        </P>
+        <P>
+          <S ID="S-17804">&#8706;P (h; w, &#181;) m n (h)</S>
+        </P>
+        <P>
+          <S ID="S-17805">&#8706;w i</S>
+        </P>
+        <P>
+          <S ID="S-17806">&#8706;P (h; w, &#181;) ) c n (h) &#8706;w i &#8722; 1 &#8721; E[c n ]</S>
+        </P>
+        <P>
+          <S ID="S-17807">h</S>
+        </P>
+        <P>
+          <S ID="S-17808">{ 0 if E[C] &gt; R</S>
+        </P>
+        <P>
+          <S ID="S-17809">R</S>
+        </P>
+        <P>
+          <S ID="S-17810">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-17811">E[C] 2 h c &#8706;P (h;w,&#181;)</S>
+        </P>
+        <P>
+          <S ID="S-17812">1(h)</S>
+        </P>
+        <P>
+          <S ID="S-17813">&#8706;w i</S>
+        </P>
+        <P>
+          <S ID="S-17814">otherwise</S>
+        </P>
+        <P>
+          <S ID="S-17815">5 Experimentally, we compared our analytical gradient of</S>
+        </P>
+        <P>
+          <S ID="S-17816">the first-order Taylor approximation with the finite-difference gradients of the first- and second-order approximations, and we found these three gradients to be very close in terms of cosine similarity (&gt; 0.99).</S>
+          <S ID="S-17817">We performed these measurements both at arbitrary points and at points of convergence of MERT.</S>
+        </P>
+        <P>
+          <S ID="S-17818">In the case of l 2 -regularized MERT, the final gradient also includes the partial derivative of the regularization penalty of Equation 4, which is w i /&#963; 2 for a given component i of the gradient.</S>
+          <S ID="S-17819">We do not update the gradient in the case of l 0 regularization since the l 0 -norm is not differentiable.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Search</HEADER>
+        <P>
+          <S ID="S-17820">Our search strategy consists of looking at the directions of steepest increase of expected BLEU, which is similar to that of <REF ID="R-30" RPTR="70">Smith and Eisner (2006)</REF>, but with the difference that we do so in the context of MERT.</S>
+          <S ID="S-17821">We think this difference provides two benefits.</S>
+          <S ID="S-17822">First, while the smooth approximation of BLEU reduces the likelihood of remaining trapped in a local optimum, we avoid approximation error by retaining the original objective function.</S>
+          <S ID="S-17823">Second, the benefit of exact line searches in MERT is that there is no need to be concerned about step size, since step size in MERT line searches is guaranteed to be optimal with respect to the direction under consideration.</S>
+        </P>
+        <P>
+          <S ID="S-17824">Finally, our gradient-based search algorithm operates as follows.</S>
+          <S ID="S-17825">Considering the current point w t , we compute the gradient g t of the first order Taylor approximation at that point, using the current scaling parameter &#181;.</S>
+          <S ID="S-17826">(We initialize the search with &#181; = 0.01.</S>
+          <S ID="S-17827">) We find the optimum along the line w t +&#947;&#183;g t .</S>
+          <S ID="S-17828">Whenever any given line search yields no improvement larger than a small tolerance threshold, we multiply &#181; by two and perform a new line search.</S>
+          <S ID="S-17829">The increase of this parameter &#181; corresponds to a cooling schedule (<REF ID="R-30" RPTR="68">Smith and Eisner, 2006</REF>), which progressively sharpens the objective function to get a better estimate of BLEU as the search converges to an optimum.</S>
+          <S ID="S-17830">We repeatedly perform new line searches until &#181; exceeds 1000.</S>
+          <S ID="S-17831">The inability to improve the current optimum with a sharp approximation (&#181; &gt; 1000) doesn&#8217;t mean line searches would fail with smaller values, so we find it helpful to repeat the above procedure until a full pass of updates of &#181; from 0.01 to 1000 yields no improvement.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Computational complexity</HEADER>
+        <P>
+          <S ID="S-17832">Computing the gradient increases the computational cost of MERT, though not its asymptotic complexity.</S>
+          <S ID="S-17833">The cost of a single exhaustive line search is</S>
+        </P>
+        <P>
+          <S ID="S-17834">O (SM(D + log M + log S))</S>
+        </P>
+        <P>
+          <S ID="S-17835">where S is the number of sentences, each with M possible translations, and D is the number of features.</S>
+          <S ID="S-17836">For each sentence, we first identify the model score as a linear function of the step size, requiring two dot products for an overall cost of O(SMD).</S>
+          <S ID="S-17837">6 Next we construct the upper envelope for each sentence: first the equations are sorted in increasing order of slope, and then they are merged in linear time to form an envelope, with an overall cost of O(SM log M).</S>
+          <S ID="S-17838">A linear pass through the envelope converts these into piecewise constant (or linear, or quadratic) representations of the (regularized) loss function.</S>
+          <S ID="S-17839">Finally the per-sentence envelopes are merged into a global representation of the loss along that direction.</S>
+          <S ID="S-17840">Our implementation successively merges adjacent pairs of piecewise smooth loss function representations until a single list remains.</S>
+          <S ID="S-17841">These log S passes lead to a merging runtime of O(SM log S).</S>
+        </P>
+        <P>
+          <S ID="S-17842">The time required to compute a gradient is proportional to O(SMD).</S>
+          <S ID="S-17843">For each sentence, we first gather the probability and its gradient, then use this to compute expected n-gram counts and matches as well as those gradients in time O(MD).</S>
+          <S ID="S-17844">A constant number of arithmetic operations suffice to compute the final expected loss value and its gradient.</S>
+          <S ID="S-17845">Therefore, computing the gradient does not increase the algorithmic complexity when compared to conventional approaches using coordinate ascent and random directions.</S>
+          <S ID="S-17846">Likewise the runtime of a single iteration is competitive with PRO, given that gradient finding is generally the most expensive part of convex optimization.</S>
+          <S ID="S-17847">Of course, it is difficult to compare overall runtime of convex optimization with that of MERT, as we know of no way to bound the number of gradient evaluations required for convergence with MERT.</S>
+          <S ID="S-17848">Therefore, we resort to empirical comparison later in the paper, and find that the two methods appear to have comparable runtime.</S>
+        </P>
+        <P>
+          <S ID="S-17849">6 In the special case where the difference between the prior</S>
+        </P>
+        <P>
+          <S ID="S-17850">direction and the current direction is sparse, we may update the individual linear functions in time proportional to the number of changed dimensions.</S>
+          <S ID="S-17851">Coordinate ascent in particular can update the linear functions in time O(SM): to the intercept of the equation for each translation, we may add the prior step size multiplied by the feature value in the prior coordinate, and the slope becomes the feature value in the new coordinate.</S>
+          <S ID="S-17852">However, this optimization does not appear to be widely adopted, likely because it does not lead to any speedup when random vectors, conjugate directions, or other non-sparse directions are used.</S>
+        </P>
+        <P>
+          <S ID="S-17853">GBM SparseHRM</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experimental Design</HEADER>
+      <P>
+        <S ID="S-17855">Following <REF ID="R-11" RPTR="27">Hopkins and May (2011)</REF>, our experimental setup utilizes both real and synthetic data.</S>
+        <S ID="S-17856">The motivation for using synthetic data is that it is a way of gauging the quality of optimization methods, since the data is constructed knowing the global optimum.</S>
+        <S ID="S-17857">Hopkins and May also note that the use of an objective function that is linear in some gold weight vector makes the search much simpler than in a real translation setting, and they suggest that a learner that performs poorly in such a simple scenario has little hope of succeeding in a more complex one.</S>
+      </P>
+      <P>
+        <S ID="S-17858">The setup of our synthetic data experiment is almost the same as that performed by <REF ID="R-11" RPTR="28">Hopkins and May (2011)</REF>.</S>
+        <S ID="S-17859">We generate feature vectors of dimensionality ranging from 10 to 1000.</S>
+        <S ID="S-17860">These features are generated by drawing random numbers uniformly in the interval [0, 500].</S>
+        <S ID="S-17861">This synthetic dataset consists of S=1000 source &#8220;sentences&#8221;, and M=500 &#8220;translation&#8221; hypotheses for each sentence.</S>
+        <S ID="S-17862">A pseudo &#8220;BLEU&#8221; score is then computed for each hypothesis, by computing the dot product between a predefined gold weight vector w &#8727; and each feature vector h s,m .</S>
+        <S ID="S-17863">By this linear construction, w &#8727; is guaranteed to be a global optimum.</S>
+        <S ID="S-17864">7 The pseudo-BLEU score is normalized for each M-best list, so that the translation with highest model score according to w &#8727; has a BLEU score of 1, and so that the translation with lowest model score for the sentence gets a BLEU of zero.</S>
+        <S ID="S-17865">This normalization has no impact on search, but makes results more interpretable.</S>
+        <S ID="S-17866">For our translation experiments, we use multistack phrase-based decoding (<REF ID="R-14" RPTR="33">Koehn et al., 2007</REF>).</S>
+        <S ID="S-17867">We report results for two feature sets: non-linear features induced using Gradient Boosting Machines (<REF ID="R-31" RPTR="71">Toutanova and Ahn, 2013</REF>) and sparse lexicalized</S>
+      </P>
+      <P>
+        <S ID="S-17868">7 The objective function remains piecewise constant, and the</S>
+      </P>
+      <P>
+        <S ID="S-17869">plateau containing w &#8727; maps to the optimal value of the function.</S>
+      </P>
+      <P>
+        <S ID="S-17870">reordering features (<REF ID="R-03" RPTR="7">Cherry, 2013</REF>).</S>
+        <S ID="S-17871">We exploit these feature sets (GBM and SparseHRM, respectively) in two distinct experimental conditions, which we detail in the two next paragraphs.</S>
+        <S ID="S-17872">Both GBM and</S>
+      </P>
+      <P>
+        <S ID="S-17873">SparseHRM augment baseline features similar to</S>
+      </P>
+      <P>
+        <S ID="S-17874">Moses&#8217;: relative frequency and lexicalized phrase translation scores for both translation directions; one or two language model features, depending on the language pair; distortion penalty; word and phrase count; six lexicalized reordering features.</S>
+        <S ID="S-17875">For both experimental conditions, phrase tables have maximum phrase length of 7 words on either side.</S>
+        <S ID="S-17876">In reference to Table 1, we used the training set (Train) for extracting phrase tables and language models; the</S>
+      </P>
+      <P>
+        <S ID="S-17877">Tune set for optimization with MERT or PRO; the Dev set for selecting hyperparameters of PRO and</S>
+      </P>
+      <P>
+        <S ID="S-17878">regularized MERT; and the Test set for reporting final results.</S>
+        <S ID="S-17879">In each experimental condition, we first trained weights for the base feature sets, and then decoded the Tune, Dev, and Test datasets, generating 500-best lists for each set.</S>
+        <S ID="S-17880">All results report reranking performance on these lists with different feature sets and optimization methods, based on lower-cased BLEU (<REF ID="R-25" RPTR="59">Papineni et al., 2001</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-17881">The GBM feature set (<REF ID="R-31" RPTR="72">Toutanova and Ahn, 2013</REF>) consists of about 230 features automatically induced using decision tree weak learners, which derive features using various word-level, phrase-level, and morphological attributes.</S>
+        <S ID="S-17882">For Chinese-English, the training corpus consists of approximately one million sentence pairs from the FBIS and Hong Kong portions of the LDC data for the NIST MT evaluation and the</S>
+      </P>
+      <P>
+        <S ID="S-17883">Tune and Test sets are from NIST competitions.</S>
+        <S ID="S-17884">A</S>
+      </P>
+      <P>
+        <S ID="S-17885">4-gram language model was trained on the Xinhua portion of the English Gigaword corpus and on the target side of the bitext.</S>
+        <S ID="S-17886">For Finnish-English we used a dataset from a technical domain of software manuals.</S>
+        <S ID="S-17887">For this language pair we used two language models: one very large model trained on billions of words, and another language model trained from the target side of the parallel training set.</S>
+      </P>
+      <P>
+        <S ID="S-17888">The SparseHRM set (<REF ID="R-03" RPTR="8">Cherry, 2013</REF>) contains 3600 sparse reordering features.</S>
+        <S ID="S-17889">For each phrase, the features take the form of indicators describing its orientation in the derivation, and its lexical content in terms of word clusters or frequent words.</S>
+        <S ID="S-17890">For both Chinese- English and Arabic-English, systems are trained on data from the NIST 2012 MT evaluation.</S>
+        <S ID="S-17891">4-gram</S>
+      </P>
+      <P>
+        <S ID="S-17892">BLEU cosine</S>
+      </P>
+      <P>
+        <S ID="S-17893">0.8</S>
+      </P>
+      <P>
+        <S ID="S-17894">0.6</S>
+      </P>
+      <P>
+        <S ID="S-17895">0.4 expected BLEU gradient 0.2 random directions Powell coordinate ascent</S>
+      </P>
+      <P>
+        <S ID="S-17896">0 20 50 100 200 500 1000</S>
+      </P>
+      <P>
+        <S ID="S-17897">0.8</S>
+      </P>
+      <P>
+        <S ID="S-17898">0.6</S>
+      </P>
+      <P>
+        <S ID="S-17899">number of features</S>
+      </P>
+      <P>
+        <S ID="S-17900">0.4 expected BLEU gradient 0.2 random directions Powell coordinate ascent</S>
+      </P>
+      <P>
+        <S ID="S-17901">0 20 50 100 200 500 1000</S>
+      </P>
+      <P>
+        <S ID="S-17902">number of features</S>
+      </P>
+      <P>
+        <S ID="S-17903">language models were trained on the target side of the parallel training data for both Arabic and Chinese.</S>
+        <S ID="S-17904">The Chinese systems development set is taken from the NIST mt05 evaluation set, augmented with some material reserved from our NIST training corpora in order to better cover newsgroup and weblog domains.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Results</HEADER>
+      <P>
+        <S ID="S-17905">We conducted experiments with the synthetic data scenario described in the previous section, as well as with noise added to the data (<REF ID="R-11" RPTR="23">Hopkins and May, 2011</REF>).</S>
+        <S ID="S-17906">The purpose of adding noise is to make the optimization task more realistic.</S>
+        <S ID="S-17907">Specifically, after computing all pseudo-BLEU scores, we added noise to each feature vector h s,m by drawing from a zero-mean Gaussian with standard deviation 200.</S>
+        <S ID="S-17908">Our results with both noiseless and noisy data yield the same conclusion as Hopkins and May: standard MERT struggles with many dimensions, and fails to recover w &#8727; .</S>
+        <S ID="S-17909">However, our experiments with the gradient direction finder of Section 4 are much more positive.</S>
+        <S ID="S-17910">This direction finder not only recovers w &#8727;</S>
+      </P>
+      <P>
+        <S ID="S-17911">BLEU</S>
+      </P>
+      <P>
+        <S ID="S-17912">line search iteration</S>
+      </P>
+      <P>
+        <S ID="S-17913">(cosine &gt; 0.999) even with 1000 dimensions, but its effectiveness is also visible with noisy data, as seen in Figure 2.</S>
+        <S ID="S-17914">The decrease of its cosine is relatively small compared to other search algorithms, and this decrease is not necessarily a sign of search errors since the addition of noise causes the true optimum to be different from w &#8727; .</S>
+        <S ID="S-17915">Finally, Figure 3 shows our rate of convergence compared to coordinate ascent.</S>
+        <S ID="S-17916">Our experimental results with the GBM feature set data are shown in Table 2.</S>
+        <S ID="S-17917">Each table is divided into three sections corresponding respectively to MERT (<REF ID="R-24" RPTR="53">Och, 2003</REF>) with Koehn-style coordinate ascent (<REF ID="R-15" RPTR="35">Koehn, 2004</REF>), PRO, and our optimizer featuring both regularization and the gradient-based direction finder.</S>
+        <S ID="S-17918">All variants of MERT are initialized with a single starting point, which is either uniform weight or w 0 .</S>
+        <S ID="S-17919">Instead of providing MERT with additional random starting points as in Moses, we use random walks as in (<REF ID="R-22" RPTR="46">Moore and Quirk, 2008</REF>) to attempt to move out of local optima.</S>
+        <S ID="S-17920">8 Since PRO and our optimizer have hyperparameters, we use a held-out set</S>
+      </P>
+      <P>
+        <S ID="S-17921">(Dev) for adjusting them.</S>
+        <S ID="S-17922">For PRO, we adjust three</S>
+      </P>
+      <P>
+        <S ID="S-17923">parameters: a regularization penalty for l 2 , the parameter &#945; in the add-&#945; smoothed sentence-level version of BLEU (<REF ID="R-19" RPTR="40">Lin and Och, 2004</REF>), and a parameter for scaling the corpus-level length of the references.</S>
+        <S ID="S-17924">The latter scaling parameter is discussed in (He and</S>
+      </P>
+      <P>
+        <S ID="S-17925">8 In the case of the gradient-based direction finder, we also</S>
+      </P>
+      <P>
+        <S ID="S-17926">use the following strategy whenever optimization converges to a (possibly local) optimum.</S>
+        <S ID="S-17927">We run one round of coordinate ascent, and continue with the gradient direction finder as soon as the optimum improves.</S>
+        <S ID="S-17928">If the none of the coordinate directions helped, we stop the search.</S>
+      </P>
+      <P>
+        <S ID="S-17929">BLEU</S>
+      </P>
+      <P>
+        <S ID="S-17930">52.6</S>
+      </P>
+      <P>
+        <S ID="S-17931">52.4</S>
+      </P>
+      <P>
+        <S ID="S-17932">52.2</S>
+      </P>
+      <P>
+        <S ID="S-17933">51.8</S>
+      </P>
+      <P>
+        <S ID="S-17934">51.6</S>
+      </P>
+      <P>
+        <S ID="S-17935">Deng, 2012; Nakov et al., 2012) and addresses the problem that systems tuned with PRO tend to produce sentences that are too short.</S>
+        <S ID="S-17936">On the other hand, regularized MERT only requires one hyperparameter to tune: a regularization penalty for l 2 or l 0 .</S>
+        <S ID="S-17937">However, since PRO optimizes translation length on the</S>
+      </P>
+      <P>
+        <S ID="S-17938">Dev dataset and MERT does so using the Tune set, a</S>
+      </P>
+      <P>
+        <S ID="S-17939">comparison of the two systems would yield a discrepancy in length that would be undesirable.</S>
+        <S ID="S-17940">Therefore, we add another hyperparameter to regularized MERT to tune length in the same manner using the Dev set.</S>
+      </P>
+      <P>
+        <S ID="S-17941">Table 2 offers several findings.</S>
+        <S ID="S-17942">First, unregularized MERT can achieve competitive results with a small set of highly engineered features, but adding a large set of more than 200 features causes MERT to perform poorly, particularly on the test set.</S>
+        <S ID="S-17943">However, unregularized MERT can recover much of this drop of performance if it is given a good sparse initializer w 0 .</S>
+        <S ID="S-17944">Regularized MERT (v1) provides an increase in the order of 0.5 BLEU on the test set compared to the best results with unregularized MERT.</S>
+        <S ID="S-17945">Regularized MERT is competitive with PRO, even though the number of features is relatively large.</S>
+        <S ID="S-17946">Using the same</S>
+      </P>
+      <P>
+        <S ID="S-17947">GBM experimental setting, Figure 4 compares regularized MERT using the gradient direction finder and coordinate ascent.</S>
+        <S ID="S-17948">At the best regularization setting, the two algorithms are comparable in terms of BLEU (though coordinate ascent is slower due to its lack of a good direction finder), but our method seems more robust with suboptimal regularization parameters.</S>
+      </P>
+      <P>
+        <S ID="S-17949">Our results with the SparseHRM feature set data are shown in Table 3.</S>
+        <S ID="S-17950">As with the GBM feature set, we find again that the version of l 2 MERT regularized towards ||w &#8722; w 0 || is competitive with PRO, even though we train MERT with a large set of 3601 features.</S>
+        <S ID="S-17951">9 One remaining question is whether MERT remains practical with large feature sets.</S>
+        <S ID="S-17952">As noted in the complexity analysis of Section 4.3, MERT has a dependence on the number of features that is comparable to PRO, i.e., it is linear in both cases.</S>
+        <S ID="S-17953">Practically, we find that optimization time is comparable between the two systems.</S>
+        <S ID="S-17954">In the case of Chinese-English for the GBM feature set, one run of the PRO optimizer took 26 minutes on average, while regularized MERT with the gradient direction finder took 37 minutes on average, taking into account the time to compute w 0 .</S>
+        <S ID="S-17955">In the case of Chinese-English for the SparseHRM feature set, average optimization times for PRO and our method were 3.10 hours and 3.84 hours on average, respectively.</S>
+      </P>
+      <P>
+        <S ID="S-17956">9 We note that the experimental setup of (<REF ID="R-03" RPTR="9">Cherry, 2013</REF>) integrates the Sparse HRM features into the decoder, while we use them in an M-best reranking scenario.</S>
+        <S ID="S-17957">The reranking setup of this paper yields smaller improvements for both PRO and MERT than those of (<REF ID="R-03" RPTR="10">Cherry, 2013</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-17958">Finally, as shown in Table 2, we see that MERT experiments that rely on a good initial starting point w 0 generally perform better than when starting from a uniform vector.</S>
+        <S ID="S-17959">While having to compute w 0 in the first place is a bit of a disadvantage compared to standard MERT, the need for good initializer is hardly surprising in the context of non-convex optimization.</S>
+        <S ID="S-17960">Other non-convex problems in machine learning, such as deep neural networks (DNN) and word alignment models, commonly require such initializers in order to obtain decent performance.</S>
+        <S ID="S-17961">In the case of DNN, extensive research is devoted to the problem of finding good initializers.</S>
+        <S ID="S-17962">10 In the case of word alignment, it is common practice to initialize search in non-convex optimization problems&#8212;such as IBM Model 3 and 4 (<REF ID="R-00" RPTR="0">Brown et al., 1993</REF>)&#8212;with solutions of simpler models&#8212;such as IBM Model 1.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Related work</HEADER>
+      <P>
+        <S ID="S-17963">MERT and its extensions have been the target of extensive research (<REF ID="R-24" RPTR="54">Och, 2003</REF>; <REF ID="R-20" RPTR="44">Macherey et al., 2008</REF>; <REF ID="R-01" RPTR="3">Cer et al., 2008</REF>; <REF ID="R-22" RPTR="47">Moore and Quirk, 2008</REF>; <REF ID="R-16" RPTR="37">Kumar et al., 2009</REF>; <REF ID="R-08" RPTR="17">Galley and Quirk, 2011</REF>).</S>
+        <S ID="S-17964">More recent work has focused on replacing MERT with a linearly decomposable approximations of the evaluation metric (<REF ID="R-30" RPTR="69">Smith and Eisner, 2006</REF>; <REF ID="R-18" RPTR="39">Liang et al., 2006</REF>; Watanabe et al., 2007; <REF ID="R-04" RPTR="11">Chiang et al., 2008</REF>; <REF ID="R-11" RPTR="24">Hopkins and May, 2011</REF>; <REF ID="R-29" RPTR="64">Rosti et al., 2011</REF>; <REF ID="R-09" RPTR="19">Gimpel and Smith, 2012</REF>; <REF ID="R-02" RPTR="6">Cherry and Foster, 2012</REF>), which generally involve a surrogate loss function incorporating a regularization term such as the l 2 -norm.</S>
+        <S ID="S-17965">While we are not aware of any previous work adding a penalty on</S>
+      </P>
+      <P>
+        <S ID="S-17966">10 For example, (<REF ID="R-17" RPTR="38">Larochelle et al., 2009</REF>) presents a pre-trained</S>
+      </P>
+      <P>
+        <S ID="S-17967">DNN that outperforms a shallow network, but the performance of the DNN becomes much worse relative to the shallow network once pre-training is turned off.</S>
+      </P>
+      <P>
+        <S ID="S-17968">the weights in the context of MERT, (<REF ID="R-01" RPTR="4">Cer et al., 2008</REF>) achieves a related effect.</S>
+        <S ID="S-17969">Cer et al.&#8217;s goal is to achieve a more regular or smooth objective function, while ours is to obtain a more regular set of parameters.</S>
+        <S ID="S-17970">The two approaches may be complementary.</S>
+      </P>
+      <P>
+        <S ID="S-17971">More recently, new research has explored direction finding using a smooth surrogate loss function (<REF ID="R-07" RPTR="16">Flanigan et al., 2013</REF>).</S>
+        <S ID="S-17972">Although this method is successful in helping MERT find better directions, it also exacerbates the tendency of MERT to overfit.</S>
+        <S ID="S-17973">11 As an indirect way of controlling overfitting on the tuning set, their line searches are performed over directions estimated over a separate dataset.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>8 Conclusion</HEADER>
+      <P>
+        <S ID="S-17974">In this paper, we have shown that MERT can scale to a much larger number of features than previously thought, thanks to regularization and a direction finder that directs the search towards the greatest increase of expected BLEU score.</S>
+        <S ID="S-17975">While our best results are comparable to PRO and not significantly better, we think that this paper provides a deeper understanding of why standard MERT can fail when handling an increasingly larger number of features.</S>
+        <S ID="S-17976">Furthermore, this paper complements the analysis by <REF ID="R-11" RPTR="29">Hopkins and May (2011)</REF> of the differences between MERT and optimization with a surrogate loss function.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-17977">We thank the anonymous reviewers for their helpful comments and suggestions.</S>
+      <S ID="S-17978">11 Indeed, in their Table 3, a comparison between HILS and HOLS suggests tuning set performance improves substantially, while held out performance degrades.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Peter F Brown</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: parameter estimation.</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Daniel Cer</RAUTHOR>
+      <REFTITLE>Regularization and search for minimum error rate training.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Colin Cherry</RAUTHOR>
+      <REFTITLE>Batch tuning strategies for statistical machine translation.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Colin Cherry</RAUTHOR>
+      <REFTITLE>Improved reordering for phrasebased translation using sparse features.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Online large-margin training of syntactic and structural translation features.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>11,001 new features for statistical machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Jeffrey Flanigan</RAUTHOR>
+      <REFTITLE>Large-scale discriminative training for statistical machine translation using held-out line search.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Optimal search for minimum error rate training.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Kevin Gimpel</RAUTHOR>
+      <REFTITLE>Structured ramp loss minimization for machine translation.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Xiaodong He</RAUTHOR>
+      <REFTITLE>Maximum expected BLEU training of phrase and lexicon translation models.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Mark Hopkins</RAUTHOR>
+      <REFTITLE>Tuning as ranking.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>M Hyder</RAUTHOR>
+      <REFTITLE>An approximate L0 norm minimization algorithm for compressed sensing.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>In Acoustics</RAUTHOR>
+      <REFTITLE>Speech and Signal Processing,</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: Open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Pharaoh: a beam search decoder for phrase-based statistical machine translation models.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Shankar Kumar</RAUTHOR>
+      <REFTITLE>Efficient minimum error rate training and minimum bayes-risk decoding for translation hypergraphs and lattices.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Hugo Larochelle</RAUTHOR>
+      <REFTITLE>Exploring strategies for training deep neural networks.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>P Liang</RAUTHOR>
+      <REFTITLE>An end-to-end discriminative approach to machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Chin-Yew Lin</RAUTHOR>
+      <REFTITLE>ORANGE: a method for evaluating automatic evaluation metrics for machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Wolfgang Macherey</RAUTHOR>
+      <REFTITLE>Lattice-based minimum error rate training for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>David McAllester</RAUTHOR>
+      <REFTITLE>Generalization bounds and consistency for latent structural probit and ramp loss.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Robert C Moore</RAUTHOR>
+      <REFTITLE>Random restarts in minimum error rate training for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Discriminative training and maximum entropy models for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>Discriminative training via linear programming.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>M J D Powell</RAUTHOR>
+      <REFTITLE>An efficient method for finding the minimum of a function of several variables without calculating derivatives.</REFTITLE>
+      <DATE>1964</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>William H Press</RAUTHOR>
+      <REFTITLE>Numerical Recipes: The Art of Scientific Computing.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR>Antti-Veikko Rosti</RAUTHOR>
+      <REFTITLE>Expected BLEU training for graphs: BBN system description for WMT11 system combination task.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="30">
+      <RAUTHOR>David A Smith</RAUTHOR>
+      <REFTITLE>Minimum risk annealing for training log-linear models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="31">
+      <RAUTHOR>Kristina Toutanova</RAUTHOR>
+      <REFTITLE>Learning non-linear features for machine translation using gradient boosting machines.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

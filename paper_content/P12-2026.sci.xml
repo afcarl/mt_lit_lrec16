@@ -1,0 +1,336 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Learning to Find Translations and Transliterations on the Web</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-36003">In this paper, we present a new method for learning to finding translations and transliterations on the Web for a given term.</A-S>
+    <A-S ID="S-36004">The approach involves using a small set of terms and translations to obtain mixed-code snippets from a search engine, and automatically annotating the snippets with tags and features for training a conditional random field model.</A-S>
+    <A-S ID="S-36005">At runtime, the model is used to extracting translation candidates for a given term.</A-S>
+    <A-S ID="S-36006">Preliminary experiments and evaluation show our method cleanly combining various features, resulting in a system that outperforms previous work.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-36007">The phrase translation problem is critical to machine translation, cross-lingual information retrieval, and multilingual terminology (<REF ID="R-00" RPTR="0">Bian and Chen 2000</REF>, <REF ID="R-07" RPTR="5">Kupiec 1993</REF>).</S>
+        <S ID="S-36008">Such systems typically use a parallel corpus.</S>
+        <S ID="S-36009">However, the out of vocabulary problem (OOV) is hard to overcome even with a very large training corpus due to the Zipf nature of word distribution, and ever growing new terminology and named entities.</S>
+        <S ID="S-36010">Luckily, there are an abundant of webpages consisting mixed-code text, typically written in one language but interspersed with some sentential or phrasal translations in another language.</S>
+        <S ID="S-36011">By retrieving and identifying such translation counterparts on the Web, we can cope with the OOV problem.</S>
+      </P>
+      <P>
+        <S ID="S-36012">Consider the technical term named-entity recognition.</S>
+        <S ID="S-36013">The best places to find the Chinese translations for named-entity recognition are probably not some parallel corpus or dictionary, but rather mixed-code webpages.</S>
+        <S ID="S-36014">The following example is a snippet returned by the Bing search engine for the query, named entity recognition:</S>
+      </P>
+      <P>
+        <S ID="S-36015">... &#35486; &#35328; &#34389; &#29702; &#25216; &#34899; , &#22914; &#33258; &#28982; &#35486; &#35328; &#21078; &#26512; (Natural Language</S>
+      </P>
+      <P>
+        <S ID="S-36016">Parsing)&#12289; &#21839; &#38988; &#20998; &#39006; (Question Classification)&#12289; &#23560; &#21517; &#36776; &#35672;</S>
+      </P>
+      <P>
+        <S ID="S-36017">(Named Entity Recognition) &#31561; &#31561; ...</S>
+      </P>
+      <P>
+        <S ID="S-36018">This snippet contains three technical terms in</S>
+      </P>
+      <P>
+        <S ID="S-36019">Chinese (i.e., &#33258; &#28982; &#35486; &#35328; &#21078; &#26512; zhiran yuyan poxi,</S>
+      </P>
+      <P>
+        <S ID="S-36020">&#21839; &#38988; &#20998; &#39006; wenti fenlei, &#23560; &#21517; &#36776; &#35672; zhuanming bianshi), followed by source terms in brackets (respectively, Natural Language Parsing, Question Classification, and Named Entity Recognition).</S>
+        <S ID="S-36021">Quoh (2006) points out that submitting the source term and partial translation to a search engine is a good strategy used by many translators.</S>
+      </P>
+      <P>
+        <S ID="S-36022">Unfortunately, the user still has to sift through snippets to find the translations.</S>
+        <S ID="S-36023">For a given English term, such translations can be extracted by casting the problem as a sequence labeling task for classifying the Chinese characters in the snippets as either translation or non-translation.</S>
+        <S ID="S-36024">Previous work has pointed out that such translations usually exhibit characteristics related to word translation, word transliteration, surface patterns, and proximity to the occurrences of the original phrase (Nagata et.</S>
+        <S ID="S-36025">al 2001 and Wu et.</S>
+        <S ID="S-36026">al 2005).</S>
+      </P>
+      <P>
+        <S ID="S-36027">Thus, we also associate features to each Chinese token (characters or words) to reflect the likelihood of the token being part of the translation.</S>
+        <S ID="S-36028">We describe how to train a CRF model for identifying translations in more details in Section 3.</S>
+      </P>
+      <P>
+        <S ID="S-36029">At run-time, the system accepts a given phrase (e.g., named-entity recognition), and then query a search engine for webpages in the target language (e.g., Chinese) using the advance search function.</S>
+        <S ID="S-36030">Subsequently, we retrieve mixed-code snippets and identify the translations of the given term.</S>
+        <S ID="S-36031">The system can potentially be used to assist translators to find the most common translation for a given term, or to supplement a bilingual terminology bank (e.g., adding multilingual titles to existing Wikipedia); alternatively, they can be used as additional training data for a machine translation system, as described in Lin et al. <REF ID="R-09" RPTR="7">(2008)</REF>.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related Work</HEADER>
+      <P>
+        <S ID="S-36032">Phrase translation and transliteration is important for cross-language tasks.</S>
+        <S ID="S-36033">For example, <REF ID="R-04" RPTR="3">Knight and Graehl (1998)</REF><REF ID="R-05" RPTR="4">(1998)</REF> describe and evaluate a multi-stage machine translation method for back transliterating English names into Japanese, while <REF ID="R-00" RPTR="1">Bian and Chen (2000)</REF> describe cross-language information access to multilingual collections on the Internet.</S>
+      </P>
+      <P>
+        <S ID="S-36034">Recently, researchers have begun to exploit mixed code webpages for word and phrase translation.</S>
+        <S ID="S-36035"><REF ID="R-11" RPTR="11">Nagata et al. (2001)</REF><REF ID="R-12" RPTR="13">(2001)</REF> present a system for finding English translations for a given Japanese technical term using Japanese-English snippets returned by a search engine.</S>
+        <S ID="S-36036"><REF ID="R-08" RPTR="6">Kwok et al. (2005)</REF> focus on named entity transliteration and implemented a cross-language name finder.</S>
+        <S ID="S-36037"><REF ID="R-16" RPTR="15">Wu et al. (2005)</REF> proposed a method to learn surface patterns to find translations in mixed code snippets.</S>
+      </P>
+      <P>
+        <S ID="S-36038">Some researchers exploited the hyperlinks in Webpage to find translations.</S>
+        <S ID="S-36039">Lu, et al. (2004) propose a method for mining translations of web queries from anchor texts.</S>
+        <S ID="S-36040"><REF ID="R-02" RPTR="2">Cheng, et al (2004)</REF> propose a similar method for translating unknown queries with web corpora for cross-language information retrieval.</S>
+        <S ID="S-36041">Gravano (2006) also propose similar methods using anchor texts.</S>
+      </P>
+      <P>
+        <S ID="S-36042">In a study more closely related to our work, Lin et al. <REF ID="R-09" RPTR="8">(2008)</REF> proposed a method that performs word alignment between translations and phrases within parentheses in crawled webpages.</S>
+        <S ID="S-36043">They use heuristics to align words and translations, while we</S>
+      </P>
+      <P>
+        <S ID="S-36044">Figure 1.</S>
+        <S ID="S-36045">Example training data.</S>
+      </P>
+      <P>
+        <S ID="S-36046">use a learning based approach to find translations.</S>
+      </P>
+      <P>
+        <S ID="S-36047">In contrast to previous work described above, we exploit surface patterns differently as a soft constraint, while requiring minimal human intervention to prepare the training data.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Method</HEADER>
+      <P>
+        <S ID="S-36081">To find translations for a given term on the Web, a promising approach is automatically learning to extract phrasal translations or transliterations of phrase based on machine learning, or more specifically the conditional random fields (CRF) model.</S>
+      </P>
+      <P>
+        <S ID="S-36082">We focus on the issue of finding translations in mixed code snippets returned by a search engine.</S>
+        <S ID="S-36083">The translations are identified, tallied, ranked, and returned as the output of the system.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Preparing Data for CRF Classifier</HEADER>
+        <P>
+          <S ID="S-36048">We make use a small set of term and translation pairs as seed data to retrieve and annotate mixedcode snippets from a search engine.</S>
+          <S ID="S-36049">Features are generated based on other external knowledge sources as will be described in Section 3.1.2 and 3.1.3.</S>
+          <S ID="S-36050">An example data generated with given term Emmy Award with features and translation/nontranslation labels is shown in Figure 1 using the common BIO notation.</S>
+        </P>
+        <P>
+          <S ID="S-36051">3.1.1 Retrieving and tagging snippets.</S>
+          <S ID="S-36052">We use a list of randomly selected source and target terms as seed data (e.g., Wikipedia English titles and their</S>
+        </P>
+        <P>
+          <S ID="S-36053">Chinese counterpart using the language links).</S>
+          <S ID="S-36054">We use the English terms (e.g., Emmy Awards) to query a search engine with the target webpage language set to the target language (e.g., Chinese), biasing the search engine to return Chinese webpages interspersed with some English phrases.</S>
+          <S ID="S-36055">We then automatically label each Chinese character of the returned snippets, with B, I, O indicating respectively beginning, inside, and outside of translations.</S>
+          <S ID="S-36056">In Figure 1, the translation</S>
+        </P>
+        <P>
+          <S ID="S-36057">&#33406; &#32654; &#29518; (ai mei jiang) are labeled as B I I, while all other Chinese characters are labeled as O.</S>
+          <S ID="S-36058">An additional tag of E is used to indicate the occurrences of the given term (e.g., Emmy Awards in Figure 1).</S>
+        </P>
+        <P>
+          <S ID="S-36059">3.1.2 Generating translation feature.</S>
+          <S ID="S-36060">We generate translation features using external bilingual resources.</S>
+          <S ID="S-36061">The &#966; 2 score proposed by Gale and Church (1991) is used to measure the correlations between English and Chinese tokens:</S>
+        </P>
+        <P>
+          <S ID="S-36062">where e is an English word and f is a Chinese character.</S>
+          <S ID="S-36063">The scores are calculated by counting co-occurrence of Chinese characters and English words in bilingual dictionaries or termbanks, where P(e, f) represents the probability of the cooccurrence of English word e and Chinese character f, and P(e, &#773;f) represents the probability the co-occurrence of e and any Chinese characters excluding f.</S>
+        </P>
+        <P>
+          <S ID="S-36064">We used the publicly available English-Chinese Bilingual WordNet and NICT terminology bank to generate translation features in our implementation.</S>
+          <S ID="S-36065">The bilingual WordNet has 99,642 synset entries, with a total of some 270,000 translation pairs, mainly common nouns.</S>
+          <S ID="S-36066">The NICT database has over 1.1 million bilingual terms in 72 categories, covering a wide variety of different fields.</S>
+        </P>
+        <P>
+          <S ID="S-36067">3.1.3 Generating transliteration feature.</S>
+          <S ID="S-36068">Since many terms are transliterated, it is important to include transliteration feature.</S>
+          <S ID="S-36069">We first use a list of name transliterated pairs, then use Expectation- Maximization (EM) algorithm to align English syllables Romanized Chinese characters.</S>
+          <S ID="S-36070">Finally, we use the alignment information to generate transliteration feature for a Chinese token with respect to English words in the query.</S>
+        </P>
+        <P>
+          <S ID="S-36071">We extract person or location entries in Wikipedia as name transliterated pairs to generate transliteration features in our implementation.</S>
+          <S ID="S-36072">This can be achieved by examining the Wikipedia categories for each entry.</S>
+          <S ID="S-36073">A total of some 15,000 bilingual names of persons and 24,000 bilingual place names were obtained and forced aligned to obtain transliteration relationships.</S>
+        </P>
+        <P>
+          <S ID="S-36074">3.1.4 Generating distance feature.</S>
+          <S ID="S-36075">In the final stage of preparing training data, we add the distance, i.e. number of words, between a Chinese token feature and the English term in question, aimed at exploiting the fact that translations tend to occur near the source term, as noted in <REF ID="R-11" RPTR="12">Nagata et al. (2001)</REF><REF ID="R-12" RPTR="14">(2001)</REF> and <REF ID="R-16" RPTR="16">Wu et al. (2005)</REF>.</S>
+        </P>
+        <P>
+          <S ID="S-36076">Finally, we use the data labeled with translation tags and three kinds feature values to train a CRF model.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Run-Time Translation Extraction</HEADER>
+        <P>
+          <S ID="S-36077">With the trained CRF model, we then attempt to find translations for a given phrase.</S>
+          <S ID="S-36078">The system begins by submitting the given phrase as query to a search engine to retrieve snippets, and generate features for each tokens in the same way as done in the training phase.</S>
+          <S ID="S-36079">We then use the trained model to tag the snippets, and extract translation candidates by identifying consecutive Chinese tokens labeled as B and I.</S>
+        </P>
+        <P>
+          <S ID="S-36080">Finally, we compute the frequency of all the candidates identified in all snippets, and output the one with the highest frequency.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments and Evaluation</HEADER>
+      <P>
+        <S ID="S-36105">We extracted the Wikipedia titles of English and Chinese articles connected through language links for training and testing.</S>
+        <S ID="S-36106">We obtained a total of 155,310 article pairs, from which we then randomly selected 13,150 and 2,181 titles as seeds to obtain the training and test data.</S>
+        <S ID="S-36107">Since we are using Wikipedia bilingual titles as the gold standard, we exclude any snippets from the wikipedia.org domain, so that we are not using Wikipedia article content in both training and testing stage.</S>
+        <S ID="S-36108">The test set contains 745,734 snippets or 9,158,141 tokens (Chinese character or English word).</S>
+        <S ID="S-36109">The reference answer appeared a total of 48,938 times or 180,932 tokens (2%), and an average of 22.4 redundant answer instances per input.</S>
+      </P>
+      <P>
+        <S ID="S-36110">System Coverage Exact match Top5 exact match</S>
+      </P>
+      <P>
+        <S ID="S-36111">Table 2.</S>
+        <S ID="S-36112">Cases failing the exact match test.</S>
+      </P>
+      <P>
+        <S ID="S-36113">To compare our method with previous work, we used a similar evaluation procedure as described in Lin et al. <REF ID="R-09" RPTR="9">(2008)</REF>.</S>
+        <S ID="S-36114">We ran the system and produced the translations for these 2,181 test data, and automatically evaluate the results using the metrics of coverage, i.e. when system was able to produce translation candidates, and exact match precision.</S>
+      </P>
+      <P>
+        <S ID="S-36115">This precision rate is an under-estimations, since a term may have many alternative translations that does not match exactly with one single reference translation.</S>
+        <S ID="S-36116">To give a more accurate estimate of real precision, we resorted to manual evaluation on a small part of the 2,181 English phrases and a small set of English Wikipedia titles without a Chinese language link.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Automatic Evaluation</HEADER>
+        <P>
+          <S ID="S-36084">In this section, we describe the evaluation based on English-Chinese titles extracted from Wikipedia as the gold standard.</S>
+          <S ID="S-36085">Our system produce the top-1 translations by ranking candidates by frequency and output the most frequent translations.</S>
+          <S ID="S-36086">Table 1 shows the results we have obtained as compared to the results of Lin et al. <REF ID="R-09" RPTR="10">(2008)</REF>.</S>
+        </P>
+        <P>
+          <S ID="S-36087">Table 1 shows the evaluation results of 8 experiments.</S>
+          <S ID="S-36088">The results indicate that using external knowledge to generate feature improves system performance significantly.</S>
+          <S ID="S-36089">By adding translation feature (TL) or transliteration feature (TR) to the system with no external knowledge features (-TL-TR) improves exact match precision by about 6% and 16% respectively.</S>
+          <S ID="S-36090">Because many Wikipedia titles are named entities, transliteration feature is the most important.</S>
+          <S ID="S-36091">Overall, the system with full features perform the best, finding reasonably correct translations for 8 out of 10 phrases.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Manual Evaluation</HEADER>
+        <P>
+          <S ID="S-36092">Evaluation based on exact match against a single reference answer leads to under-estimation, because an English phrase is often translated into several Chinese counterparts.</S>
+          <S ID="S-36093">Therefore, we asked a human judge to examine and mark the outputs of our full system.</S>
+          <S ID="S-36094">The judge was instructed to mark each output as A: correct translation alternative, B: correct translation but with a difference sense from the reference, P: partially correct translation, and E: incorrect translation.</S>
+        </P>
+        <P>
+          <S ID="S-36095">Table 2 shows some translations generated by the full system that does not match the single reference translation.</S>
+          <S ID="S-36096">Half of the translations are correct translations (A and B), while a third are partially correct translation (P).</S>
+          <S ID="S-36097">Notice that it is a common practice to translate only the surname of a foreign person.</S>
+          <S ID="S-36098">Therefore, some partial translations may still be considered as correct (B).</S>
+        </P>
+        <P>
+          <S ID="S-36099">To Evaluate titles without a language link, we sampled a list of 95 terms from the unlinked portion of Wikipedia using the criteria: (1) with a frequency count of over 2,000 in Google Web 1T.</S>
+          <S ID="S-36100">(2) containing at least three English words.</S>
+          <S ID="S-36101">(3) not a proper name.</S>
+          <S ID="S-36102">Table 3 shows the evaluation</S>
+        </P>
+        <P>
+          <S ID="S-36103">results.</S>
+          <S ID="S-36104">Interestingly, our system provides correct translations for over 50% of the cases, and at least partially correct almost 90% of the cases.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusion and Future work</HEADER>
+      <P>
+        <S ID="S-36117">We have presented a new method for finding translations on the Web for a given term.</S>
+        <S ID="S-36118">In our approach, we use a small set of terms and translations as seeds to obtain and to tag mixedcode snippets returned by a search engine, in order to train a CRF model for sequence labels.</S>
+        <S ID="S-36119">This CRF model is then used to tag the returned snippets for a given query term to extraction translation candidates, which are then ranked and returned as output.</S>
+        <S ID="S-36120">Preliminary experiments and evaluations show our learning-based method cleanly combining various features, producing quality translations and transliterations.</S>
+        <S ID="S-36121">Many avenues exist for future research and improvement.</S>
+        <S ID="S-36122">For example, existing query expansion methods could be implemented to retrieve more webpages containing translations.</S>
+        <S ID="S-36123">Additionally, an interesting direction to explore is to identify phrase types and train type-specific CRF model.</S>
+        <S ID="S-36124">In addition, natural language processing techniques such as word stemming and word lemmatization could be attempted.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>G W Bian</RAUTHOR>
+      <REFTITLE>Cross-language information access to multilingual collections on the internet.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Y Cao</RAUTHOR>
+      <REFTITLE>Base Noun Phrase Translation Using Web Data and the EM Algorithm.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>P J Cheng</RAUTHOR>
+      <REFTITLE>Translating unknown queries with web corpora for cross-language information retrieval.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>F Huang</RAUTHOR>
+      <REFTITLE>Automatic extraction of named entity translingual equivalence based on multi-feature cost minimization.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>K Knight</RAUTHOR>
+      <REFTITLE>Machine Transliteration.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>P Koehn</RAUTHOR>
+      <REFTITLE>Feature-Rich Statistical Translation of Noun Phrases.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>J Kupiec</RAUTHOR>
+      <REFTITLE>An Algorithm for Finding Noun Phrase Correspondences in Bilingual Corpora.</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>KL Kwok</RAUTHOR>
+      <REFTITLE>CHINET: a Chinese name finder system for document triage.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Mining Parenthetical Translation from the Web by Word Alignment,</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Y Li</RAUTHOR>
+      <REFTITLE>Translating Chinese Romanized name into Chinese idiographic characters via corpus and web validation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>M Nagata</RAUTHOR>
+      <REFTITLE>Using the Web as a bilingual dictionary.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Y Qu</RAUTHOR>
+      <REFTITLE>Finding Ideographic Representations of Japanese Names Written in Latin Script via Language Identification and Corpus Validation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>CK Quah</RAUTHOR>
+      <REFTITLE>Translation and Technology, Palgrave Textbooks in Translation and Interpretation,</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>R Sproat</RAUTHOR>
+      <REFTITLE>Statistical Method for Finding Word Boundaries</REFTITLE>
+      <DATE>1990</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>J C Wu</RAUTHOR>
+      <REFTITLE>Learning SourceTarget Surface Patterns for Web-based Terminology Translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

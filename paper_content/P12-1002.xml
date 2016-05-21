@@ -1,0 +1,3301 @@
+<document>
+  <filename>P12-1002</filename>
+  <authors>
+    <author>Patrick Simianer</author>
+    <author>Stefan Riezler</author>
+  </authors>
+  <title>Joint Feature Selection in Distributed Stochastic Learning for Large-Scale Discriminative Training in SMT</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>With a few exceptions, discriminative training in statistical machine translation (SMT) has been content with tuning weights for large feature sets on small development data. Evidence from machine learning indicates that increasing the training sample size results in better prediction. The goal of this paper is to show that this common wisdom can also be brought to bear upon SMT. We deploy local features for SCFG-based SMT that can be read off from rules at runtime, and present a learning algorithm that applies l 1 /l 2 regularization for joint feature selection over distributed stochastic learning processes. We present experiments on learning on 1.5 million training sentences, and show significant improvements over tuning discriminative models on small development sets.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>With a few exceptions, discriminative training in statistical machine translation (SMT) has been content with tuning weights for large feature sets on small development data.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Evidence from machine learning indicates that increasing the training sample size results in better prediction.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The goal of this paper is to show that this common wisdom can also be brought to bear upon SMT.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We deploy local features for SCFG-based SMT that can be read off from rules at runtime, and present a learning algorithm that applies l 1 /l 2 regularization for joint feature selection over distributed stochastic learning processes.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>We present experiments on learning on 1.5 million training sentences, and show significant improvements over tuning discriminative models on small development sets.</text>
+              <doc_id>4</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>The standard SMT training pipeline combines scores from large count-based translation models and language models with a few other features and tunes these using the well-understood line-search technique for error minimization of Och (2003). If only a handful of dense features need to be tuned, minimum error rate training can be done on small tuning sets and is hard to beat in terms of accuracy and efficiency. In contrast, the promise of largescale discriminative training for SMT is to scale to arbitrary types and numbers of features and to provide sufficient statistical support by parameter estimation on large sample sizes. Features may be lexicalized and sparse, non-local and overlapping, or be designed to generalize beyond surface statistics by incorporating part-of-speech or syntactic labels. The modeler&#8217;s goals might be to identify complex properties of translations, or to counter errors of pretrained translation models and language models by explicitly down-weighting translations that exhibit certain undesired properties. Various approaches to feature engineering for discriminative models have been presented (see Section 2), however, with a few exceptions, discriminative learning in SMT has been confined to training on small tuning sets of a few thousand examples. This contradicts theoretical and practical evidence from machine learning that suggests that larger training samples should be beneficial to improve prediction also in SMT. Why is this?
+One possible reason why discriminative SMT has mostly been content with small tuning sets lies in the particular design of the features themselves. For example, the features introduced by Chiang et al. (2008) and Chiang et al. (2009) for an SCFG model for Chinese/English translation are of two types: The first type explicitly counters overestimates of rule counts, or rules with bad overlap points, bad rewrites, or with undesired insertions of target-side terminals. These features are specified in handcrafted lists based on a thorough analysis of a tuning set. Such finely hand-crafted features will find sufficient statistical support on a few thousand examples and thus do not benefit from larger training sets. The second type of features deploys external information such as syntactic parses or word alignments to penalize bad reorderings or undesired translations of phrases that cross syntactic constraints. At large scale, extraction of such features quickly becomes
+(1) X &#8594; X 1 hat X 2 versprochen, X 1 promised X 2 (2) X &#8594; X 1 hat mir X 2 versprochen, X 1 promised me X 2 (3) X &#8594; X 1 versprach X 2 , X 1 promised X 2
+infeasible because of costly generation and storage of linguistic annotations. Another possible reason why large training data did not yet show the expected improvements in discriminative SMT is a special overfitting problem of current popular online learning techniques. This is due to stochastic learning on a per-example basis where a weight update on a misclassified example may apply only to a small fraction of data that have been seen before. Thus many features will not generalize well beyond the training examples on which they were introduced.
+The goal of this paper is to investigate if and how it is possible to benefit from scaling discriminative training for SMT to large training sets. We deploy generic features for SCFG-based SMT that can efficiently be read off from rules at runtime. Such features include rule ids, rule-local n-grams, or types of rule shapes. Another crucial ingredient of our approach is a combination of parallelized stochastic learning with feature selection inspired by multi-task learning. The simple but effective idea is to randomly divide training data into evenly sized shards, use stochastic learning on each shard in parallel, while performing l 1 /l 2 regularization for joint feature selection on the shards after each epoch, before starting a new epoch with a reduced feature vector averaged across shards. Iterative feature selection procedure is the key to both efficiency and improved prediction: Without interleaving parallelized stochastic learning with feature selection our largest experiments would not be feasible. Selecting features jointly across shards and averaging does counter the overfitting effect that is inherent to stochastic updating. Our resulting models are learned on large data sets, but they are small and outperform models that tune feature sets of various sizes on small development sets. Our software is freely available as a part of the cdec 1 framework.
+1 https://github.com/redpony/cdec</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The standard SMT training pipeline combines scores from large count-based translation models and language models with a few other features and tunes these using the well-understood line-search technique for error minimization of Och (2003).</text>
+              <doc_id>5</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>If only a handful of dense features need to be tuned, minimum error rate training can be done on small tuning sets and is hard to beat in terms of accuracy and efficiency.</text>
+              <doc_id>6</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In contrast, the promise of largescale discriminative training for SMT is to scale to arbitrary types and numbers of features and to provide sufficient statistical support by parameter estimation on large sample sizes.</text>
+              <doc_id>7</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Features may be lexicalized and sparse, non-local and overlapping, or be designed to generalize beyond surface statistics by incorporating part-of-speech or syntactic labels.</text>
+              <doc_id>8</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The modeler&#8217;s goals might be to identify complex properties of translations, or to counter errors of pretrained translation models and language models by explicitly down-weighting translations that exhibit certain undesired properties.</text>
+              <doc_id>9</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Various approaches to feature engineering for discriminative models have been presented (see Section 2), however, with a few exceptions, discriminative learning in SMT has been confined to training on small tuning sets of a few thousand examples.</text>
+              <doc_id>10</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>This contradicts theoretical and practical evidence from machine learning that suggests that larger training samples should be beneficial to improve prediction also in SMT.</text>
+              <doc_id>11</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>Why is this?</text>
+              <doc_id>12</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>One possible reason why discriminative SMT has mostly been content with small tuning sets lies in the particular design of the features themselves.</text>
+              <doc_id>13</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, the features introduced by Chiang et al. (2008) and Chiang et al. (2009) for an SCFG model for Chinese/English translation are of two types: The first type explicitly counters overestimates of rule counts, or rules with bad overlap points, bad rewrites, or with undesired insertions of target-side terminals.</text>
+              <doc_id>14</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>These features are specified in handcrafted lists based on a thorough analysis of a tuning set.</text>
+              <doc_id>15</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Such finely hand-crafted features will find sufficient statistical support on a few thousand examples and thus do not benefit from larger training sets.</text>
+              <doc_id>16</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The second type of features deploys external information such as syntactic parses or word alignments to penalize bad reorderings or undesired translations of phrases that cross syntactic constraints.</text>
+              <doc_id>17</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>At large scale, extraction of such features quickly becomes</text>
+              <doc_id>18</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(1) X &#8594; X 1 hat X 2 versprochen, X 1 promised X 2 (2) X &#8594; X 1 hat mir X 2 versprochen, X 1 promised me X 2 (3) X &#8594; X 1 versprach X 2 , X 1 promised X 2</text>
+              <doc_id>19</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>infeasible because of costly generation and storage of linguistic annotations.</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Another possible reason why large training data did not yet show the expected improvements in discriminative SMT is a special overfitting problem of current popular online learning techniques.</text>
+              <doc_id>21</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is due to stochastic learning on a per-example basis where a weight update on a misclassified example may apply only to a small fraction of data that have been seen before.</text>
+              <doc_id>22</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Thus many features will not generalize well beyond the training examples on which they were introduced.</text>
+              <doc_id>23</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The goal of this paper is to investigate if and how it is possible to benefit from scaling discriminative training for SMT to large training sets.</text>
+              <doc_id>24</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We deploy generic features for SCFG-based SMT that can efficiently be read off from rules at runtime.</text>
+              <doc_id>25</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Such features include rule ids, rule-local n-grams, or types of rule shapes.</text>
+              <doc_id>26</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Another crucial ingredient of our approach is a combination of parallelized stochastic learning with feature selection inspired by multi-task learning.</text>
+              <doc_id>27</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The simple but effective idea is to randomly divide training data into evenly sized shards, use stochastic learning on each shard in parallel, while performing l 1 /l 2 regularization for joint feature selection on the shards after each epoch, before starting a new epoch with a reduced feature vector averaged across shards.</text>
+              <doc_id>28</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Iterative feature selection procedure is the key to both efficiency and improved prediction: Without interleaving parallelized stochastic learning with feature selection our largest experiments would not be feasible.</text>
+              <doc_id>29</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Selecting features jointly across shards and averaging does counter the overfitting effect that is inherent to stochastic updating.</text>
+              <doc_id>30</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our resulting models are learned on large data sets, but they are small and outperform models that tune feature sets of various sizes on small development sets.</text>
+              <doc_id>31</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our software is freely available as a part of the cdec 1 framework.</text>
+              <doc_id>32</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 https://github.com/redpony/cdec</text>
+              <doc_id>33</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Related Work</title>
+        <text>The great promise of discriminative training for SMT is the possibility to design arbitrarily expressive, complex, or overlapping features in great numbers. The focus of many approaches thus has been on feature engineering and on adaptations of machine learning algorithms to the special case of SMT (where gold standard rankings have to be created automatically). Examples for adapted algorithms include Maximum-Entropy Models (Och and Ney, 2002; Blunsom et al., 2008), Pairwise Ranking Perceptrons (Shen et al., 2004; Watanabe et al., 2006; Hopkins and May, 2011), Structured Perceptrons (Liang et al., 2006a), Boosting (Duh and Kirchhoff, 2008; Wellington et al., 2009), Structured SVMs (Tillmann and Zhang, 2006; Hayashi et al., 2009), MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang et al., 2009), and others. Adaptations of the loss functions underlying such algorithms to SMT have recently been described as particular forms of ramp loss optimization (McAllester and Keshet, 2011; Gimpel and Smith, 2012).
+All approaches have been shown to scale to large feature sets and all include some kind of regularization method. However, most approaches have been confined to training on small tuning sets. Exceptions where discriminative SMT has been used on large training data are Liang et al. (2006a) who trained 1.5 million features on 67,000 sentences, Blunsom et al. (2008) who trained 7.8 million rules on 100,000 sentences, or Tillmann and Zhang (2006) who used 230,000 sentences for training.
+Our approach is inspired by Duh et al. (2010) who applied multi-task learning for improved generalization in n-best reranking. In contrast to our work, Duh et al. (2010) did not incorporate multitask learning into distributed learning, but defined tasks as n-best lists, nor did they develop new algorithms, but used off-the-shelf multi-task tools.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The great promise of discriminative training for SMT is the possibility to design arbitrarily expressive, complex, or overlapping features in great numbers.</text>
+              <doc_id>34</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The focus of many approaches thus has been on feature engineering and on adaptations of machine learning algorithms to the special case of SMT (where gold standard rankings have to be created automatically).</text>
+              <doc_id>35</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Examples for adapted algorithms include Maximum-Entropy Models (Och and Ney, 2002; Blunsom et al., 2008), Pairwise Ranking Perceptrons (Shen et al., 2004; Watanabe et al., 2006; Hopkins and May, 2011), Structured Perceptrons (Liang et al., 2006a), Boosting (Duh and Kirchhoff, 2008; Wellington et al., 2009), Structured SVMs (Tillmann and Zhang, 2006; Hayashi et al., 2009), MIRA (Watanabe et al., 2007; Chiang et al., 2008; Chiang et al., 2009), and others.</text>
+              <doc_id>36</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Adaptations of the loss functions underlying such algorithms to SMT have recently been described as particular forms of ramp loss optimization (McAllester and Keshet, 2011; Gimpel and Smith, 2012).</text>
+              <doc_id>37</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>All approaches have been shown to scale to large feature sets and all include some kind of regularization method.</text>
+              <doc_id>38</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, most approaches have been confined to training on small tuning sets.</text>
+              <doc_id>39</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Exceptions where discriminative SMT has been used on large training data are Liang et al. (2006a) who trained 1.5 million features on 67,000 sentences, Blunsom et al. (2008) who trained 7.8 million rules on 100,000 sentences, or Tillmann and Zhang (2006) who used 230,000 sentences for training.</text>
+              <doc_id>40</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our approach is inspired by Duh et al. (2010) who applied multi-task learning for improved generalization in n-best reranking.</text>
+              <doc_id>41</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In contrast to our work, Duh et al. (2010) did not incorporate multitask learning into distributed learning, but defined tasks as n-best lists, nor did they develop new algorithms, but used off-the-shelf multi-task tools.</text>
+              <doc_id>42</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Local Features for Synchronous CFGs</title>
+        <text>The work described in this paper is based on the SMT framework of hierarchical phrase-based translation (Chiang, 2005; Chiang, 2007). Translation rules are extracted from word-aligned parallel sentences and can be seen as productions of a synchronous CFG. Examples are rules like (1)-(3)
+shown in Figure 1. Local features are designed to be readable directly off the rule at decoding time. We use three rule templates in our work:
+Rule identifiers: These features identify each rule by a unique identifier. Such features correspond to the relative frequencies of rewrites rules used in standard models.
+Rule n-grams: These features identify n-grams of consecutive items in a rule. We use bigrams on source-sides of rules. Such features identify possible source side phrases and thus can give preference to rules including them. 2
+Rule shape: These features are indicators that abstract away from lexical items to templates that identify the location of sequences of terminal symbols in relation to non-terminal symbols, on both the source- and target-sides of each rule used. For example, both rules (1) and (2) map to the same indicator, namely that a rule is being used that consists of a (NT, term*, NT, term*) pattern on its source side, and an (NT, term*, NT) pattern on its target side. Rule (3) maps to a different template, that of (NT, term*, NT) on source and target sides.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The work described in this paper is based on the SMT framework of hierarchical phrase-based translation (Chiang, 2005; Chiang, 2007).</text>
+              <doc_id>43</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Translation rules are extracted from word-aligned parallel sentences and can be seen as productions of a synchronous CFG.</text>
+              <doc_id>44</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Examples are rules like (1)-(3)</text>
+              <doc_id>45</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>shown in Figure 1.</text>
+              <doc_id>46</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Local features are designed to be readable directly off the rule at decoding time.</text>
+              <doc_id>47</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use three rule templates in our work:</text>
+              <doc_id>48</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Rule identifiers: These features identify each rule by a unique identifier.</text>
+              <doc_id>49</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Such features correspond to the relative frequencies of rewrites rules used in standard models.</text>
+              <doc_id>50</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Rule n-grams: These features identify n-grams of consecutive items in a rule.</text>
+              <doc_id>51</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use bigrams on source-sides of rules.</text>
+              <doc_id>52</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Such features identify possible source side phrases and thus can give preference to rules including them.</text>
+              <doc_id>53</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>2</text>
+              <doc_id>54</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Rule shape: These features are indicators that abstract away from lexical items to templates that identify the location of sequences of terminal symbols in relation to non-terminal symbols, on both the source- and target-sides of each rule used.</text>
+              <doc_id>55</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, both rules (1) and (2) map to the same indicator, namely that a rule is being used that consists of a (NT, term*, NT, term*) pattern on its source side, and an (NT, term*, NT) pattern on its target side.</text>
+              <doc_id>56</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Rule (3) maps to a different template, that of (NT, term*, NT) on source and target sides.</text>
+              <doc_id>57</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Joint Feature Selection in Distributed Stochastic Learning</title>
+        <text>The following discussion of learning methods is based on pairwise ranking in a Stochastic Gradient Descent (SGD) framework. The resulting algorithms can be seen as variants of the perceptron algorithm. Let each translation candidate be represented by a feature vector x &#8712; IR D where preference pairs for training are prepared by sorting translations according to smoothed sentence-wise BLEU score (Liang et al., 2006a) against the reference. For a preference pair x j = (x (1) j , x (2) j
+) where x (1) j is preferred over x (2) j , and &#175;x j = x (1) j &#8722; x (2) j , we consider the following hinge loss-type objective function:
+l j (w) = (&#8722; &#12296;w, &#175;x j &#12297;) +
+where (a) + = max(0, a) , w &#8712; IR D is a weight vector, and &#12296;&#183;, &#183;&#12297; denotes the standard vector dot product. Instantiating SGD to the following stochastic
+2 Similar &#8220;monolingual parse features&#8221; have been used in
+Dyer et al. (2011).
+subgradient leads to the perceptron algorithm for pairwise ranking 3 (Shen and Joshi, 2005): {
+&#8722;&#175;x j if &#12296;w, &#175;x j &#12297; &#8804; 0, &#8711;l j (w) = 0 else.
+Our baseline algorithm 1 (SDG) scales pairwise ranking to large scale scenarios. The algorithm takes an average over the final weight updates of each epoch instead of keeping a record of all weight updates for final averaging (Collins, 2002) or for voting (Freund and Schapire, 1999).
+Algorithm 1 SGD: int I, T , float &#951;
+Initialize w 0,0,0 &#8592; 0. for epochs t &#8592; 0 . . . T &#8722; 1: do
+for all i &#8712; {0 . . . I &#8722; 1}: do Decode i th input with w t,i,0. for all pairs x j, j &#8712; {0 . . . P &#8722; 1}: do
+w t,i,j+1 &#8592; w t,i,j &#8722; &#951;&#8711;l j(w t,i,j) end for w t,i+1,0 &#8592; w t,i,P
+end for w t+1,0,0 &#8592; w t,I,0
+end for T&#8721;
+return 1 w
+T t,0,0
+t=1
+While stochastic learning exhibits a runtime behavior that is linear in sample size (Bottou, 2004), very large datasets can make sequential processing infeasible. Algorithm 2 (MixSGD) addresses this problem by parallelization in the framework of MapReduce (Dean and Ghemawat, 2004).
+Algorithm 2 MixSGD: int I, T, Z, float &#951;
+Partition data into Z shards, each of size S &#8592; I/Z; distribute to machines. for all shards z &#8712; {1 . . . Z}: parallel do
+Initialize w z,0,0,0 &#8592; 0. for epochs t &#8592; 0 . . . T &#8722; 1: do
+for all i &#8712; {0 . . . S &#8722; 1}: do Decode i th input with w z,t,i,0. for all pairs x j, j &#8712; {0 . . . P &#8722; 1}: do
+w z,t,i,j+1 &#8592; w z,t,i,j &#8722; &#951;&#8711;l j(w z,t,i,j) end for w z,t,i+1,0 &#8592; w z,t,i,P end for w z,t+1,0,0 &#8592; w z,t,S,0
+end for end for Collect final weights ( from each machine,
+return 1 Z Z&#8721;
+z=1
+1 T
+T&#8721; w z,t,0,0 ).
+t=1
+3 Other loss functions lead to stochastic versions of SVMs
+(Collobert and Bengio, 2004; Shalev-Shwartz et al., 2007; Chapelle and Keerthi, 2010).
+Algorithm 2 is a variant of the SimuParallelSGD algorithm of Zinkevich et al. (2010) or equivalently of the parameter mixing algorithm of McDonald et al. (2010). The key idea of algorithm 2 is to partition the data into disjoint shards, then train SGD on each shard in parallel, and after training mix the final parameters from each shard by averaging. The algorithm requires no communication between machines until the end. McDonald et al. (2010) also present an iterative mixing algorithm where weights are mixed from each shard after training a single epoch of the perceptron in parallel on each shard. The mixed weight vector is re-sent to each shard to start another epoch of training in parallel on each shard. This algorithm corresponds to our algorithm 3 (IterMixSGD).
+Algorithm 3 IterMixSGD: int I, T, Z, float &#951;
+Partition data into Z shards, each of size S &#8592; I/Z; distribute to machines. Initialize v &#8592; 0. for epochs t &#8592; 0 . . . T &#8722; 1: do
+for all shards z &#8712; {1 . . . Z}: parallel do w z,t,0,0 &#8592; v for all i &#8712; {0 . . . S &#8722; 1}: do
+Decode i th input with w z,t,i,0. for all pairs x j, j &#8712; {0 . . . P &#8722; 1}: do
+w z,t,i,j+1 &#8592; w z,t,i,j &#8722; &#951;&#8711;l j(w z,t,i,j) end for w z,t,i+1,0 &#8592; w z,t,i,P
+end for end for Z&#8721;
+Collect weights v &#8592; 1 w
+Z z,t,S,0.
+end for return v
+z=1
+Parameter mixing by averaging will help to ease the feature sparsity problem, however, keeping feature vectors on the scale of several million features in memory can be prohibitive. If network latency is a bottleneck, the increased amount of information sent across the network after each epoch may be a further problem.
+Our algorithm 4 (IterSelSGD) introduces feature selection into distributed learning for increased efficiency and as a more radical measure against overfitting. The key idea is to view shards as tasks, and to apply methods for joint feature selection from multi-task learning to achieve small sets of features that are useful across all tasks or shards. Our algorithm represents weights in a Z-by-D matrix W = [w z1 | . . . |w zZ ] T of stacked D-dimensional weight vectors across Z shards. We compute the l 2 norm of the weights in each feature column, sort features by this value, and keep K features in the model. This feature selection procedure is done after each epoch. Reduced weight vectors are mixed and the result is re-sent to each shard to start another epoch of parallel training on each shard.
+Algorithm 4 IterSelSGD: int I, T, Z, K, float &#951;
+Partition data into Z shards, each of size S = I/Z; distribute to machines. Initialize v &#8592; 0. for epochs t &#8592; 0 . . . T &#8722; 1: do
+for all shards z &#8712; {1 . . . Z}: parallel do w z,t,0,0 &#8592; v for all i &#8712; {0 . . . S &#8722; 1}: do
+Decode i th input with w z,t,i,0. for all pairs x j, j &#8712; {0 . . . P &#8722; 1}: do
+w z,t,i,j+1 &#8592; w z,t,i,j &#8722; &#951;&#8711;l j(w z,t,i,j) end for w z,t,i+1,0 &#8592; w z,t,i,P
+end for end for Collect/stack weights W &#8592; [w 1,t,S,0| . . . |w Z,t,S,0] T Select top K feature columns of W by l 2 norm and for k &#8592; 1 . . . K do Z&#8721; v[k] = 1 W[z][k].
+Z
+end for end for return v
+z=1
+This algorithm can be seen as an instance of l 1 /l 2 regularization as follows: Let w d be the dth column vector of W, representing the weights for the dth feature across tasks/shards. l 1 /l 2 regularization penalizes weights W by the weighted l 1 /l 2 norm
+&#955;|W | 1,2 = &#955; D&#8721;
+|w d | 2 .
+d=1
+Each l 2 norm of a weight column represents the relevance of the corresponding feature across tasks/shards. The l 1 sum of the l 2 norms enforces a selection among features based on these norms. Consider for example the two 5-feature, 3- task weight matrices in Figure 2. Assuming the same loss for both matrices, the right-hand side matrix is preferred because of a smaller l 1 /l 2 norm (12 instead of 18). This matrix shares features across tasks which leads to larger l 2 norms for some columns (here |w 1 | 2 and |w 2 | 2 ) and forces other columns to zero. This results in shrinking the matrix to those features that are useful across all tasks.
+Our algorithm is related to Obozinski et al. (2010)&#8217;s approach to l 1 /l 2 regularization where feature columns are incrementally selected based on the l 2 norms of the gradient vectors corresponding to feature columns. Their algorithm is itself an extension of gradient-based feature selection based on the l 1 norm, e.g., Perkins et al. (2003). 4 In contrast to these approaches we approximate the gradient by using the weights given by the ranking algorithm itself. This relates our work to weight-based recursive feature elimination (RFE) (Lal et al., 2006). Furthermore, algorithm 4 performs feature selection based on a choice of meta-parameter of K features instead of by thresholding a regularization meta-parameter &#955;, however, these techniques are equivalent and can be transformed into each other.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The following discussion of learning methods is based on pairwise ranking in a Stochastic Gradient Descent (SGD) framework.</text>
+              <doc_id>58</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The resulting algorithms can be seen as variants of the perceptron algorithm.</text>
+              <doc_id>59</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Let each translation candidate be represented by a feature vector x &#8712; IR D where preference pairs for training are prepared by sorting translations according to smoothed sentence-wise BLEU score (Liang et al., 2006a) against the reference.</text>
+              <doc_id>60</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For a preference pair x j = (x (1) j , x (2) j</text>
+              <doc_id>61</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>) where x (1) j is preferred over x (2) j , and &#175;x j = x (1) j &#8722; x (2) j , we consider the following hinge loss-type objective function:</text>
+              <doc_id>62</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>l j (w) = (&#8722; &#12296;w, &#175;x j &#12297;) +</text>
+              <doc_id>63</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>where (a) + = max(0, a) , w &#8712; IR D is a weight vector, and &#12296;&#183;, &#183;&#12297; denotes the standard vector dot product.</text>
+              <doc_id>64</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Instantiating SGD to the following stochastic</text>
+              <doc_id>65</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2 Similar &#8220;monolingual parse features&#8221; have been used in</text>
+              <doc_id>66</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Dyer et al. (2011).</text>
+              <doc_id>67</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>subgradient leads to the perceptron algorithm for pairwise ranking 3 (Shen and Joshi, 2005): {</text>
+              <doc_id>68</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8722;&#175;x j if &#12296;w, &#175;x j &#12297; &#8804; 0, &#8711;l j (w) = 0 else.</text>
+              <doc_id>69</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our baseline algorithm 1 (SDG) scales pairwise ranking to large scale scenarios.</text>
+              <doc_id>70</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The algorithm takes an average over the final weight updates of each epoch instead of keeping a record of all weight updates for final averaging (Collins, 2002) or for voting (Freund and Schapire, 1999).</text>
+              <doc_id>71</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Algorithm 1 SGD: int I, T , float &#951;</text>
+              <doc_id>72</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Initialize w 0,0,0 &#8592; 0. for epochs t &#8592; 0 .</text>
+              <doc_id>73</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>74</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>75</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>T &#8722; 1: do</text>
+              <doc_id>76</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>for all i &#8712; {0 .</text>
+              <doc_id>77</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>78</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>79</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>I &#8722; 1}: do Decode i th input with w t,i,0.</text>
+              <doc_id>80</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>for all pairs x j, j &#8712; {0 .</text>
+              <doc_id>81</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>82</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>83</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>P &#8722; 1}: do</text>
+              <doc_id>84</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>w t,i,j+1 &#8592; w t,i,j &#8722; &#951;&#8711;l j(w t,i,j) end for w t,i+1,0 &#8592; w t,i,P</text>
+              <doc_id>85</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>end for w t+1,0,0 &#8592; w t,I,0</text>
+              <doc_id>86</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>end for T&#8721;</text>
+              <doc_id>87</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>return 1 w</text>
+              <doc_id>88</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>T t,0,0</text>
+              <doc_id>89</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>t=1</text>
+              <doc_id>90</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>While stochastic learning exhibits a runtime behavior that is linear in sample size (Bottou, 2004), very large datasets can make sequential processing infeasible.</text>
+              <doc_id>91</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Algorithm 2 (MixSGD) addresses this problem by parallelization in the framework of MapReduce (Dean and Ghemawat, 2004).</text>
+              <doc_id>92</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Algorithm 2 MixSGD: int I, T, Z, float &#951;</text>
+              <doc_id>93</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Partition data into Z shards, each of size S &#8592; I/Z; distribute to machines.</text>
+              <doc_id>94</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>for all shards z &#8712; {1 .</text>
+              <doc_id>95</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>96</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>97</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Z}: parallel do</text>
+              <doc_id>98</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Initialize w z,0,0,0 &#8592; 0. for epochs t &#8592; 0 .</text>
+              <doc_id>99</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>100</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>101</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>T &#8722; 1: do</text>
+              <doc_id>102</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>for all i &#8712; {0 .</text>
+              <doc_id>103</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>104</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>105</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>S &#8722; 1}: do Decode i th input with w z,t,i,0.</text>
+              <doc_id>106</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>for all pairs x j, j &#8712; {0 .</text>
+              <doc_id>107</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>108</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>109</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>P &#8722; 1}: do</text>
+              <doc_id>110</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>w z,t,i,j+1 &#8592; w z,t,i,j &#8722; &#951;&#8711;l j(w z,t,i,j) end for w z,t,i+1,0 &#8592; w z,t,i,P end for w z,t+1,0,0 &#8592; w z,t,S,0</text>
+              <doc_id>111</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>end for end for Collect final weights ( from each machine,</text>
+              <doc_id>112</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>return 1 Z Z&#8721;</text>
+              <doc_id>113</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>z=1</text>
+              <doc_id>114</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 T</text>
+              <doc_id>115</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>T&#8721; w z,t,0,0 ).</text>
+              <doc_id>116</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>t=1</text>
+              <doc_id>117</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>3 Other loss functions lead to stochastic versions of SVMs</text>
+              <doc_id>118</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(Collobert and Bengio, 2004; Shalev-Shwartz et al., 2007; Chapelle and Keerthi, 2010).</text>
+              <doc_id>119</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Algorithm 2 is a variant of the SimuParallelSGD algorithm of Zinkevich et al. (2010) or equivalently of the parameter mixing algorithm of McDonald et al. (2010).</text>
+              <doc_id>120</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The key idea of algorithm 2 is to partition the data into disjoint shards, then train SGD on each shard in parallel, and after training mix the final parameters from each shard by averaging.</text>
+              <doc_id>121</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The algorithm requires no communication between machines until the end.</text>
+              <doc_id>122</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>McDonald et al. (2010) also present an iterative mixing algorithm where weights are mixed from each shard after training a single epoch of the perceptron in parallel on each shard.</text>
+              <doc_id>123</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The mixed weight vector is re-sent to each shard to start another epoch of training in parallel on each shard.</text>
+              <doc_id>124</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>This algorithm corresponds to our algorithm 3 (IterMixSGD).</text>
+              <doc_id>125</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Algorithm 3 IterMixSGD: int I, T, Z, float &#951;</text>
+              <doc_id>126</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Partition data into Z shards, each of size S &#8592; I/Z; distribute to machines.</text>
+              <doc_id>127</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Initialize v &#8592; 0. for epochs t &#8592; 0 .</text>
+              <doc_id>128</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>129</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>130</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>T &#8722; 1: do</text>
+              <doc_id>131</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>for all shards z &#8712; {1 .</text>
+              <doc_id>132</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>133</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>134</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Z}: parallel do w z,t,0,0 &#8592; v for all i &#8712; {0 .</text>
+              <doc_id>135</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>136</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>137</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>S &#8722; 1}: do</text>
+              <doc_id>138</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Decode i th input with w z,t,i,0.</text>
+              <doc_id>139</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>for all pairs x j, j &#8712; {0 .</text>
+              <doc_id>140</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>141</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>142</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>P &#8722; 1}: do</text>
+              <doc_id>143</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>w z,t,i,j+1 &#8592; w z,t,i,j &#8722; &#951;&#8711;l j(w z,t,i,j) end for w z,t,i+1,0 &#8592; w z,t,i,P</text>
+              <doc_id>144</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>end for end for Z&#8721;</text>
+              <doc_id>145</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Collect weights v &#8592; 1 w</text>
+              <doc_id>146</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Z z,t,S,0.</text>
+              <doc_id>147</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>end for return v</text>
+              <doc_id>148</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>z=1</text>
+              <doc_id>149</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Parameter mixing by averaging will help to ease the feature sparsity problem, however, keeping feature vectors on the scale of several million features in memory can be prohibitive.</text>
+              <doc_id>150</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>If network latency is a bottleneck, the increased amount of information sent across the network after each epoch may be a further problem.</text>
+              <doc_id>151</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our algorithm 4 (IterSelSGD) introduces feature selection into distributed learning for increased efficiency and as a more radical measure against overfitting.</text>
+              <doc_id>152</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The key idea is to view shards as tasks, and to apply methods for joint feature selection from multi-task learning to achieve small sets of features that are useful across all tasks or shards.</text>
+              <doc_id>153</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our algorithm represents weights in a Z-by-D matrix W = [w z1 | .</text>
+              <doc_id>154</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>155</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>156</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>|w zZ ] T of stacked D-dimensional weight vectors across Z shards.</text>
+              <doc_id>157</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>We compute the l 2 norm of the weights in each feature column, sort features by this value, and keep K features in the model.</text>
+              <doc_id>158</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>This feature selection procedure is done after each epoch.</text>
+              <doc_id>159</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>Reduced weight vectors are mixed and the result is re-sent to each shard to start another epoch of parallel training on each shard.</text>
+              <doc_id>160</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Algorithm 4 IterSelSGD: int I, T, Z, K, float &#951;</text>
+              <doc_id>161</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Partition data into Z shards, each of size S = I/Z; distribute to machines.</text>
+              <doc_id>162</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Initialize v &#8592; 0. for epochs t &#8592; 0 .</text>
+              <doc_id>163</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>164</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>165</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>T &#8722; 1: do</text>
+              <doc_id>166</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>for all shards z &#8712; {1 .</text>
+              <doc_id>167</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>168</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>169</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Z}: parallel do w z,t,0,0 &#8592; v for all i &#8712; {0 .</text>
+              <doc_id>170</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>171</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>172</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>S &#8722; 1}: do</text>
+              <doc_id>173</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Decode i th input with w z,t,i,0.</text>
+              <doc_id>174</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>for all pairs x j, j &#8712; {0 .</text>
+              <doc_id>175</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>176</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>177</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>P &#8722; 1}: do</text>
+              <doc_id>178</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>w z,t,i,j+1 &#8592; w z,t,i,j &#8722; &#951;&#8711;l j(w z,t,i,j) end for w z,t,i+1,0 &#8592; w z,t,i,P</text>
+              <doc_id>179</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>end for end for Collect/stack weights W &#8592; [w 1,t,S,0| .</text>
+              <doc_id>180</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>181</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>182</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>|w Z,t,S,0] T Select top K feature columns of W by l 2 norm and for k &#8592; 1 .</text>
+              <doc_id>183</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>184</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>185</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>K do Z&#8721; v[k] = 1 W[z][k].</text>
+              <doc_id>186</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Z</text>
+              <doc_id>187</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>end for end for return v</text>
+              <doc_id>188</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>z=1</text>
+              <doc_id>189</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>This algorithm can be seen as an instance of l 1 /l 2 regularization as follows: Let w d be the dth column vector of W, representing the weights for the dth feature across tasks/shards.</text>
+              <doc_id>190</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>l 1 /l 2 regularization penalizes weights W by the weighted l 1 /l 2 norm</text>
+              <doc_id>191</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#955;|W | 1,2 = &#955; D&#8721;</text>
+              <doc_id>192</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>|w d | 2 .</text>
+              <doc_id>193</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>d=1</text>
+              <doc_id>194</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Each l 2 norm of a weight column represents the relevance of the corresponding feature across tasks/shards.</text>
+              <doc_id>195</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The l 1 sum of the l 2 norms enforces a selection among features based on these norms.</text>
+              <doc_id>196</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Consider for example the two 5-feature, 3- task weight matrices in Figure 2.</text>
+              <doc_id>197</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Assuming the same loss for both matrices, the right-hand side matrix is preferred because of a smaller l 1 /l 2 norm (12 instead of 18).</text>
+              <doc_id>198</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>This matrix shares features across tasks which leads to larger l 2 norms for some columns (here |w 1 | 2 and |w 2 | 2 ) and forces other columns to zero.</text>
+              <doc_id>199</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>This results in shrinking the matrix to those features that are useful across all tasks.</text>
+              <doc_id>200</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our algorithm is related to Obozinski et al. (2010)&#8217;s approach to l 1 /l 2 regularization where feature columns are incrementally selected based on the l 2 norms of the gradient vectors corresponding to feature columns.</text>
+              <doc_id>201</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Their algorithm is itself an extension of gradient-based feature selection based on the l 1 norm, e.g., Perkins et al. (2003).</text>
+              <doc_id>202</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>4 In contrast to these approaches we approximate the gradient by using the weights given by the ranking algorithm itself.</text>
+              <doc_id>203</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>This relates our work to weight-based recursive feature elimination (RFE) (Lal et al., 2006).</text>
+              <doc_id>204</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Furthermore, algorithm 4 performs feature selection based on a choice of meta-parameter of K features instead of by thresholding a regularization meta-parameter &#955;, however, these techniques are equivalent and can be transformed into each other.</text>
+              <doc_id>205</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Experiments</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>206</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>5.1 Data, Systems, Experiment Settings</title>
+            <text>The datasets used in our experiments are versions of the News Commentary (nc), News Crawl (crawl) and Europarl (ep) corpora described in Table 1. The translation direction is German-to-English.
+The SMT framework used in our experiments is hierarchical phrase-based translation (Chiang, 2007). We use the cdec decoder 5 (Dyer et al., 2010) and induce SCFG grammars from two sets of symmetrized alignments using the method described by Chiang (2007). All data was tokenized and lowercased; German compounds were split (Dyer, 2009). For word alignment of the news-commentary data, we used GIZA++ (Och and Ney, 2000); for aligning the Europarl data, we used the Berkeley aligner (Liang et al., 2006b). Before training, we collect all the grammar rules necessary to
+4 Note that by definition of ||W|| 1,2, standard l 1 regularization is a special case of l 1/l 2 regularization for a single task. 5 cdec metaparameters were set to a non-terminal span limit
+of 15 and standard cube pruning with a pop limit of 200.
+translate each individual sentence into separate files (so-called per-sentence grammars) (Lopez, 2007). When decoding, cdec loads the appropriate file immediately prior to translation of the sentence. The computational overhead is minimal compared to the expense of decoding. Also, deploying disk space instead of memory fits perfectly into the MapReduce framework we are working in. Furthermore, the extraction of grammars for training is done in a leave-one-out fashion (Zollmann and Sima&#8217;an, 2005) where rules are extracted for a parallel sentence pair only if the same rules are found in other sentences of the corpus as well.
+3-gram (news-commentary) and 5-gram (Europarl) language models are trained on the data described in Table 1, using the SRILM toolkit (Stolcke, 2002) and binarized for efficient querying using kenlm (Heafield, 2011). For the 5-gram language models, we replaced every word in the lm training data with &lt;unk&gt; that did not appear in the English part of the parallel training data to build an open vocabulary language model.
+HI
+MID
+LOW
+Training data for discriminative learning are prepared by comparing a 100-best list of translations against a single reference using smoothed persentence BLEU (Liang et al., 2006a). From the BLEU-reordered n-best list, translations were put into sets for the top 10% level (HI), the middle 80% level (MID), and the bottom 10% level (LOW). These level sets are used for multipartite ranking
+where translation pairs are built between the elements in HI-MID, HI-LOW, and MID-LOW, but not between translations inside sets on the same level. This idea is depicted graphically in Figure 3. The intuition is to ensure that good translations are preferred over bad translations without teasing apart small differences.
+For evaluation, we used the mteval-v11b.pl script to compute lowercased BLEU-4 scores (Papineni et al., 2001). Statistical significance was measured using an Approximate Randomization test (Noreen, 1989; Riezler and Maxwell, 2005).
+All experiments for training on dev sets were carried out on a single computer. For grammar extraction and training of the full data set we used a 30 node hadoop Map/Reduce cluster that can handle 300 jobs at once. We split the data into 2290 shards for the ep runs and 141 shards for the nc runs, each shard holding about 1,000 sentences, which corresponds to the dev set size of the nc data set.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The datasets used in our experiments are versions of the News Commentary (nc), News Crawl (crawl) and Europarl (ep) corpora described in Table 1.</text>
+                  <doc_id>207</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The translation direction is German-to-English.</text>
+                  <doc_id>208</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The SMT framework used in our experiments is hierarchical phrase-based translation (Chiang, 2007).</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use the cdec decoder 5 (Dyer et al., 2010) and induce SCFG grammars from two sets of symmetrized alignments using the method described by Chiang (2007).</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All data was tokenized and lowercased; German compounds were split (Dyer, 2009).</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For word alignment of the news-commentary data, we used GIZA++ (Och and Ney, 2000); for aligning the Europarl data, we used the Berkeley aligner (Liang et al., 2006b).</text>
+                  <doc_id>212</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Before training, we collect all the grammar rules necessary to</text>
+                  <doc_id>213</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 Note that by definition of ||W|| 1,2, standard l 1 regularization is a special case of l 1/l 2 regularization for a single task.</text>
+                  <doc_id>214</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>5 cdec metaparameters were set to a non-terminal span limit</text>
+                  <doc_id>215</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>of 15 and standard cube pruning with a pop limit of 200.</text>
+                  <doc_id>216</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>translate each individual sentence into separate files (so-called per-sentence grammars) (Lopez, 2007).</text>
+                  <doc_id>217</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When decoding, cdec loads the appropriate file immediately prior to translation of the sentence.</text>
+                  <doc_id>218</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The computational overhead is minimal compared to the expense of decoding.</text>
+                  <doc_id>219</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Also, deploying disk space instead of memory fits perfectly into the MapReduce framework we are working in.</text>
+                  <doc_id>220</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Furthermore, the extraction of grammars for training is done in a leave-one-out fashion (Zollmann and Sima&#8217;an, 2005) where rules are extracted for a parallel sentence pair only if the same rules are found in other sentences of the corpus as well.</text>
+                  <doc_id>221</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3-gram (news-commentary) and 5-gram (Europarl) language models are trained on the data described in Table 1, using the SRILM toolkit (Stolcke, 2002) and binarized for efficient querying using kenlm (Heafield, 2011).</text>
+                  <doc_id>222</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the 5-gram language models, we replaced every word in the lm training data with &lt;unk&gt; that did not appear in the English part of the parallel training data to build an open vocabulary language model.</text>
+                  <doc_id>223</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>HI</text>
+                  <doc_id>224</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>MID</text>
+                  <doc_id>225</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>LOW</text>
+                  <doc_id>226</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Training data for discriminative learning are prepared by comparing a 100-best list of translations against a single reference using smoothed persentence BLEU (Liang et al., 2006a).</text>
+                  <doc_id>227</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>From the BLEU-reordered n-best list, translations were put into sets for the top 10% level (HI), the middle 80% level (MID), and the bottom 10% level (LOW).</text>
+                  <doc_id>228</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These level sets are used for multipartite ranking</text>
+                  <doc_id>229</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where translation pairs are built between the elements in HI-MID, HI-LOW, and MID-LOW, but not between translations inside sets on the same level.</text>
+                  <doc_id>230</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This idea is depicted graphically in Figure 3.</text>
+                  <doc_id>231</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The intuition is to ensure that good translations are preferred over bad translations without teasing apart small differences.</text>
+                  <doc_id>232</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For evaluation, we used the mteval-v11b.pl script to compute lowercased BLEU-4 scores (Papineni et al., 2001).</text>
+                  <doc_id>233</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Statistical significance was measured using an Approximate Randomization test (Noreen, 1989; Riezler and Maxwell, 2005).</text>
+                  <doc_id>234</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>All experiments for training on dev sets were carried out on a single computer.</text>
+                  <doc_id>235</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For grammar extraction and training of the full data set we used a 30 node hadoop Map/Reduce cluster that can handle 300 jobs at once.</text>
+                  <doc_id>236</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We split the data into 2290 shards for the ep runs and 141 shards for the nc runs, each shard holding about 1,000 sentences, which corresponds to the dev set size of the nc data set.</text>
+                  <doc_id>237</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>5.2 Experimental Results</title>
+            <text>The baseline learner in our experiments is a pairwise ranking perceptron that is used on various features and training data and plugged into various meta-
+BLEU[%]
+M &#175;x
+23.0 25.0 27.0 29.0
+algorithms for distributed processing. The perceptron algorithm itself compares favorably to related learning techniques such as the MIRA adaptation of Chiang et al. (2008). Figure 4 gives a boxplot depicting BLEU-4 results for 100 runs of the MIRA implementation of the cdec package, tuned on dev-nc, and evaluated on the respective test set test-nc. 6 We see a high variance (whiskers denote standard deviations) around a median of 27.2 BLEU and a mean of 27.1 BLEU. The fluctuation of results is due to sampling training examples from the translation hy-
+6 MIRA was used with default meta parameters: 250 hypothesis list to search for oracles, regularization strength C = 0.01 and using 15 passes over the input. It optimized IBM BLEU-4. The initial weight vector was 0.
+dev-nc default 12 25.88 28.0
+dev-nc +id 137k 25.53 27.6 &#8224;23
+dev-nc +ng 29k 25.82 27.42 &#8224;234
+dev-nc +shape 51 25.91 28.1
+dev-nc +id,ng,shape 180k 25.71 28.15 34
+train-nc default 12 25.73 27.86
+train-nc +id 4.1M 25.13 27.19 &#8224;134
+train-nc +ng 354k 26.09 28.03 134
+train-nc +shape 51 26.07 27.91 3
+train-nc +id,ng,shape 4.7M 26.08 27.86 34
+train-nc default 12 26.09 @2 27.94 &#8224;
+train-nc +id 3.4M 26.1 @4 27.97 &#8224;12
+train-nc +ng 330k 26.33 @4 28.34 12
+train-nc +shape 51 26.39 @9 28.31 2
+train-nc +id,ng,shape 4.7M 26.42 @9 28.55 124
+train-nc +id 100k 25.91 @7 27.82 &#8224;2
+train-nc +ng 100k 26.42 @4 28.37 &#8224;12
+train-nc +id,ng,shape 100k 26.8 @8 28.81 123
+pergraph as is done in the cdec implementation of MIRA. We found similar fluctuations for the cdec implementations of PRO (Hopkins and May, 2011) or hypergraph-MERT (Kumar et al., 2009) both of which depend on hypergraph sampling. In contrast, the perceptron is deterministic when started from a zero-vector of weights and achieves favorable 28.0 BLEU on the news-commentary test set. Since we are interested in relative improvements over a stable baseline, we restrict our attention in all following experiments to the perceptron. 7
+Table 2 shows the results of the experimental comparison of the 4 algorithms of Section 4. The
+7 Absolute improvements would be possible, e.g., by using
+larger language models or by adding news data to the ep training set when evaluating on crawl test sets (see, e.g., Dyer et al. (2011)), however, this is not the focus of this paper.
+default features include 12 dense models defined on SCFG rules; 8 The sparse features are the 3 templates described in Section 3. All feature weights were tuned together using algorithms 1-4. If not indicated otherwise, the perceptron was run for 10 epochs with learning rate &#951; = 0.0001, started at zero weight vector, using deduplicated 100-best lists. The results on the news-commentary (nc) data show that training on the development set does not benefit from adding large feature sets &#8211; BLEU result differences between tuning 12 default features
+8 negative log relative frequency p(e|f); log count(f); log
+count(e, f); lexical translation probability p(f|e) and p(e|f) (Koehn et al., 2003); indicator variable on singleton phrase e; indicator variable on singleton phrase pair f, e; word penalty; language model weight; OOV count of language model; number of untranslated words; Hiero glue rules (Chiang, 2007).
+Alg. Tuning set Features #Feats devtest-ep test-ep Tuning set test-crawl10 test-crawl11
+1 dev-ep default 12 25.62 26.42 &#8224; dev-crawl 15.39 &#8224; 14.43 &#8224;
+dev-ep +id,ng,shape 300k 27.84 28.37 dev-crawl 17.8 4 16.83 4
+4 train-ep +id,ng,shape 100k 28.0 @9 28.62 train-ep 19.12 1 17.33 1
+and tuning the full set of 180,000 features are not significant. However, scaling all features to the full training set shows significant improvements for algorithm 3, and especially for algorithm 4, which gains 0.8 BLEU points over tuning 12 features on the development set. The number of features rises to 4.7 million without feature selection, which iteratively selects 100,000 features with best l 2 norm values across shards. Feature templates such as rule n-grams and rule shapes only work if iterative mixing (algorithm 3) or feature selection (algorithm 4) are used. Adding rule id features works in combination with other sparse features.
+Table 3 shows results for algorithms 1 and 4 on the Europarl data (ep) for different devtest and test sets. Europarl data were used in all runs for training and for setting the meta-parameter of number of epochs. Testing was done on the Europarl test set and news crawl test data from the years 2010 and 2011. Here tuning large feature sets on the respective dev sets yields significant improvements of around 2 BLEU points over tuning the 12 default features on the dev sets. Another 0.5 BLEU points (test-crawl11) or even 1.3 BLEU points (testcrawl10) are gained when scaling to the full training set using iterative features selection. Result differences on the Europarl test set were not significant for moving from dev to full train set. Algorithms 2 and 3 were infeasible to run on Europarl data beyond one epoch because features vectors grew too large to be kept in memory.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The baseline learner in our experiments is a pairwise ranking perceptron that is used on various features and training data and plugged into various meta-</text>
+                  <doc_id>238</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BLEU[%]</text>
+                  <doc_id>239</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>M &#175;x</text>
+                  <doc_id>240</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>23.0 25.0 27.0 29.0</text>
+                  <doc_id>241</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>algorithms for distributed processing.</text>
+                  <doc_id>242</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The perceptron algorithm itself compares favorably to related learning techniques such as the MIRA adaptation of Chiang et al. (2008).</text>
+                  <doc_id>243</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Figure 4 gives a boxplot depicting BLEU-4 results for 100 runs of the MIRA implementation of the cdec package, tuned on dev-nc, and evaluated on the respective test set test-nc.</text>
+                  <doc_id>244</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>6 We see a high variance (whiskers denote standard deviations) around a median of 27.2 BLEU and a mean of 27.1 BLEU.</text>
+                  <doc_id>245</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The fluctuation of results is due to sampling training examples from the translation hy-</text>
+                  <doc_id>246</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6 MIRA was used with default meta parameters: 250 hypothesis list to search for oracles, regularization strength C = 0.01 and using 15 passes over the input.</text>
+                  <doc_id>247</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It optimized IBM BLEU-4.</text>
+                  <doc_id>248</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The initial weight vector was 0.</text>
+                  <doc_id>249</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>dev-nc default 12 25.88 28.0</text>
+                  <doc_id>250</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>dev-nc +id 137k 25.53 27.6 &#8224;23</text>
+                  <doc_id>251</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>dev-nc +ng 29k 25.82 27.42 &#8224;234</text>
+                  <doc_id>252</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>dev-nc +shape 51 25.91 28.1</text>
+                  <doc_id>253</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>dev-nc +id,ng,shape 180k 25.71 28.15 34</text>
+                  <doc_id>254</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc default 12 25.73 27.86</text>
+                  <doc_id>255</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +id 4.1M 25.13 27.19 &#8224;134</text>
+                  <doc_id>256</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +ng 354k 26.09 28.03 134</text>
+                  <doc_id>257</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +shape 51 26.07 27.91 3</text>
+                  <doc_id>258</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +id,ng,shape 4.7M 26.08 27.86 34</text>
+                  <doc_id>259</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc default 12 26.09 @2 27.94 &#8224;</text>
+                  <doc_id>260</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +id 3.4M 26.1 @4 27.97 &#8224;12</text>
+                  <doc_id>261</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +ng 330k 26.33 @4 28.34 12</text>
+                  <doc_id>262</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +shape 51 26.39 @9 28.31 2</text>
+                  <doc_id>263</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +id,ng,shape 4.7M 26.42 @9 28.55 124</text>
+                  <doc_id>264</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +id 100k 25.91 @7 27.82 &#8224;2</text>
+                  <doc_id>265</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +ng 100k 26.42 @4 28.37 &#8224;12</text>
+                  <doc_id>266</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train-nc +id,ng,shape 100k 26.8 @8 28.81 123</text>
+                  <doc_id>267</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>pergraph as is done in the cdec implementation of MIRA.</text>
+                  <doc_id>268</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We found similar fluctuations for the cdec implementations of PRO (Hopkins and May, 2011) or hypergraph-MERT (Kumar et al., 2009) both of which depend on hypergraph sampling.</text>
+                  <doc_id>269</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In contrast, the perceptron is deterministic when started from a zero-vector of weights and achieves favorable 28.0 BLEU on the news-commentary test set.</text>
+                  <doc_id>270</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since we are interested in relative improvements over a stable baseline, we restrict our attention in all following experiments to the perceptron.</text>
+                  <doc_id>271</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>7</text>
+                  <doc_id>272</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 2 shows the results of the experimental comparison of the 4 algorithms of Section 4.</text>
+                  <doc_id>273</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The</text>
+                  <doc_id>274</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>7 Absolute improvements would be possible, e.g., by using</text>
+                  <doc_id>275</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>larger language models or by adding news data to the ep training set when evaluating on crawl test sets (see, e.g., Dyer et al. (2011)), however, this is not the focus of this paper.</text>
+                  <doc_id>276</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>default features include 12 dense models defined on SCFG rules; 8 The sparse features are the 3 templates described in Section 3.</text>
+                  <doc_id>277</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All feature weights were tuned together using algorithms 1-4.</text>
+                  <doc_id>278</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If not indicated otherwise, the perceptron was run for 10 epochs with learning rate &#951; = 0.0001, started at zero weight vector, using deduplicated 100-best lists.</text>
+                  <doc_id>279</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The results on the news-commentary (nc) data show that training on the development set does not benefit from adding large feature sets &#8211; BLEU result differences between tuning 12 default features</text>
+                  <doc_id>280</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>8 negative log relative frequency p(e|f); log count(f); log</text>
+                  <doc_id>281</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>count(e, f); lexical translation probability p(f|e) and p(e|f) (Koehn et al., 2003); indicator variable on singleton phrase e; indicator variable on singleton phrase pair f, e; word penalty; language model weight; OOV count of language model; number of untranslated words; Hiero glue rules (Chiang, 2007).</text>
+                  <doc_id>282</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Alg.</text>
+                  <doc_id>283</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Tuning set Features #Feats devtest-ep test-ep Tuning set test-crawl10 test-crawl11</text>
+                  <doc_id>284</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 dev-ep default 12 25.62 26.42 &#8224; dev-crawl 15.39 &#8224; 14.43 &#8224;</text>
+                  <doc_id>285</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>dev-ep +id,ng,shape 300k 27.84 28.37 dev-crawl 17.8 4 16.83 4</text>
+                  <doc_id>286</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 train-ep +id,ng,shape 100k 28.0 @9 28.62 train-ep 19.12 1 17.33 1</text>
+                  <doc_id>287</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>and tuning the full set of 180,000 features are not significant.</text>
+                  <doc_id>288</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, scaling all features to the full training set shows significant improvements for algorithm 3, and especially for algorithm 4, which gains 0.8 BLEU points over tuning 12 features on the development set.</text>
+                  <doc_id>289</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The number of features rises to 4.7 million without feature selection, which iteratively selects 100,000 features with best l 2 norm values across shards.</text>
+                  <doc_id>290</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Feature templates such as rule n-grams and rule shapes only work if iterative mixing (algorithm 3) or feature selection (algorithm 4) are used.</text>
+                  <doc_id>291</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Adding rule id features works in combination with other sparse features.</text>
+                  <doc_id>292</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 3 shows results for algorithms 1 and 4 on the Europarl data (ep) for different devtest and test sets.</text>
+                  <doc_id>293</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Europarl data were used in all runs for training and for setting the meta-parameter of number of epochs.</text>
+                  <doc_id>294</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Testing was done on the Europarl test set and news crawl test data from the years 2010 and 2011.</text>
+                  <doc_id>295</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Here tuning large feature sets on the respective dev sets yields significant improvements of around 2 BLEU points over tuning the 12 default features on the dev sets.</text>
+                  <doc_id>296</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Another 0.5 BLEU points (test-crawl11) or even 1.3 BLEU points (testcrawl10) are gained when scaling to the full training set using iterative features selection.</text>
+                  <doc_id>297</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Result differences on the Europarl test set were not significant for moving from dev to full train set.</text>
+                  <doc_id>298</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Algorithms 2 and 3 were infeasible to run on Europarl data beyond one epoch because features vectors grew too large to be kept in memory.</text>
+                  <doc_id>299</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 Discussion</title>
+        <text>We presented an approach to scaling discriminative learning for SMT not only to large feature sets but also to large sets of parallel training data. Since inference for SMT (unlike many other learning problems) is very expensive, especially on large training sets, good parallelization is key. Our approach is made feasible and effective by applying joint feature selection across distributed stochastic learning processes. Furthermore, our local features are efficiently computable at runtime. Our algorithms and features are generic and can easily be reimplemented and make our results relevant across datasets and language pairs. In future work, we would like to investigate more sophisticated features, better learners, and in general improve the components of our system that have been neglected in the current investigation of relative improvements by scaling the size of data and feature sets. Ultimately, since our algorithms are inspired by multi-task learning, we would like to apply them to scenarios where a natural definition of tasks is given. For example, patent data can be characterized along the dimensions of patent classes and patent text fields (W&#228;schle and Riezler, 2012) and thus are well suited for multi-task translation.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We presented an approach to scaling discriminative learning for SMT not only to large feature sets but also to large sets of parallel training data.</text>
+              <doc_id>300</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since inference for SMT (unlike many other learning problems) is very expensive, especially on large training sets, good parallelization is key.</text>
+              <doc_id>301</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our approach is made feasible and effective by applying joint feature selection across distributed stochastic learning processes.</text>
+              <doc_id>302</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Furthermore, our local features are efficiently computable at runtime.</text>
+              <doc_id>303</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our algorithms and features are generic and can easily be reimplemented and make our results relevant across datasets and language pairs.</text>
+              <doc_id>304</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In future work, we would like to investigate more sophisticated features, better learners, and in general improve the components of our system that have been neglected in the current investigation of relative improvements by scaling the size of data and feature sets.</text>
+              <doc_id>305</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Ultimately, since our algorithms are inspired by multi-task learning, we would like to apply them to scenarios where a natural definition of tasks is given.</text>
+              <doc_id>306</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, patent data can be characterized along the dimensions of patent classes and patent text fields (W&#228;schle and Riezler, 2012) and thus are well suited for multi-task translation.</text>
+              <doc_id>307</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>7</index>
+        <title>Acknowledgments</title>
+        <text>Stefan Riezler and Patrick Simianer were supported in part by DFG grant &#8220;Cross-language Learning-to- Rank for Patent Retrieval&#8221;. Chris Dyer was supported in part by a MURI grant &#8220;The linguisticcore approach to structured translation and analysis of low-resource languages&#8221; from the US Army Research Office and a grant &#8220;Unsupervised Induction of Multi-Nonterminal Grammars for SMT&#8221; from Google, Inc.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Stefan Riezler and Patrick Simianer were supported in part by DFG grant &#8220;Cross-language Learning-to- Rank for Patent Retrieval&#8221;.</text>
+              <doc_id>308</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Chris Dyer was supported in part by a MURI grant &#8220;The linguisticcore approach to structured translation and analysis of low-resource languages&#8221; from the US Army Research Office and a grant &#8220;Unsupervised Induction of Multi-Nonterminal Grammars for SMT&#8221; from Google, Inc.</text>
+              <doc_id>309</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 1: Overview of data used for train/dev/test. News Commentary (nc) and Europarl (ep) training data and also News Crawl (crawl) dev/test data were taken from the WMT11 translation task (http://statmt.org/ wmt11/translation-task.html). The dev/test data of nc are the sets provided with the WMT07 shared task (http://statmt.org/wmt07/shared-task.html). Ep dev/test data is from WMT08 shared task (http://statmt.org/wmt08/shared-task.html). The numbers in brackets for the rule counts of ep/nc training data are total counts of rules in the per-sentence grammars.</caption>
+        <reference_text>In PAGE 5: ... 5 Experiments 5.1 Data, Systems, Experiment Settings The datasets used in our experiments are versions of the News Commentary (nc), News Crawl (crawl) and Europarl (ep) corpora described in  Table1 . The translation direction is German-to-English....  In PAGE 5: ... Furthermore, the extraction of grammars for training is done in a leave-one-out fashion (Zollmann and Sima?an, 2005) where rules are extracted for a parallel sen- tence pair only if the same rules are found in other sentences of the corpus as well. 3-gram (news-commentary) and 5-gram (Eu- roparl) language models are trained on the data de- scribed in  Table1 , using the SRILM toolkit (Stol- cke, 2002) and binarized for efficient querying using kenlm (Heafield, 2011). For the 5-gram language models, we replaced every word in the lm training data with  lt;unk gt; that did not appear in the English part of the parallel training data to build an open vo- cabulary language model....</reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>NewsCommentary(nc)</cell>
+              <cell>NewsCommentary(nc)   train-nc</cell>
+              <cell>lm-train-nc</cell>
+              <cell>dev-nc</cell>
+              <cell>devtest-nc</cell>
+              <cell>test-nc</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Sentences</cell>
+              <cell>132,753</cell>
+              <cell>180,657</cell>
+              <cell>1057</cell>
+              <cell>1064</cell>
+              <cell>2007</cell>
+            </row>
+            <row>
+              <cell>Tokensde</cell>
+              <cell>3,530,907</cell>
+              <cell>?</cell>
+              <cell>27,782</cell>
+              <cell>28,415</cell>
+              <cell>53,989</cell>
+            </row>
+            <row>
+              <cell>Tokensen</cell>
+              <cell>3,293,363</cell>
+              <cell>4,394,428</cell>
+              <cell>26,098</cell>
+              <cell>26,219</cell>
+              <cell>50,443</cell>
+            </row>
+            <row>
+              <cell>RuleCount</cell>
+              <cell>14,350,552(1G)</cell>
+              <cell>?</cell>
+              <cell>2,322,912</cell>
+              <cell>2,320,264</cell>
+              <cell>3,274,771</cell>
+            </row>
+            <row>
+              <cell>Europarl(ep)</cell>
+              <cell>Europarl(ep)</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-ep</cell>
+              <cell>lm-train-ep</cell>
+              <cell>dev-ep</cell>
+              <cell>devtest-ep</cell>
+              <cell>test-ep</cell>
+            </row>
+            <row>
+              <cell>Sentences</cell>
+              <cell>1,655,238</cell>
+              <cell>2,015,440</cell>
+              <cell>2000</cell>
+              <cell>2000</cell>
+              <cell>2000</cell>
+            </row>
+            <row>
+              <cell>Tokensde</cell>
+              <cell>45,293,925</cell>
+              <cell>?</cell>
+              <cell>57,723</cell>
+              <cell>56,783</cell>
+              <cell>59,297</cell>
+            </row>
+            <row>
+              <cell>Tokensen</cell>
+              <cell>45,374,649</cell>
+              <cell>54,728,786</cell>
+              <cell>58,825</cell>
+              <cell>58,100</cell>
+              <cell>60,240</cell>
+            </row>
+            <row>
+              <cell>RuleCount</cell>
+              <cell>203,552,525(31.5G)</cell>
+              <cell>?</cell>
+              <cell>17,738,763</cell>
+              <cell>17,682,176</cell>
+              <cell>18,273,078</cell>
+            </row>
+            <row>
+              <cell>NewsCrawl(crawl)</cell>
+              <cell>NewsCrawl(crawl)</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>dev-crawl</cell>
+              <cell>test-crawl10</cell>
+              <cell>test-crawl11</cell>
+            </row>
+            <row>
+              <cell>Sentences</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>2051</cell>
+              <cell>2489</cell>
+              <cell>3003</cell>
+            </row>
+            <row>
+              <cell>Tokensde</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>49,848</cell>
+              <cell>64,301</cell>
+              <cell>76,193</cell>
+            </row>
+            <row>
+              <cell>Tokensen</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>49,767</cell>
+              <cell>61,925</cell>
+              <cell>74,753</cell>
+            </row>
+            <row>
+              <cell>RuleCount</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>9,404,339</cell>
+              <cell>11,307,304</cell>
+              <cell>12,561,636</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TableSeer</source>
+        <caption>Table 2: BLEU-4 results for algorithms 1 (SGD), 2 (MixSGD), 3 (IterMixSDG), and 4 (IterSelSGD) on news- commentary (nc) data. Feature groups are 12 dense features (default), rule identifiers (id), rule n-gram (ng), and rule shape (shape). Statistical significance at p-level  lt; 0.05 of a result difference on the test set to a different algo- rithm applied to the same feature group is indicated by raised algorithm number. ? indicates statistically significant differences to best result across features groups for same algorithm, indicated in bold face. @ indicates the optimal number of epochs chosen on the devtest set.</caption>
+        <reference_text>In PAGE 7: ... Since we are interested in relative improvements over a stable baseline, we restrict our attention in all following ex- periments to the perceptron.7  Table2  shows the results of the experimental comparison of the 4 algorithms of Section 4. The 7Absolute improvements would be possible, e....</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Algorithm</cell>
+              <cell>Tuning set</cell>
+              <cell>Features</cell>
+              <cell>#Features</cell>
+              <cell>devtest-nc</cell>
+              <cell>test-nc</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>MIRA</cell>
+              <cell>dev-nc</cell>
+              <cell>default</cell>
+              <cell>12</cell>
+              <cell>?</cell>
+              <cell>27.10</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>dev-nc</cell>
+              <cell>default</cell>
+              <cell>12</cell>
+              <cell>25.88</cell>
+              <cell>28.0</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>dev-nc</cell>
+              <cell>+id</cell>
+              <cell>137k</cell>
+              <cell>25.53</cell>
+              <cell>27.6?23</cell>
+            </row>
+            <row>
+              <cell>1</cell>
+              <cell>dev-nc</cell>
+              <cell>+ng</cell>
+              <cell>29k</cell>
+              <cell>25.82</cell>
+              <cell>27.42?234</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>dev-nc</cell>
+              <cell>+shape</cell>
+              <cell>51</cell>
+              <cell>25.91</cell>
+              <cell>28.1</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>dev-nc</cell>
+              <cell>+id,ng,shape</cell>
+              <cell>180k</cell>
+              <cell>25.71</cell>
+              <cell>28.1534</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>default</cell>
+              <cell>12</cell>
+              <cell>25.73</cell>
+              <cell>27.86</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>+id</cell>
+              <cell>4.1M</cell>
+              <cell>25.13</cell>
+              <cell>27.19?134</cell>
+            </row>
+            <row>
+              <cell>2</cell>
+              <cell>train-nc</cell>
+              <cell>+ng</cell>
+              <cell>354k</cell>
+              <cell>26.09</cell>
+              <cell>28.03134</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>+shape</cell>
+              <cell>51</cell>
+              <cell>26.07</cell>
+              <cell>27.913</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>+id,ng,shape</cell>
+              <cell>4.7M</cell>
+              <cell>26.08</cell>
+              <cell>27.8634</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>default</cell>
+              <cell>12</cell>
+              <cell>26.09 @2</cell>
+              <cell>27.94?</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>+id</cell>
+              <cell>3.4M</cell>
+              <cell>26.1 @4</cell>
+              <cell>27.97?12</cell>
+            </row>
+            <row>
+              <cell>3</cell>
+              <cell>train-nc</cell>
+              <cell>+ng</cell>
+              <cell>330k</cell>
+              <cell>26.33 @4</cell>
+              <cell>28.3412</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>+shape</cell>
+              <cell>51</cell>
+              <cell>26.39 @9</cell>
+              <cell>28.312</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>+id,ng,shape</cell>
+              <cell>4.7M</cell>
+              <cell>26.42 @9</cell>
+              <cell>28.55124</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>+id</cell>
+              <cell>100k</cell>
+              <cell>25.91 @7</cell>
+              <cell>27.82?2</cell>
+            </row>
+            <row>
+              <cell>4</cell>
+              <cell>train-nc</cell>
+              <cell>+ng</cell>
+              <cell>100k</cell>
+              <cell>26.42 @4</cell>
+              <cell>28.37?12</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>train-nc</cell>
+              <cell>+id,ng,shape</cell>
+              <cell>100k</cell>
+              <cell>26.8 @8</cell>
+              <cell>28.81123</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Phil Blunsom</author>
+          <author>Trevor Cohn</author>
+          <author>Miles Osborne</author>
+        </authors>
+        <title>A discriminative latent variable models for statistical machine translation.</title>
+        <publication>In Proceedings of the 46th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies (ACLHLT&#8217;08),</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>L&#233;on Bottou</author>
+        </authors>
+        <title>Stochastic learning.</title>
+        <publication>Advanced Lectures on Machine Learning,</publication>
+        <pages>146--168</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Olivier Chapelle</author>
+          <author>S Sathiya Keerthi</author>
+        </authors>
+        <title>Efficient algorithms for ranking with SVMs.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>David Chiang</author>
+          <author>Yuval Marton</author>
+          <author>Philip Resnik</author>
+        </authors>
+        <title>None</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors/>
+        <title>Online large-margin training of syntactic and structural translation features.</title>
+        <publication>In Proceedings of the 2008 Conference on Empirical Methods in Natural Language Processing (EMNLP&#8217;08),</publication>
+        <pages>None</pages>
+        <date>None</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>David Chiang</author>
+          <author>Kevin Knight</author>
+          <author>Wei Wang</author>
+        </authors>
+        <title>11,001 new features for statistical machine translation.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors/>
+        <title>None</title>
+        <publication>In Proceedings of the 2009 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL-HLT&#8217;09),</publication>
+        <pages>None</pages>
+        <date>None</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>David Chiang</author>
+        </authors>
+        <title>A hierarchical phrase-based model for statistical machine translation.</title>
+        <publication>In Proceedings of the 43rd Annual Meeting of the Association for Computational Linguistics (ACL&#8217;05),</publication>
+        <pages>None</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>David Chiang</author>
+        </authors>
+        <title>Hierarchical phrase-based translation.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Michael Collins</author>
+        </authors>
+        <title>Discriminative training methods for hidden markov models: theory and experiments with perceptron algorithms.</title>
+        <publication>In Proceedings of the conference on Empirical Methods in Natural Language Processing (EMNLP&#8217;02),</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Ronan Collobert</author>
+          <author>Samy Bengio</author>
+        </authors>
+        <title>Links between perceptrons, MLPs, and SVMs.</title>
+        <publication>In Proceedings of the 21st International Conference on Machine Learning (ICML&#8217;04),</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Jeffrey Dean</author>
+          <author>Sanjay Ghemawat</author>
+        </authors>
+        <title>Mapreduce: Simplified data processing on large clusters.</title>
+        <publication>In Proceedings of the 6th Symposium on Operating System Design and Implementation (OSDI&#8217;04),</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Kevin Duh</author>
+          <author>Katrin Kirchhoff</author>
+        </authors>
+        <title>Beyond loglinear models: Boosted minimum error rate training for n-best ranking.</title>
+        <publication>In Proceedings of the 46th Annual Meeting of the Association for Computational Linguistics (ACL&#8217;08), Short Paper Track,</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>Kevin Duh</author>
+          <author>Katsuhito Sudoh</author>
+          <author>Hajime Tsukada</author>
+          <author>Hideki Isozaki</author>
+          <author>Masaaki Nagata</author>
+        </authors>
+        <title>N-best reranking by multitask learning.</title>
+        <publication>In Proceedings of the 5th Joint Workshop on Statistical Machine Translation and MetricsMATR,</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Chris Dyer</author>
+          <author>Adam Lopez</author>
+          <author>Juri Ganitkevitch</author>
+          <author>Jonathan Weese</author>
+          <author>Ferhan Ture</author>
+          <author>Phil Blunsom</author>
+          <author>Hendra Setiawan</author>
+          <author>Vladimir Eidelman</author>
+          <author>Philip Resnik</author>
+        </authors>
+        <title>cdec: A decoder, alignment, and learning framework for finitestate and context-free translation models.</title>
+        <publication>In Proceedings of the ACL 2010 System Demonstrations,</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>Chris Dyer</author>
+          <author>Kevin Gimpel</author>
+          <author>Jonathan H Clark</author>
+          <author>Noah A Smith</author>
+        </authors>
+        <title>The CMU-ARK germanenglish translation system.</title>
+        <publication>In Proceedings of the 6th Workshop on Machine Translation (WMT11),</publication>
+        <pages>None</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>16</id>
+        <authors>
+          <author>Chris Dyer</author>
+        </authors>
+        <title>Using a maximum entropy model to build segmentation lattices for MT.</title>
+        <publication>In Proceedings of the Conference of the North American Chapter of the Association for Computational Linguistics - Human Language Technologies (NAACL-HLT&#8217;09),</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>17</id>
+        <authors>
+          <author>Yoav Freund</author>
+          <author>Robert E Schapire</author>
+        </authors>
+        <title>Large margin classification using the perceptron algorithm.</title>
+        <publication>None</publication>
+        <pages>37--277</pages>
+        <date>1999</date>
+      </reference>
+      <reference>
+        <id>18</id>
+        <authors>
+          <author>Kevin Gimpel</author>
+          <author>Noah A Smith</author>
+        </authors>
+        <title>Structured ramp loss minimization for machine translation.</title>
+        <publication>In Proceedings of 2012 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (NAACLHLT 2012),</publication>
+        <pages>None</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>19</id>
+        <authors>
+          <author>Katsuhiko Hayashi</author>
+          <author>Taro Watanabe</author>
+          <author>Hajime Tsukada</author>
+          <author>Hideki Isozaki</author>
+        </authors>
+        <title>Structural support vector machines for log-linear approach in statistical machine translation.</title>
+        <publication>In Proceedings of IWSLT,</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>20</id>
+        <authors>
+          <author>Kenneth Heafield</author>
+        </authors>
+        <title>KenLM: faster and smaller language model queries.</title>
+        <publication>In Proceedings of the EMNLP 2011 Sixth Workshop on Statistical Machine Translation (WMT&#8217;11),</publication>
+        <pages>None</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>21</id>
+        <authors>
+          <author>Mark Hopkins</author>
+          <author>Jonathan May</author>
+        </authors>
+        <title>Tuning as ranking.</title>
+        <publication>In Proceedings of 2011 Conference on Empirical Methods in Natural Language Processing (EMNLP&#8217;11),</publication>
+        <pages>None</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>22</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Franz Josef Och</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>Statistical phrase-based translation.</title>
+        <publication>In Proceedings of the Human Language Technology Conference and the 3rd Meeting of the North American Chapter of the Association for Computational Linguistics (HLTNAACL&#8217;03),</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>23</id>
+        <authors>
+          <author>Shankar Kumar</author>
+          <author>Wolfgang Macherey</author>
+          <author>Chris Dyer</author>
+          <author>Franz Och</author>
+        </authors>
+        <title>Efficient minimum error rate training and minimum Bayes-risk decoding for translation hypergraphs and lattices.</title>
+        <publication>In Proceedings of the 47th Annual Meeting of the Association for Computational 19 and the 4th IJCNLP of the AFNLP (ACLIJCNLP&#8217;09,</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>24</id>
+        <authors>
+          <author>Thomas Navin Lal</author>
+          <author>Olivier Chapelle</author>
+          <author>Jason Weston</author>
+          <author>Andr&#233; Elisseeff</author>
+        </authors>
+        <title>Embedded methods.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>25</id>
+        <authors>
+          <author>Percy Liang</author>
+          <author>Alexandre Bouchard-C&#244;t&#233;</author>
+          <author>Dan Klein</author>
+          <author>Ben Taskar</author>
+        </authors>
+        <title>An end-to-end discriminative approach to machine translation.</title>
+        <publication>In Proceedings of the joint conference of the International Committee on Computational Linguistics and the Association for Computational Linguistics (COLING-ACL&#8217;06),</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>26</id>
+        <authors>
+          <author>Percy Liang</author>
+          <author>Ben Taskar</author>
+          <author>Dan Klein</author>
+        </authors>
+        <title>Alignment by agreement.</title>
+        <publication>In Proceedings of the Human Language Technology Conference - North American Chapter of the Association for Computational Linguistics annual meeting (HLT-NAACL&#8217;06),</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>27</id>
+        <authors>
+          <author>Adam Lopez</author>
+        </authors>
+        <title>Hierarchical phrase-based translation with suffix arrays.</title>
+        <publication>In Proceedings of EMNLPCoNLL,</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>28</id>
+        <authors>
+          <author>David McAllester</author>
+          <author>Joseph Keshet</author>
+        </authors>
+        <title>Generalization bounds and consistency for latent structural probit and ramp loss.</title>
+        <publication>In Proceedings of the 25th Annual Conference on Neural Information Processing Sytems (NIPS 2011),</publication>
+        <pages>None</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>29</id>
+        <authors>
+          <author>Ryan McDonald</author>
+          <author>Keith Hall</author>
+          <author>Gideon Mann</author>
+        </authors>
+        <title>Distributed training strategies for the structured perceptron.</title>
+        <publication>In Proceedings of Human Language Technologies: The 11th Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL-HLT&#8217;10),</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>30</id>
+        <authors>
+          <author>Eric W Noreen</author>
+        </authors>
+        <title>Computer Intensive Methods for Testing Hypotheses. An Introduction.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>1989</date>
+      </reference>
+      <reference>
+        <id>31</id>
+        <authors>
+          <author>Guillaume Obozinski</author>
+          <author>Ben Taskar</author>
+          <author>Michael I Jordan</author>
+        </authors>
+        <title>Joint covariate selection and joint subspace selection for multiple classification problems.</title>
+        <publication>None</publication>
+        <pages>20--231</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>32</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>Improved statistical alignment models.</title>
+        <publication>In Proceedings of the 38th Annual Meeting of the Association for Computational Linguistics (ACL&#8217;00), Hongkong,</publication>
+        <pages>None</pages>
+        <date>2000</date>
+      </reference>
+      <reference>
+        <id>33</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>Discriminative training and maximum entropy models for statistical machine translation.</title>
+        <publication>In Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics (ACL&#8217;02),</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>34</id>
+        <authors>
+          <author>Franz Josef Och</author>
+        </authors>
+        <title>Minimum error rate training in statistical machine translation.</title>
+        <publication>In Proceedings of the Human Language Technology Conference and the 3rd Meeting of the North American Chapter of the Association for Computational Linguistics (HLTNAACL&#8217;03),</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>35</id>
+        <authors>
+          <author>Kishore Papineni</author>
+          <author>Salim Roukos</author>
+          <author>Todd Ward</author>
+          <author>WeiJing Zhu</author>
+        </authors>
+        <title>Bleu: a method for automatic evaluation of machine translation.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2001</date>
+      </reference>
+      <reference>
+        <id>36</id>
+        <authors>
+          <author>Grafting Fast</author>
+        </authors>
+        <title>incremental feature selection by gradient descent in function space.</title>
+        <publication>None</publication>
+        <pages>3--1333</pages>
+        <date>None</date>
+      </reference>
+      <reference>
+        <id>37</id>
+        <authors>
+          <author>Stefan Riezler</author>
+          <author>John Maxwell</author>
+        </authors>
+        <title>On some pitfalls in automatic evaluation and significance testing for MT.</title>
+        <publication>In Proceedings of the ACL-05 Workshop on Intrinsic and Extrinsic Evaluation Measures for MT and/or Summarization,</publication>
+        <pages>None</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>38</id>
+        <authors>
+          <author>Shai Shalev-Shwartz</author>
+          <author>Yoram Singer</author>
+          <author>Nathan Srebro</author>
+        </authors>
+        <title>Pegasos: Primal Estimated sub-GrAdient SOlver for SVM.</title>
+        <publication>In Proceedings of the 24th International Conference on Machine Learning (ICML&#8217;07),</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>39</id>
+        <authors>
+          <author>Libin Shen</author>
+          <author>Aravind K Joshi</author>
+        </authors>
+        <title>Ranking and reranking with perceptron.</title>
+        <publication>None</publication>
+        <pages>60--1</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>40</id>
+        <authors>
+          <author>Libin Shen</author>
+          <author>Anoop Sarkar</author>
+          <author>Franz Josef Och</author>
+        </authors>
+        <title>Discriminative reranking for machine translation.</title>
+        <publication>In Proceedings of the Human Language Technology conference / North American chapter of the Association for Computational Linguistics annual meeting (HLT/NAACL&#8217;04),</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>41</id>
+        <authors>
+          <author>Andreas Stolcke</author>
+        </authors>
+        <title>SRILM - an extensible language modeling toolkit.</title>
+        <publication>In Proceedings of the International Conference on Spoken Language Processing,</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>42</id>
+        <authors>
+          <author>Christoph Tillmann</author>
+          <author>Tong Zhang</author>
+        </authors>
+        <title>A discriminatie global training algorithm for statistical MT.</title>
+        <publication>In Proceedings of the joint conference of the International Committee on Computational Linguistics and the Association for Computational Linguistics (COLING-ACL&#8217;06),</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>43</id>
+        <authors>
+          <author>Katharina W&#228;schle</author>
+          <author>Stefan Riezler</author>
+        </authors>
+        <title>Structural and topical dimensions in multi-task patent translation.</title>
+        <publication>In Proceedings of the 13th Conference of the European Chapter of the Association for Computational Linguistics,</publication>
+        <pages>None</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>44</id>
+        <authors>
+          <author>Taro Watanabe</author>
+          <author>Jun Suzuki</author>
+          <author>Hajime Tsukada</author>
+          <author>Hideki Isozaki</author>
+        </authors>
+        <title>NTT statistical machine translation for IWSLT</title>
+        <publication>In Proceedings of the International Workshop on Spoken Language Translation (IWSLT),</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>45</id>
+        <authors>
+          <author>Taro Watanabe</author>
+          <author>Jun Suzuki</author>
+          <author>Hajime Tsukada</author>
+          <author>Hideki Isozaki</author>
+        </authors>
+        <title>Online large-margin training for statistical machine translation.</title>
+        <publication>In Proceedings of the 2007 20 Conference on Empirical Mehtods in Natural Language Processing and Computational Language Learning (EMNLP&#8217;07),</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>46</id>
+        <authors>
+          <author>Benjamin Wellington</author>
+          <author>Joseph Turian</author>
+          <author>Dan Melamed</author>
+        </authors>
+        <title>Toward purely discriminative training for treestructured translation models.</title>
+        <publication>Learning Machine Translation,</publication>
+        <pages>132--149</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>47</id>
+        <authors>
+          <author>Martin A Zinkevich</author>
+          <author>Markus Weimer</author>
+          <author>Alex Smola</author>
+          <author>Lihong Li</author>
+        </authors>
+        <title>Parallelized stochastic gradient descent.</title>
+        <publication>In Proceedings of the 24th Annual Conference on Neural Information Processing Sytems (NIPS&#8217;10),</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Blunsom et al., 2008</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>83</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>1</reference_id>
+        <string>Bottou, 2004</string>
+        <sentence_id>34190</sentence_id>
+        <char_offset>85</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>2</reference_id>
+        <string>Chapelle and Keerthi, 2010</string>
+        <sentence_id>34218</sentence_id>
+        <char_offset>58</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>3</reference_id>
+        <string>Chiang et al. (2008)</string>
+        <sentence_id>34113</sentence_id>
+        <char_offset>40</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>3</reference_id>
+        <string>Chiang et al. (2008)</string>
+        <sentence_id>34341</sentence_id>
+        <char_offset>113</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>3</reference_id>
+        <string>Chiang et al., 2008</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>404</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>5</reference_id>
+        <string>Chiang et al., 2009</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>425</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>5</reference_id>
+        <string>Chiang et al. (2009)</string>
+        <sentence_id>34113</sentence_id>
+        <char_offset>65</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>7</reference_id>
+        <string>Chiang, 2005</string>
+        <sentence_id>34142</sentence_id>
+        <char_offset>105</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>8</reference_id>
+        <string>Chiang, 2007</string>
+        <sentence_id>34142</sentence_id>
+        <char_offset>119</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>8</reference_id>
+        <string>Chiang, 2007</string>
+        <sentence_id>34307</sentence_id>
+        <char_offset>84</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>8</reference_id>
+        <string>Chiang, 2007</string>
+        <sentence_id>34380</sentence_id>
+        <char_offset>291</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>9</reference_id>
+        <string>Collins, 2002</string>
+        <sentence_id>34170</sentence_id>
+        <char_offset>146</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>10</reference_id>
+        <string>Collobert and Bengio, 2004</string>
+        <sentence_id>34218</sentence_id>
+        <char_offset>1</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>11</reference_id>
+        <string>Dean and Ghemawat, 2004</string>
+        <sentence_id>34191</sentence_id>
+        <char_offset>94</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>12</reference_id>
+        <string>Duh and Kirchhoff, 2008</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>258</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>13</reference_id>
+        <string>Duh et al. (2010)</string>
+        <sentence_id>34140</sentence_id>
+        <char_offset>28</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>13</reference_id>
+        <string>Duh et al. (2010)</string>
+        <sentence_id>34141</sentence_id>
+        <char_offset>25</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>14</reference_id>
+        <string>Dyer et al., 2010</string>
+        <sentence_id>34308</sentence_id>
+        <char_offset>27</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>15</reference_id>
+        <string>Dyer et al. (2011)</string>
+        <sentence_id>34166</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>15</reference_id>
+        <string>Dyer et al. (2011)</string>
+        <sentence_id>34374</sentence_id>
+        <char_offset>116</char_offset>
+      </citation>
+      <citation>
+        <id>21</id>
+        <reference_id>16</reference_id>
+        <string>Dyer, 2009</string>
+        <sentence_id>34309</sentence_id>
+        <char_offset>68</char_offset>
+      </citation>
+      <citation>
+        <id>22</id>
+        <reference_id>17</reference_id>
+        <string>Freund and Schapire, 1999</string>
+        <sentence_id>34170</sentence_id>
+        <char_offset>176</char_offset>
+      </citation>
+      <citation>
+        <id>23</id>
+        <reference_id>18</reference_id>
+        <string>Gimpel and Smith, 2012</string>
+        <sentence_id>34136</sentence_id>
+        <char_offset>173</char_offset>
+      </citation>
+      <citation>
+        <id>24</id>
+        <reference_id>19</reference_id>
+        <string>Hayashi et al., 2009</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>352</char_offset>
+      </citation>
+      <citation>
+        <id>25</id>
+        <reference_id>20</reference_id>
+        <string>Heafield, 2011</string>
+        <sentence_id>34320</sentence_id>
+        <char_offset>199</char_offset>
+      </citation>
+      <citation>
+        <id>26</id>
+        <reference_id>21</reference_id>
+        <string>Hopkins and May, 2011</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>178</char_offset>
+      </citation>
+      <citation>
+        <id>27</id>
+        <reference_id>21</reference_id>
+        <string>Hopkins and May, 2011</string>
+        <sentence_id>34367</sentence_id>
+        <char_offset>67</char_offset>
+      </citation>
+      <citation>
+        <id>28</id>
+        <reference_id>22</reference_id>
+        <string>Koehn et al., 2003</string>
+        <sentence_id>34380</sentence_id>
+        <char_offset>64</char_offset>
+      </citation>
+      <citation>
+        <id>29</id>
+        <reference_id>23</reference_id>
+        <string>Kumar et al., 2009</string>
+        <sentence_id>34367</sentence_id>
+        <char_offset>110</char_offset>
+      </citation>
+      <citation>
+        <id>30</id>
+        <reference_id>24</reference_id>
+        <string>Lal et al., 2006</string>
+        <sentence_id>34303</sentence_id>
+        <char_offset>75</char_offset>
+      </citation>
+      <citation>
+        <id>31</id>
+        <reference_id>25</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>226</char_offset>
+      </citation>
+      <citation>
+        <id>32</id>
+        <reference_id>25</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>34159</sentence_id>
+        <char_offset>196</char_offset>
+      </citation>
+      <citation>
+        <id>33</id>
+        <reference_id>25</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>34310</sentence_id>
+        <char_offset>146</char_offset>
+      </citation>
+      <citation>
+        <id>34</id>
+        <reference_id>25</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>34325</sentence_id>
+        <char_offset>160</char_offset>
+      </citation>
+      <citation>
+        <id>35</id>
+        <reference_id>26</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>226</char_offset>
+      </citation>
+      <citation>
+        <id>36</id>
+        <reference_id>26</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>34159</sentence_id>
+        <char_offset>196</char_offset>
+      </citation>
+      <citation>
+        <id>37</id>
+        <reference_id>26</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>34310</sentence_id>
+        <char_offset>146</char_offset>
+      </citation>
+      <citation>
+        <id>38</id>
+        <reference_id>26</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>34325</sentence_id>
+        <char_offset>160</char_offset>
+      </citation>
+      <citation>
+        <id>39</id>
+        <reference_id>27</reference_id>
+        <string>Lopez, 2007</string>
+        <sentence_id>34315</sentence_id>
+        <char_offset>90</char_offset>
+      </citation>
+      <citation>
+        <id>40</id>
+        <reference_id>28</reference_id>
+        <string>McAllester and Keshet, 2011</string>
+        <sentence_id>34136</sentence_id>
+        <char_offset>144</char_offset>
+      </citation>
+      <citation>
+        <id>41</id>
+        <reference_id>29</reference_id>
+        <string>McDonald et al. (2010)</string>
+        <sentence_id>34219</sentence_id>
+        <char_offset>138</char_offset>
+      </citation>
+      <citation>
+        <id>42</id>
+        <reference_id>29</reference_id>
+        <string>McDonald et al. (2010)</string>
+        <sentence_id>34222</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>43</id>
+        <reference_id>30</reference_id>
+        <string>Noreen, 1989</string>
+        <sentence_id>34332</sentence_id>
+        <char_offset>79</char_offset>
+      </citation>
+      <citation>
+        <id>44</id>
+        <reference_id>31</reference_id>
+        <string>Obozinski et al. (2010)</string>
+        <sentence_id>34300</sentence_id>
+        <char_offset>28</char_offset>
+      </citation>
+      <citation>
+        <id>45</id>
+        <reference_id>32</reference_id>
+        <string>Och and Ney, 2000</string>
+        <sentence_id>34310</sentence_id>
+        <char_offset>64</char_offset>
+      </citation>
+      <citation>
+        <id>46</id>
+        <reference_id>33</reference_id>
+        <string>Och and Ney, 2002</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>64</char_offset>
+      </citation>
+      <citation>
+        <id>47</id>
+        <reference_id>34</reference_id>
+        <string>Och (2003)</string>
+        <sentence_id>34104</sentence_id>
+        <char_offset>229</char_offset>
+      </citation>
+      <citation>
+        <id>48</id>
+        <reference_id>35</reference_id>
+        <string>Papineni et al., 2001</string>
+        <sentence_id>34331</sentence_id>
+        <char_offset>87</char_offset>
+      </citation>
+      <citation>
+        <id>49</id>
+        <reference_id>37</reference_id>
+        <string>Riezler and Maxwell, 2005</string>
+        <sentence_id>34332</sentence_id>
+        <char_offset>93</char_offset>
+      </citation>
+      <citation>
+        <id>50</id>
+        <reference_id>38</reference_id>
+        <string>Shalev-Shwartz et al., 2007</string>
+        <sentence_id>34218</sentence_id>
+        <char_offset>29</char_offset>
+      </citation>
+      <citation>
+        <id>51</id>
+        <reference_id>39</reference_id>
+        <string>Shen and Joshi, 2005</string>
+        <sentence_id>34167</sentence_id>
+        <char_offset>70</char_offset>
+      </citation>
+      <citation>
+        <id>52</id>
+        <reference_id>40</reference_id>
+        <string>Shen et al., 2004</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>136</char_offset>
+      </citation>
+      <citation>
+        <id>53</id>
+        <reference_id>41</reference_id>
+        <string>Stolcke, 2002</string>
+        <sentence_id>34320</sentence_id>
+        <char_offset>134</char_offset>
+      </citation>
+      <citation>
+        <id>54</id>
+        <reference_id>42</reference_id>
+        <string>Tillmann and Zhang, 2006</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>326</char_offset>
+      </citation>
+      <citation>
+        <id>55</id>
+        <reference_id>44</reference_id>
+        <string>Watanabe et al., 2006</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>155</char_offset>
+      </citation>
+      <citation>
+        <id>56</id>
+        <reference_id>45</reference_id>
+        <string>Watanabe et al., 2007</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>381</char_offset>
+      </citation>
+      <citation>
+        <id>57</id>
+        <reference_id>46</reference_id>
+        <string>Wellington et al., 2009</string>
+        <sentence_id>34135</sentence_id>
+        <char_offset>283</char_offset>
+      </citation>
+      <citation>
+        <id>58</id>
+        <reference_id>47</reference_id>
+        <string>Zinkevich et al. (2010)</string>
+        <sentence_id>34219</sentence_id>
+        <char_offset>61</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

@@ -1,0 +1,703 @@
+<PAPER>
+  <FILENO/>
+  <TITLE></TITLE>
+  <AUTHORS/>
+  <ABSTRACT/>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-50578">Statistical phrase-based machine translation (PMT) is attractive, as it requires no linguistic information beyond word-aligned parallel corpora (Zens et al., 2002; Koehn et al., 2003).</S>
+        <S ID="S-50579">Unfortunately, this linguistic agnosticism leaves phrase-based systems with no precise characterization of the word order relationships between languages, often leading to ungrammatical translations.</S>
+        <S ID="S-50580">Syntax could provide guidance to phrase-based systems, by steering them towards reorderings that reflect the structural relationships between languages, but using syntax to guide a phrase-based system is problematic.</S>
+        <S ID="S-50581">Phrasebased systems build the result incrementally from the beginning of the target string to the end, and the intermediate strings need not constitute complete traditional syntactic constituents.</S>
+        <S ID="S-50582">It is difficult to reconcile traditional recursive syntactic processing with this regime, because not all intermediate strings considered by the decoder would even have a syntactic category to assess.</S>
+        <S ID="S-50583">As a result, most phrase-based decoders control reordering using simple distancebased distortion models, which penalize all reordering equally, and lexicalized reordering models (Tillmann, 2004; Axelrod et al., 2005), which probabilistically score various reordering configurations conditioned on specific lexical translations.</S>
+        <S ID="S-50584">While undoubtedly better than nothing, these models perform poorly when languages diverge considerably in sentence structure.</S>
+        <S ID="S-50585">Distance-based distortion models are too coarse-grained to distinguish correct from incorrect reordering, while lexical reordering models suffer from data sparsity and fail to capture more general patterns.</S>
+        <S ID="S-50586">We argue that finding a way to label translation phrases with syntactic labels will abstract over the observed reordering configurations thereby address both all three deficiencies of granularity, data sparsity and lack of generality.</S>
+      </P>
+      <P>
+        <S ID="S-50587">The present work presents a novel syntactic analogue of the lexicalized reordering model that uses multiword syntactic labels to capture the general reordering patterns between two languages with very different word order.</S>
+        <S ID="S-50588">We accomplish this by using Combinatory Categorial Grammar, or CCG (Steed-</S>
+      </P>
+      <P>
+        <S ID="S-50589">man, 2000), a word-centered syntax that allows a great deal of flexibility in how sentence analyses are formed.</S>
+        <S ID="S-50590">Syntactic derivations in CCG are massively spuriously ambiguous, i.e., there are many ways to derive the same semantic analysis of a sentence, similar to how a mathematical equation can be reduced by canceling out variables in different orders.</S>
+        <S ID="S-50591">Despite its name, spurious ambiguity is a benefit to us, as it provides many different labelled bracketings for the same dependency graph of the same sentence, thereby increasing the chance that any substring of that sentence will have a syntactic label.</S>
+        <S ID="S-50592">Our approach exploits this property of CCG to derive multiword CCG syntactic labels for target translation strings in a phrase table, thus providing a firmer basis on which to collect syntactic reordering statistics.</S>
+        <S ID="S-50593">In particular:</S>
+      </P>
+      <P>
+        <S ID="S-50594">&#8226; We show how CCG can derive constituent labels for target-side phrase-table entries that are often lamented as &#8220;non-constituents&#8221; or as &#8220;crossing a phrase boundary&#8221;.</S>
+      </P>
+      <P>
+        <S ID="S-50595">&#8226; Our CCG categories are not limited to singleword supertags.</S>
+        <S ID="S-50596">Rather, as these labels are drawn from CCG parse charts, they can span multiple words.</S>
+        <S ID="S-50597">Further, the labels are tailored specifically to each translation constituent&#8217;s boundaries (Section 2.1).</S>
+        <S ID="S-50598">As a consequence, &#8776;70% of phrase table entries receive a single syntactic label (Section 5), largely removing the terminological inconsistency of calling lexical translation constituents &#8220;phrases&#8221;.</S>
+        <S ID="S-50599">Now, more of them actually are syntactic phrases.</S>
+      </P>
+      <P>
+        <S ID="S-50600">&#8226; We use these labels to train a target-language bidirectional reordering model over CCG syntactic sequences (Section 3), which, when added to the baseline system, is found to be superior to systems that use both lexicalized reordering models and supertag reordering models (Section 5).</S>
+      </P>
+      <P>
+        <S ID="S-50601">With only minor modifications, we incorporate these enhancements into a state-of-the-art PMT decoder (Koehn et al., 2007), achieving significant improvements over two competitive baselines in an Urdu- English translation task (Sections 5).</S>
+        <S ID="S-50602">This language pair was chosen to highlight the promise of this approach for languages with considerable, but syntactically governed, word-order differences to one another.</S>
+        <S ID="S-50603">Finally, in a small discussion we provide qualitative evidence that the improvements in automatic metric scores correspond to real gains in target language fluency.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Syntax, Constituency and Phrase-based MT</HEADER>
+      <P>
+        <S ID="S-50604">Consider the following German-English PMT phrase pair that we have extracted from a parallel European parliamentary transcript: 1</S>
+      </P>
+      <P>
+        <S ID="S-50605">Ich hoffe, da&#223; &#8660; I hope that</S>
+      </P>
+      <P>
+        <S ID="S-50606">Neither word string is a well-formed constituent in traditional theories of syntax.</S>
+        <S ID="S-50607">But tradition is at odds with the intuition that that such &#8220;non-constituent&#8221; sequences are still well-formed substrings, governed by rules of how they can be combined with other word strings &#8212; e.g., declarative sentence translation rules like es m&#246;glich sein wird &#8660; it will be possible can grammatically extend each, but a noun phrase rule cannot.</S>
+        <S ID="S-50608">As Figure 1 illustrates, putative non-constituent word sequences abound in phrase-based MT.</S>
+        <S ID="S-50609">Here a translation &#8220;phrase&#8221; is simply any contiguous word string that is consistent with a word alignment (a relation between source and target words), usually produced by a language-independent alignment procedure (Zens et al., 2002).</S>
+        <S ID="S-50610">The figure also highlights the need for linguistic syntax in controlling how translations are assembled; the successful translation is merely one among many possible reorderings, many of which (despite their ungrammaticality) might score well on a word n-gram model.</S>
+        <S ID="S-50611">But rather than changing the word alignments or PMT &#8220;phrase&#8221; boundaries to fit a syntactic theory, we choose to use a flexible syntax which can produce a wider range of bracketings to accommodate the results of alignment-derived translations.</S>
+        <S ID="S-50612">To this end, we use Combinatory Categorial Grammar, or CCG, (Steedman, 2000).</S>
+        <S ID="S-50613">To understand how CCG allows this, we illustrate its use with some simple examples.</S>
+      </P>
+      <P>
+        <S ID="S-50614">1 Throughout this paper, the term &#8220;PMT phrase&#8221; refers to an</S>
+      </P>
+      <P>
+        <S ID="S-50615">unbroken sequence of words used by a PMT system, whereas &#8220;phrase&#8221; (without context) refers to a syntactic constituent.</S>
+      </P>
+      <P>
+        <S ID="S-50616">Wiederaufnahme der Situngsperiode Ich hoffe , da&#223; es m&#246;glich sein wird</S>
+      </P>
+      <P>
+        <S ID="S-50617">Resumption of the session I hope that it will be possible</S>
+      </P>
+      <P>
+        <S ID="S-50618">Ich hoffe, da&#223; das den Weg f&#252;r eine baldige Wiederaufnahme der Debatte ebnen wird</S>
+      </P>
+      <P>
+        <S ID="S-50619">I hope that this will pave the way for an early resumption of the debate</S>
+      </P>
+      <P>
+        <S ID="S-50620">2.1 CCG, Spurious Ambiguity and PMT: Turning &#8220;Phrases&#8221; into Phrases</S>
+      </P>
+      <P>
+        <S ID="S-50621">CCG is a derivational syntax, where words are assigned a lexical category 2 and sentence structures are then recursively built using a small set of deductive rule schemata known as combinators (Steedman, 2000).</S>
+        <S ID="S-50622">Lexical syntactic categories can be richly structured in CCG, indicating how words can combine.</S>
+        <S ID="S-50623">A syntactic category of the form X/Y, e.g., states that a category of type X can be formed if combined with a Y to its right &#8212; i.e., a function from rightward Ys to X.</S>
+        <S ID="S-50624">This can be accomplished with the forward function application combinator (&gt;), 3 which is written in derivational form as follows: 4</S>
+      </P>
+      <P>
+        <S ID="S-50625">X/Y</S>
+      </P>
+      <P>
+        <S ID="S-50626">X This derivation of the symbol X is known as the normal-form derivation (Steedman, 2000), since it uses function application whenever possible.</S>
+        <S ID="S-50627">But CCG has the ability to construct the same result by using a different, non-normal-form sequence of combinatory inferences.</S>
+        <S ID="S-50628">For example, by using the backward type-raising combinator (T &lt; ) and then backward function application (&lt;), we can arrive at the same result:</S>
+      </P>
+      <P>
+        <S ID="S-50629">2 When represented by a strings, lexical categories are called</S>
+      </P>
+      <P>
+        <S ID="S-50630">supertags.</S>
+        <S ID="S-50631">3 CCG actually respects the rule-to-rule hypothesis (Bach,</S>
+      </P>
+      <P>
+        <S ID="S-50632">l976), where, for every syntactic term built, there is a corresponding semantic term, but, for simplicity of exposition, we focus only on syntax here.</S>
+        <S ID="S-50633">4 The reader will notice that CCG derivations are in fact</S>
+      </P>
+      <P>
+        <S ID="S-50634">trees, but that they &#8220;grow&#8221; in the direction opposite to how parse trees are often depicted in NLP.</S>
+      </P>
+      <P>
+        <S ID="S-50635">Y</S>
+      </P>
+      <P>
+        <S ID="S-50636">&gt;</S>
+      </P>
+      <P>
+        <S ID="S-50637">X/Y Y</S>
+      </P>
+      <P>
+        <S ID="S-50638">T &lt;</S>
+      </P>
+      <P>
+        <S ID="S-50639">X\(X/Y)</S>
+      </P>
+      <P>
+        <S ID="S-50640">&lt;</S>
+      </P>
+      <P>
+        <S ID="S-50641">X This derivation shows how the argument Y to the functional type X/Y 5 can &#8220;raise&#8221; its type to become a function that consumes that functional type, X\(X/Y), only to produce same result as before, namely X.</S>
+        <S ID="S-50642">This property of CCG is often referred to as &#8220;spurious ambiguity&#8221;, because there are many ways of reaching the same result as the canonical, normal-form derivation.</S>
+      </P>
+      <P>
+        <S ID="S-50643">Despite the name, this property is useful for our purposes.</S>
+        <S ID="S-50644">Considering the target translation in Figure 1, we then observe in Figure 2 how CCG can derive not only a bracketing similar to a more traditional Penn Treebank-style parse, but also a nonnormal-form variant that gives us a single category for the English translation string I hope that &#8212; namely the category S[dcl]/S[dcl] (a declarative sentence lacking a declarative sentence complement to its right).</S>
+      </P>
+      <P>
+        <S ID="S-50645">We use this fact about CCG to label a wider range of PMT phrases with genuine syntactic constituent labels.</S>
+        <S ID="S-50646">First we parse the English sentences in our training data with the C&amp;C parser, a state-of-the-art, treebank-trained CCG parser (Clark and Curran, 2007), producing normal-form CCG derivations.</S>
+        <S ID="S-50647">We then enumerate all non-normalform derivations that result in the same top-level symbol, packing all derivations (normal-form and non-normal-form) into a parse chart (see Figure 4).</S>
+      </P>
+      <P>
+        <S ID="S-50648">5 Also referred to as a functor.</S>
+      </P>
+      <P>
+        <S ID="S-50649">UR.-EN.</S>
+      </P>
+      <P>
+        <S ID="S-50650">SINGLE-LABEL COVERAGE 69%</S>
+      </P>
+      <P>
+        <S ID="S-50651">AVE.</S>
+        <S ID="S-50652">EN.</S>
+        <S ID="S-50653">PHRASE LEN.</S>
+      </P>
+      <P>
+        <S ID="S-50654">AVE.</S>
+        <S ID="S-50655">CCG LABEL SPAN</S>
+      </P>
+      <P>
+        <S ID="S-50656">2.8 wds 2.3 wds</S>
+      </P>
+      <P>
+        <S ID="S-50657">AVE.</S>
+        <S ID="S-50658">CCG LABS/ENTRY 1.4</S>
+      </P>
+      <P>
+        <S ID="S-50659">For the English string of each phrase table entry, we inspect the chart for the English-side sentence that it came from and extract a list of labels as in Figure 3.</S>
+        <S ID="S-50660">For each span, this procedure either (lines 5&#8211;9) finds the topmost single label, only using typeraised categories when no others exist, 6 or (lines 10&#8211; 19) recursively and greedily finds the longest spanning labels from left to right, if no single label exists.</S>
+        <S ID="S-50661">The degenerate case is the single-word level (supertags).</S>
+        <S ID="S-50662">In this way we find single labels for 69% of the English-side phrase training instances.</S>
+        <S ID="S-50663">Table 1 gives more details.</S>
+      </P>
+      <P>
+        <S ID="S-50664">6 Type-raisings are almost always possible, and will always</S>
+      </P>
+      <P>
+        <S ID="S-50665">be closer to the top-level symbol.</S>
+        <S ID="S-50666">Many type-raisings, however, are superfluous &#8211; i.e., produce no novel bracketings.</S>
+        <S ID="S-50667">Therefore we only use type-raised symbols to derive a label for a span of words when necessary.</S>
+      </P>
+      <P>
+        <S ID="S-50668">S[dcl] S[dcl]\NP</S>
+      </P>
+      <P>
+        <S ID="S-50669">(S[dcl]\NP)/(S[b]\NP)</S>
+      </P>
+      <P>
+        <S ID="S-50670">S[em]/(S[b]\NP)</S>
+      </P>
+      <P>
+        <S ID="S-50671">S[dcl]/(S[b]\NP)</S>
+      </P>
+      <P>
+        <S ID="S-50672">0 I 1 hope 2 that 3 it 4 will 5 rain 6</S>
+      </P>
+      <P>
+        <S ID="S-50673">0 Ich 1 hoffe 2 , 3 da&#223; 4 es 5 regnen 6 wird 7</S>
+      </P>
+      <P>
+        <S ID="S-50674">3 Reordering Models: from Words to Supertags to Parses</S>
+      </P>
+      <P>
+        <S ID="S-50675">In phrase-based MT systems, the standard reordering model that controls the order in which the source string is translated is the lexicalized reordering model (Tillmann, 2004; Axelrod et al., 2005).</S>
+        <S ID="S-50676">In its simplest form, a lexicalized reordering model estimates, for each translation phrase pair (f i...j , e k...l ) (where the indices sit &#8220;in-between&#8221; words, as in Figure 4), the probability of p(O | f i...j , e k...l ), where</S>
+      </P>
+      <P>
+        <S ID="S-50677">O &#8712; {MONO, SWAP, DISCONTINUOUS} (abbreviated M, S and D) is the orientation of the phrase pair (f i...j , e k...l ) w.r.t.</S>
+        <S ID="S-50678">the previously translated source phrase f u...v .</S>
+        <S ID="S-50679">If v = i, then O = M; if u = j, then</S>
+      </P>
+      <P>
+        <S ID="S-50680">O = S; otherwise O = D.</S>
+        <S ID="S-50681">This model, known as</S>
+      </P>
+      <P>
+        <S ID="S-50682">a unidirectional MSD lexicalized reordering model, can also be enriched with statistics over orientations to the next source phrase translated (i.e., it can be a bidirectional model), as well as with more finegrained distinctions in the third class D (i.e., whether it is D LEFT or D RIGHT ).</S>
+        <S ID="S-50683">All models in the present work are bidirectional MSD models.</S>
+      </P>
+      <P>
+        <S ID="S-50684">During decoding, orientations are predicted based on previously translated (or following) phrases in the decoder&#8217;s search state, but, when extracting orientation statistics, there are many different possible phrasal segmentations of both strings.</S>
+        <S ID="S-50685">A simple solution, known as word-based extraction, is to look for neighboring alignment points that support the various orientations.</S>
+        <S ID="S-50686">In Figure 4, e.g., a wordbased extraction regime would count the phrase hoffe &#8660; hope as being in orientation D w.r.t.</S>
+        <S ID="S-50687">to what follows, because its rightmost index, 2, is discontiguous with the next aligned source point, (3,4).</S>
+        <S ID="S-50688">Another approach, known as phrase-based extraction aims to remedy this situation by conditioning the extraction of orientations on translation phrases consistent with the alignment.</S>
+        <S ID="S-50689">In Figure 4 there is a translation phrase that follows the phrase in question &#8212; viz., , da&#223; &#8660; that &#8212; and an orientation of M is therefore tallied.</S>
+      </P>
+      <P>
+        <S ID="S-50690">Regardless of the method of extraction, lexicalized reordering model statistics rely on exact word-string pairs, (f, e), which can lead problems with data sparsity.</S>
+        <S ID="S-50691">Moreover, even given ample data, cross-phrasal reordering generalizations will be missed.</S>
+        <S ID="S-50692">E.g., the fact that regnen &#8660; rain has orientation S w.r.t.</S>
+        <S ID="S-50693">the previous phrase pair does not support the fact that other infinitival German verbs should also behave similarly in relative clausal environments.</S>
+      </P>
+      <P>
+        <S ID="S-50694">To remedy this we might substitute abstract symbols for each word in e, and train a syntactic bidirectional MSD reordering model.</S>
+        <S ID="S-50695">For this we use CCG supertags (cf. the single-word labels in the parse</S>
+      </P>
+      <P>
+        <S ID="S-50696">chart in Figure 4), which are richly structured parts of speech that describe their potential to combine with other words (cf. Section 2.1).</S>
+        <S ID="S-50697">Given the same phrase from Figure 4, we can estimate the probability of orientation S, given regnen &#8660; S[b]\NP .</S>
+        <S ID="S-50698">A further level of abstraction is to use CCG parse charts packed with all derivations.</S>
+        <S ID="S-50699">The phrase da&#223; es &#8660; that it can therefore be abstracted to</S>
+      </P>
+      <P>
+        <S ID="S-50700">da&#223; es &#8660; S[em]/(S[dcl]\NP) (a &#8220;that&#8221; clause lacking a verb phrase to the right).</S>
+        <S ID="S-50701">Except in cases of high ambiguity, the source phrase effectively encodes the target phrase, meaning that these extensions will suffer from data sparsity similarly to the baseline lexicalized model.</S>
+        <S ID="S-50702">We therefore omit the source phrase in our syntactic reordering models, estimating probability distributions p(O|LAB(e)) where LAB(e) is the syntactic label sequence derived from the chart (or supertagged string, as the case may be) using the algorithm in Figure 3.</S>
+        <S ID="S-50703">7 Orientations are determined using the phrase-based extraction regime described in (Tillmann, 2004), but statistics are tallied only for the syntactic label sequence of the target string.</S>
+        <S ID="S-50704">More precisely, for phrase pair (f i...j , e k...l ), if a phrase (f a...i , e b...k ) exists in the alignment grid, an orientation of M is assigned to LAB(e k...l ) .</S>
+        <S ID="S-50705">Otherwise, if a phrase (f j...p , e l...m ) exists in the alignment grid, an orientation of S is assigned.</S>
+        <S ID="S-50706">In all other cases, an orientation of D is assigned.</S>
+        <S ID="S-50707">Using these statistics, we deploy target-side reordering models, as described below.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Related Work</HEADER>
+      <P>
+        <S ID="S-50708">As noted, lexicalized reordering models can be trained and configured in many different ways.</S>
+        <S ID="S-50709">In addition to the standard word-based extraction (Axelrod et al., 2005) and phrase-based extraction (Tillmann, 2004) cases, more recent work has explored using dynamic programming to extract and later score orientations based on hierarchical configurations of phrases consistent with an alignment (Galley and Manning, 2008).</S>
+        <S ID="S-50710">This means that the reordering model can be conditioned on an unbounded amount of context and can capture the fact that</S>
+      </P>
+      <P>
+        <S ID="S-50711">7 Note that a tagged string can be viewed as a very impoverished parse chart, and so the algorithm defined in Figure 3 can be applied to the supertagging case as well.</S>
+      </P>
+      <P>
+        <S ID="S-50712">many translations are monotonic w.r.t.</S>
+        <S ID="S-50713">the previously translated block, but are mistakenly identified as having orientation S or D. Su and colleagues (2010) observe that the space of phrase pairs consistent with an alignment can be viewed in its entirety, as a graph of phrases, thereby collecting reordering statistics w.r.t.</S>
+        <S ID="S-50714">the entire space of surrounding phrases.</S>
+        <S ID="S-50715">Ling and colleagues (2011) extend this approach by weighting orientation counts with multiple scored alignments.</S>
+        <S ID="S-50716">All of these more sophisticated reordering extraction approaches are compatible with the current approach, and could be straightforwardly applied to our labelled target-side word strings.</S>
+        <S ID="S-50717">Syntax-driven reordering approaches in phrasebased MT abound, but, perhaps due to the incompatibility of phrase table entries and traditional syntactic constituency, most research has avoided using recursive target-side syntax during decoding.</S>
+        <S ID="S-50718">Tillmann (2008) presents an algorithm that reorders using part-of-speech based permutation patterns during the decoding process.</S>
+        <S ID="S-50719">Others have side-stepped the issue by restructuring the source language before decoding to resemble the target language using syntactic rules, either automatically extracted (Xia and McCord, 2004), or hand-crafted (Collins et al., 2005; Wang et al., 2007; Xu and Seneff, 2008).</S>
+      </P>
+      <P>
+        <S ID="S-50720">The flexibility of CCG syntax is also gaining recognition as a useful tool for constraining statistical MT decoders.</S>
+        <S ID="S-50721">Hassan (2009) describes an incremental CCG parsing language model, although his model does not beat a supertag factored PMT approach.</S>
+        <S ID="S-50722">Almaghout and colleagues (2010) also use a CCG chart to improve translation, augmenting SCFG rules by consulting the multiple derivations in the parse chart of Clark and Curran&#8217;s (2007) CCG parser.</S>
+        <S ID="S-50723">We note two key differences to our use of spurious ambiguity.</S>
+        <S ID="S-50724">First, they use a chart packed with multiple dependency analyses, unlike our spuriously ambiguous reworkings of the parser&#8217;s single-best analysis.</S>
+        <S ID="S-50725">Second, the C&amp;C parser restrains type-raising to a small number of possibilities, thereby blocking many non-normal-form derivations that we do not.</S>
+      </P>
+      <P>
+        <S ID="S-50726">Two SCFG approaches that employ categorial syntax that resembles CCG are the syntaxaugmented MT (SAMT) system described in (Venugopal et al., 2007), and the target dependency lan-</S>
+      </P>
+      <P>
+        <S ID="S-50727">guage model of of (Shen et al., 2008).</S>
+        <S ID="S-50728">(Venugopal et al., 2007) uses a Penn Treebank-trained CFG parser to label target strings and then reworks the CFG parse trees, if needed,x to account for non-traditional constituents.</S>
+        <S ID="S-50729">This ondemand reworking process, however, is bounded by tree depth, and sometimes produces conjoined categories, rather than consistently produce the functional &#8220;slash&#8221; categories that a full CCG would &#8212; e.g., a subject + transitive verb string might sometimes be labelled NP + V and other times S/NP .</S>
+        <S ID="S-50730">The approach in (Shen et al., 2010) uses a simple categorial grammar with only a single atomic symbol &#8212; i.e., every functional category has the form C\X or C/X, where X is either C or another slash category C\X or C/X.</S>
+        <S ID="S-50731">In contrast to these two approaches, the CCG parser we use is trained on a CCG treebank that is the result of a carefully engineered Penn Treebank-to-CCG conversion (Hockenmaier and Steedman, 2007) and we impose no limits on deriving categorial functional categories (X/Y).</S>
+        <S ID="S-50732">We view our reworking of CCG charts as a potentially useful extension to such approaches.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experimental Results</HEADER>
+      <P>
+        <S ID="S-50733">We empirically validate our technique by translating from Urdu into English.</S>
+        <S ID="S-50734">Urdu has a canonical word order of SOV &#8212; subject, object(s), verb &#8212; whereas English has SVO, leading to indefinitely long distances between corresponding verbs and objects.</S>
+        <S ID="S-50735">This language pair is therefore a strong test case for a reordering model.</S>
+      </P>
+      <P>
+        <S ID="S-50736">For decoding we use Moses (Koehn et al., 2007), a state-of-the-art PMT decoder, with IRST LM (Federico and Cettolo, 2007) for language model inference.</S>
+        <S ID="S-50737">For Urdu-English parallel data, we use the OpenMT 2008 training set which consists of 88 thousand sentence-level translations and a translation dictionary of &#8776;114 thousand word and phrase translations.</S>
+        <S ID="S-50738">We use half of the OpenMT 2008 Urdu- English evaluation data for development and perform development testing on the other half.</S>
+        <S ID="S-50739">Both halves are &#8776;900 sentences long and were balanced to contain approximately the same number of tokens.</S>
+        <S ID="S-50740">Our blind test set is the entire OpenMT 2009 Urdu-English evaluation set.</S>
+        <S ID="S-50741">All evaluation sets had 4 reference translations for each tuning or testing instance.</S>
+        <S ID="S-50742">All system component weights were tuned using minimum error-rate training (Och, 2003), with three tuning runs for each condition.</S>
+        <S ID="S-50743">The data was normalized, tokenized and the English sentences were lowercased, 8 As a baseline, we train a standard phrase-based system with a bidirectional MSD lexicalized reordering model using word-based extraction.</S>
+        <S ID="S-50744">Our CCG-augmented reordering system has all of the model components of the baseline, as well as a bidirectional orientation reordering model over targetside multiword syntactic labels.</S>
+        <S ID="S-50745">To directly test the effect of using CCG parse charts &#8212; as opposed to simply using a CCG supertagger &#8212; we also added a CCG supertag bidirectional MSD reordering model to the baseline set-up.</S>
+        <S ID="S-50746">All systems were tuned and tested with distortion limit of 15 words, and test runs were performed with and without 200-best minimum Bayes&#8217; risk (MBR) hypothesis selection (Kumar and Byrne, 2004).</S>
+        <S ID="S-50747">To acquire CCG labels for our English parallel data, we use the C&amp;C CCG toolkit of Clark and Curran (2007).</S>
+        <S ID="S-50748">We build CCG parse charts by reworking the normal-form derivations from the C&amp;C parser in all spuriously ambiguous ways, as described in Section 2.1.</S>
+        <S ID="S-50749">For supertags, we tag with the C&amp;C supertagger.</S>
+        <S ID="S-50750">Rather than training separate phrase tables for our CCG systems, however, we instead decorate the baseline phrase tables with CCG multiword labels or supertags.</S>
+        <S ID="S-50751">To smooth over parsing and tagging errors, we only use those labels whose relative frequency (rf) is sufficiently high w.r.t.</S>
+        <S ID="S-50752">the most frequent label for that phrase pair</S>
+      </P>
+      <P>
+        <S ID="S-50753">LAB* [f&#8660;e] .</S>
+        <S ID="S-50754">More precisely, for each phrase pair, we</S>
+      </P>
+      <P>
+        <S ID="S-50755">use the set of labels: 9</S>
+      </P>
+      <P>
+        <S ID="S-50756">{LAB [f&#8660;e] |rf(LAB [f&#8660;e] ) &#8805; &#946; &#183; rf(LAB* [f&#8660;e] )}</S>
+      </P>
+      <P>
+        <S ID="S-50757">This is reminiscent of the &#946;-best tagging approach of (Clark and Curran, 2004), but performed in a batch process when creating the syntactic phrase tables (both supertag and CCG chart-derived).</S>
+        <S ID="S-50758">We set</S>
+      </P>
+      <P>
+        <S ID="S-50759">8 N.B.</S>
+        <S ID="S-50760">We use Penn Treebank III-compatible tokenization for</S>
+      </P>
+      <P>
+        <S ID="S-50761">English and a specially designed tokenization script for Urdu, cf. (Baker et al., 2010), Appendix C 9 Recalling that &#8776;31% of the time, a phrase pair might have</S>
+      </P>
+      <P>
+        <S ID="S-50762">a list of labels, rather than a single label, the word &#8216;label&#8217; here refers to a single token that can be the concatenation of multiple symbols.</S>
+      </P>
+      <P>
+        <S ID="S-50763">&#946; = 0.5 in all of our CCG experiments.</S>
+      </P>
+      <P>
+        <S ID="S-50764">To minimize disruption to the Moses decoder (which only supports single-word labels in phrasebased mode), we project multiword labels across the words they label as single-word factors with bookkeeping characters, similar to the &#8220;microtag&#8221; annotations of asynchronous factored translation models (Cettolo et al., 2008).</S>
+        <S ID="S-50765">We modified to the decoder to reassemble the multiple single-word factors into a single label before querying the reordering model.</S>
+        <S ID="S-50766">As an example, we might have the phrase pair le v&#233;lo rouge &#8660; the|NP( red|NP+ bike|NP) .</S>
+        <S ID="S-50767">Before querying the reordering model, the factor sequence NP( NP+ NP) is collapsed into the single, multiword label &#8216;NP&#8217; by the rule schema X( .</S>
+        <S ID="S-50768">.</S>
+        <S ID="S-50769">.</S>
+        <S ID="S-50770">X+ .</S>
+        <S ID="S-50771">.</S>
+        <S ID="S-50772">.</S>
+        <S ID="S-50773">X) &#8594; X.</S>
+      </P>
+      <P>
+        <S ID="S-50774">We train a language model using all of the WMT 2011 NEWSCRAWL, NEWSCOMENTARY and EU-</S>
+      </P>
+      <P>
+        <S ID="S-50775">ROPARL monolingual data, 10 tokenized and lowercased as above, but de-duplicated to address the redundancy of the Web-crawled portion of that data set.</S>
+        <S ID="S-50776">We also train a separate language model on the English portion of the Urdu-English parallel corpus (minus the dictionary entries), and interpolate the two models by optimizing perplexity on our tuning set.</S>
+      </P>
+      <P>
+        <S ID="S-50777">Table 2 lists our results, where we see significant improvement over both of our baselines, lexicalized reordering (LR) and supertag reordering plus lexicalized reordering (ST+LR).</S>
+        <S ID="S-50778">To test the effects of the lexicalized reordering model itself, we also evaluate a system with no lexicalized reordering model</S>
+      </P>
+      <P>
+        <S ID="S-50779">10 http://www.statmt.org/wmt11/</S>
+      </P>
+      <P>
+        <S ID="S-50780">translation-task.html</S>
+      </P>
+      <P>
+        <S ID="S-50781">(only a distance-based distortion model).</S>
+        <S ID="S-50782">This last system (a system which almost always prefers not to reorder) is considerably worse than all other systems, demonstrating the need for non-monotonic reordering configurations when accounting for the Urdu-English data.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Analysis and Discussion</HEADER>
+      <P>
+        <S ID="S-50813">Our CCG system (CCG+LR) outperforms both baseline systems (LR and ST+LR) in a majority of metrics in both MBR and non-MBR conditions.</S>
+        <S ID="S-50814">We see that, even though MBR decoding closes the performance gap somewhat, our system continues to match or outperform (if sometimes insignificantly) in all areas.</S>
+        <S ID="S-50815">Note that the CCG+LR non-MBR configuration outperforms both LR and ST+LR in MBR and non-MBR decoding conditions in its ME-</S>
+      </P>
+      <P>
+        <S ID="S-50816">TEOR score on the NIST-09 test set.</S>
+        <S ID="S-50817">We note also</S>
+      </P>
+      <P>
+        <S ID="S-50818">that, in the NIST-09 test case, the CCG+LR system&#8217;s poorer performance is perhaps due to a mismatch in hypothesis length, which could be harming its scores, particularly the BLEU brevity penalty.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Poor Performance of CCG Supertag Model</HEADER>
+        <P>
+          <S ID="S-50783">We have no firm explanation for the poor performance of the CCG supertag model (ST- LR), but it is important to note that the supertag reordering model does not unify statistics across phrases of different lengths, as the CCG chart-derived model does.</S>
+          <S ID="S-50784">E.g., the phrase pair den Weg f&#252;r eine &#8660; the way for an will query the CCG chart-derived reordering model with the same symbol as the phrase pair den Weg f&#252;r eine baldige &#8660; the way for an early</S>
+        </P>
+        <P>
+          <S ID="S-50785">twenty-seven year old abdullah britain blasts in hatcheries planning accused of is .</S>
+        </P>
+        <P>
+          <S ID="S-50786">CCG+LR: twenty-seven year old abdullah is accused of planning hatcheries blasts in britain .</S>
+        </P>
+        <P>
+          <S ID="S-50787">now musharraf resignation give should .</S>
+        </P>
+        <P>
+          <S ID="S-50788">CCG+LR: now musharraf should give resignation .</S>
+        </P>
+        <P>
+          <S ID="S-50789">&#8212; viz., NP/N.</S>
+          <S ID="S-50790">The CCG supertag model, however, will have two distinct label sequences for these phrases &#8212; viz., NP/N N (NP\NP)/NP NP/N and NP/N N (NP\NP)/NP NP/N N/N, resp.</S>
+          <S ID="S-50791">&#8212; both of which could be reduced to the single label, NP/N, using CCG&#8217;s syntactic combinators.</S>
+          <S ID="S-50792">The supertag system does not have the means of relating the reordering patterns of strings of symbols such as this.</S>
+          <S ID="S-50793">11 Such data fragmentation may be leading to decreased performance, which would indicate the use of recursive CCG syntax.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Qualitative Improvements</HEADER>
+        <P>
+          <S ID="S-50794">In addition to improved metric scores, we noted real qualitative improvements in some examples, as Figure 5 shows.</S>
+          <S ID="S-50795">These examples demonstrate the ability of the reordering model to navigate the massive, structure-governed reorderings needed to approximate the correct answer with the phrase inventory it is given.</S>
+        </P>
+        <P>
+          <S ID="S-50796">11 Its reordering table has more than twice as many entries as</S>
+        </P>
+        <P>
+          <S ID="S-50797">that of the chart-derived model.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.3 Comparison to the State of the Art</HEADER>
+        <P>
+          <S ID="S-50798">To our knowledge, the state of the art in Urdu- English translation using the OpenMT data is listed in the NIST OpenMT 2009 evaluation results (http://www.itl.nist.gov/iad/ mig/tests/mt/2009/ResultsRelease/ currentUrdu.html).</S>
+          <S ID="S-50799">This evaluation accepted only single system outputs, and used cased references.</S>
+          <S ID="S-50800">Therefore we had to choose a single system output and recase its text.</S>
+          <S ID="S-50801">For system selection, we picked the tuned system that performed best on the development test set.</S>
+          <S ID="S-50802">For recasing, we trained a lowercased-to-cased monolingual phrase-based &#8220;translation model&#8221; with no reordering and a cased language model, similar to what is described in (Baker et al., 2010).</S>
+          <S ID="S-50803">The training text is simply the non-dictionary portion of the Urdu-English parallel corpus, with its lowercased version as the source and the original cased text as the target, both halves tokenized as above.</S>
+          <S ID="S-50804">We tuned on a similar version of the English half of our tuning</S>
+        </P>
+        <P>
+          <S ID="S-50805">references.</S>
+          <S ID="S-50806">The lowercased output of our system is fed to this model and the first token of each casing &#8220;translation&#8221; is capitalized (if not already).</S>
+          <S ID="S-50807">The official metric of the NIST 2009 evaluation is BLEU (as implemented in the NIST-distributed mteval-v13a.pl script).</S>
+          <S ID="S-50808">12 The best-performing system in the constrained data evaluation scored 0.312 w.r.t.</S>
+          <S ID="S-50809">the cased references, with the second and third place systems scoring 0.2395 and 0.2322, respectively.</S>
+          <S ID="S-50810">13 Our best performing MERT-tuned system (as determined on the devtest data) scores 0.2734 on the test set, putting it between the top two systems.</S>
+          <S ID="S-50811">For comparison, our devtest-best baseline LR system scores 0.2683 on the test set.</S>
+        </P>
+        <P>
+          <S ID="S-50812">While is generally not useful to test experimental manipulations based on a single tuning run (Clark et al., 2011) and with different monolingual language modelling data, we note these figures simply to situate our results within the state of the art.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion</HEADER>
+      <P>
+        <S ID="S-50819">We have argued for the use of CCG in phrasebased translation, due to its flexibility in providing a wealth of different bracketings that better accommodate lexical translation strings.</S>
+        <S ID="S-50820">We have also presented a novel method for using CCG constituent labels in a syntactic reordering model where the syntactic labels span multiple words, do not cross translation constituent boundaries and are tailored specifically to each translation constituent.</S>
+        <S ID="S-50821">The result is a significant improvement in Urdu-English (SOV &#8594; SVO) translation scores over two baselines: a traditional phrase-based baseline with a lexicalized reordering model and a phrase-based baseline with an additional supertag reordering model.</S>
+        <S ID="S-50822">Moreover, we have provided qualitative examples that confirm the improvements in automatic metrics.</S>
+        <S ID="S-50823">In future work we would like explore whether further improvements can be gained by using more sophisticated reordering models, such as reordering graphs (Su et al., 2010) and hierarchical reordering models (Galley and Manning, 2008) both for our word-based and syntactic reordering models.</S>
+        <S ID="S-50824">Further, as in prior work (Zollmann et al., 2006; Shen</S>
+      </P>
+      <P>
+        <S ID="S-50825">12 ftp://jaguar.ncsl.nist.gov/mt/</S>
+      </P>
+      <P>
+        <S ID="S-50826">resources/mteval-v13a-20091001.tar.gz.</S>
+        <S ID="S-50827">13 We exclude combination entries that are combinations of</S>
+      </P>
+      <P>
+        <S ID="S-50828">multiple systems with different algorithmic approaches.</S>
+      </P>
+      <P>
+        <S ID="S-50829">et al., 2010; Almaghout et al., 2010), our categorial labels could also be used to derive CCG-augmented SCFG rules, both lexicalized and unlexicalized, cf. (Zhao and Al-onaizan, 2008) &#8212; the latter being the SCFG analogue of our current model.</S>
+      </P>
+      <P>
+        <S ID="S-50830">Acknowledgments</S>
+      </P>
+      <P>
+        <S ID="S-50831">The authors would like to thank Chong Min Lee, Aoife Cahill and Nitin Madnani at ETS for taking the time to read earlier drafts of this (and closely related) work.</S>
+        <S ID="S-50832">Their comments and suggestions made this a better paper.</S>
+        <S ID="S-50833">We would also like to thank the anonymous reviewers for their very helpful feedback.</S>
+        <S ID="S-50834">The views expressed in this paper do not necessarily reflect those of The Ohio State University or of Educational Testing Service.</S>
+      </P>
+      <P>
+        <S ID="S-50835">References</S>
+      </P>
+      <P>
+        <S ID="S-50836">Hala Almaghout, Jie Jiang, and Andy Way.</S>
+        <S ID="S-50837">2010.</S>
+        <S ID="S-50838">CCG Augmented Hierarchical Phrase-based Machine Translation.</S>
+        <S ID="S-50839">In Proceedings of the 7th International Workshop on Spoken Language Translation, Paris, France.</S>
+        <S ID="S-50840">Amittai Axelrod, Ra Birch Mayne, Chris Callison-Burch,</S>
+      </P>
+      <P>
+        <S ID="S-50841">Miles Osborne, and David Talbot.</S>
+        <S ID="S-50842">2005.</S>
+        <S ID="S-50843">Edinburgh System Description for the 2005 IWSLT Speech Translation Evaluation.</S>
+        <S ID="S-50844">In Proceedings of the International Workshop on Spoken Language Translation (IWSLT-05), Pittsburgh, PA, USA.</S>
+        <S ID="S-50845">Emmon Bach.</S>
+        <S ID="S-50846">l976.</S>
+        <S ID="S-50847">An Extension of Classical Transformational Grammar.</S>
+        <S ID="S-50848">In Proceedings of the 1976 Conference on Problems of Linguistic Metatheory, pages 183&#8211;224, East Lansing, MI, USA.</S>
+        <S ID="S-50849">Kathy Baker, Steven Bethard, Michael Bloodgood, Ralf</S>
+      </P>
+      <P>
+        <S ID="S-50850">Brown, Chris Callison-Burch, Glen Coppersmith, Bonnie Dorr, Wes Filardo, Kendall Giles, Anni Irvine, Mike Kayser, Lori Levin, Justin Martineau, Jim Mayeld, Scott Miller, Aaron Phillips, Andrew Philpot, Christine Piatko, Lane Schwartz, and David Zajic.</S>
+        <S ID="S-50851">2010.</S>
+        <S ID="S-50852">Semantically informed machine translation.</S>
+        <S ID="S-50853">Technical Report 002, Johns Hopkins University, Baltimore, MD, Human Language Technology Center of Excellence.</S>
+        <S ID="S-50854">Mauro Cettolo, Marcello Federico, Daniele Pighin, and</S>
+      </P>
+      <P>
+        <S ID="S-50855">Nicola Bertoldi.</S>
+        <S ID="S-50856">2008.</S>
+        <S ID="S-50857">Shallow-syntax Phrase-based</S>
+      </P>
+      <P>
+        <S ID="S-50858">Translation: Joint versus Factored String-to-chunk Models.</S>
+        <S ID="S-50859">In Proceedings of AMTA 2008, Honolulu, HI, USA.</S>
+        <S ID="S-50860">Stephen Clark and James R. Curran.</S>
+        <S ID="S-50861">2004.</S>
+        <S ID="S-50862">The Importance of Supertagging for Wide-Coverage CCG Parsing.</S>
+        <S ID="S-50863">In Proceedings of the 20th International Con-</S>
+      </P>
+      <P>
+        <S ID="S-50864">ference on Computational Linguistics (COLING-04),</S>
+      </P>
+      <P>
+        <S ID="S-50865">Geneva, Switzerland.</S>
+        <S ID="S-50866">Stephen Clark and James R. Curran.</S>
+        <S ID="S-50867">2007.</S>
+        <S ID="S-50868">Wide- Coverage Efficient Statistical Parsing with CCG and Log-Linear Models.</S>
+        <S ID="S-50869">Computational Linguistics, 33(4):493&#8211;552.</S>
+      </P>
+      <P>
+        <S ID="S-50870">Jonathan H. Clark, Chris Dyer, Alon Lavie, and Noah A. Smith.</S>
+        <S ID="S-50871">2011.</S>
+        <S ID="S-50872">Better Hypothesis Testing for Machine Translation: Controlling for Optimizer Instability.</S>
+        <S ID="S-50873">In Proceedings of the Meeting of the Association for Computational Linguistics (ACL-11), Portland, OR, USA.</S>
+        <S ID="S-50874">Michael Collins, Philipp Koehn, and Ivona Kucerova.</S>
+        <S ID="S-50875">2005.</S>
+        <S ID="S-50876">Clause Restructuring for Statistical Machine Translation.</S>
+        <S ID="S-50877">In Proceedings of the Association for Computational Linguistics (ACL-05), Ann Arbor, MI, USA.</S>
+        <S ID="S-50878">Marcello Federico and Mauro Cettolo.</S>
+        <S ID="S-50879">2007.</S>
+        <S ID="S-50880">Efficient</S>
+      </P>
+      <P>
+        <S ID="S-50881">Handling of n-gram Language Models for Statistical Machine Translation.</S>
+        <S ID="S-50882">In Proceedings of Association for Computational Linguistics, Prague, The Czech Republic.</S>
+        <S ID="S-50883">Michel Galley and Christopher D. Manning.</S>
+        <S ID="S-50884">2008.</S>
+        <S ID="S-50885">A</S>
+      </P>
+      <P>
+        <S ID="S-50886">Simple and Effective Hierarchical Phrase Reordering Model.</S>
+        <S ID="S-50887">In Proceedings of EMNLP-08.</S>
+      </P>
+      <P>
+        <S ID="S-50888">Hany Hassan.</S>
+        <S ID="S-50889">2009.</S>
+        <S ID="S-50890">Lexical Syntax for Statistical Machine Translation.</S>
+        <S ID="S-50891">Ph.D.</S>
+        <S ID="S-50892">thesis, Dublin City University, Dublin, Ireland.</S>
+        <S ID="S-50893">Julia Hockenmaier and Mark Steedman.</S>
+        <S ID="S-50894">2007.</S>
+        <S ID="S-50895">CCGbank: A Corpus of CCG Derivations and Dependency Structures Extracted from the Penn Treebank.</S>
+        <S ID="S-50896">Computational Linguistics, 33(3):355&#8211;396.</S>
+        <S ID="S-50897">Philipp Koehn, Franz Joseph Och, and Daniel Marcu.</S>
+        <S ID="S-50898">2003.</S>
+        <S ID="S-50899">Statistical Phrase-based Translation.</S>
+        <S ID="S-50900">In Proceedings of NAACL-HLT, pages 48&#8211;54, Edmonton, Alberta, CA.</S>
+      </P>
+      <P>
+        <S ID="S-50901">Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ondrej Bojar, Alexandra Constantin, and Evan Herbst.</S>
+        <S ID="S-50902">2007.</S>
+        <S ID="S-50903">Moses: Open Source</S>
+      </P>
+      <P>
+        <S ID="S-50904">Toolkit for Statistical Machine Translation.</S>
+        <S ID="S-50905">In Proceedings of the Association for Computational Linguistics, Companion Volume Proceedings of the Demo and Poster Sessions, Prague, Czech Republic, June.</S>
+        <S ID="S-50906">Shankar Kumar and William Byrne.</S>
+        <S ID="S-50907">2004.</S>
+        <S ID="S-50908">Minimum</S>
+      </P>
+      <P>
+        <S ID="S-50909">Bayes-Risk Decoding for Statistical Machine Translation.</S>
+        <S ID="S-50910">In Proceedings of HLT-NAACL.</S>
+        <S ID="S-50911">Wang Ling, Jo ao Gra&#231;a, David Martins de Matos, Isabel Trancoso, and Alan Black.</S>
+        <S ID="S-50912">2011.</S>
+        <S ID="S-50913">Discriminative Phrase-based Lexicalized Reordering Models using Weighted Reordering Graphs.</S>
+        <S ID="S-50914">In Proceedings of the 5 th International Joint Conference on Natural Language Processing.</S>
+      </P>
+      <P>
+        <S ID="S-50915">Franz Joseph Och.</S>
+        <S ID="S-50916">2003.</S>
+        <S ID="S-50917">Minimum Error Rate Training in Statistical Machine Translation.</S>
+        <S ID="S-50918">In Proceedings of the 41 st Annual Meeting of the Association for Computational Linguistics, pages 160&#8211;167, Sapporo, Japan.</S>
+        <S ID="S-50919">Libin Shen, Jinxi Xu, and Ralph Weischedel.</S>
+        <S ID="S-50920">2008.</S>
+        <S ID="S-50921">A</S>
+      </P>
+      <P>
+        <S ID="S-50922">New String-to-dependency Machine Translation Algorithm with a Target Dependency Language Model.</S>
+        <S ID="S-50923">In Proceedings of the Joint Meeting of the Association for Computational Linguistics and Human Language Technologies (ACL-08:HLT), Columbus, OH, USA.</S>
+        <S ID="S-50924">Libin Shen, Jinxi Xu, and Ralph Weischedel.</S>
+        <S ID="S-50925">2010.</S>
+      </P>
+      <P>
+        <S ID="S-50926">String-to-Dependency Statistical Machine Translation.</S>
+        <S ID="S-50927">Computational Linguistics, 36(4):649&#8211;671.</S>
+        <S ID="S-50928">Mark Steedman.</S>
+        <S ID="S-50929">2000.</S>
+        <S ID="S-50930">The Syntactic Process.</S>
+        <S ID="S-50931">MIT</S>
+      </P>
+      <P>
+        <S ID="S-50932">Press, Cambridge, MA, USA.</S>
+        <S ID="S-50933">Jinsong Su, Yang Liu, Yajuan L&#252;, Haitao Mi, and Qun</S>
+      </P>
+      <P>
+        <S ID="S-50934">Liu.</S>
+        <S ID="S-50935">2010.</S>
+        <S ID="S-50936">Learning Lexicalized Reordering Models from Reordering Graphs.</S>
+        <S ID="S-50937">In Proceedings of the ACL 2010; Short Papers.</S>
+        <S ID="S-50938">Christoph Tillmann.</S>
+        <S ID="S-50939">2004.</S>
+        <S ID="S-50940">A Unigram Orientation</S>
+      </P>
+      <P>
+        <S ID="S-50941">Model for Statistical Machine Translation.</S>
+        <S ID="S-50942">In Proceedings of HLT-NAACL 2004: Short Papers, HLT- NAACL-Short &#8217;04.</S>
+        <S ID="S-50943">Christoph Tillmann.</S>
+        <S ID="S-50944">2008.</S>
+        <S ID="S-50945">A Rule-Driven Dynamic Programming Decoder for Statistical MT.</S>
+        <S ID="S-50946">In Proceedings of the Second Workshop on Syntax and Structure in Statistical Translation (SSST-08).</S>
+        <S ID="S-50947">Ashish Venugopal, Andreas Zollmann, and Stephan Vogel.</S>
+        <S ID="S-50948">2007.</S>
+        <S ID="S-50949">An Efficient Two-pass Approach to Synchronous-CFG Driven Statistical MT.</S>
+        <S ID="S-50950">In Proceedings of the Human Language Technology and North American Association for Computational Linguistics Conference (HLT/NAACL-07), Rochester, NY.</S>
+        <S ID="S-50951">Chao Wang, Michael Collins, and Philipp Koehn.</S>
+        <S ID="S-50952">2007.</S>
+      </P>
+      <P>
+        <S ID="S-50953">Chinese Syntactic Reordering for Statistical Machine</S>
+      </P>
+      <P>
+        <S ID="S-50954">Translation.</S>
+        <S ID="S-50955">In Proceedings of EMNLP/CoNLL-07,</S>
+      </P>
+      <P>
+        <S ID="S-50956">Prague, The Czech Republic.</S>
+        <S ID="S-50957">Fei Xia and Michael McCord.</S>
+        <S ID="S-50958">2004.</S>
+        <S ID="S-50959">Improving a Statistical MT System with Automatically Learned Rewrite Patterns.</S>
+        <S ID="S-50960">In Proceedings of International Conference on Computational Linguistics (COLING-04), Geneva, Switzerland.</S>
+        <S ID="S-50961">Yushi Xu and Stephanie Seneff.</S>
+        <S ID="S-50962">2008.</S>
+        <S ID="S-50963">Two-stage Translation: A Combined Linguistic and Statistical Machine</S>
+      </P>
+      <P>
+        <S ID="S-50964">Translation Framework.</S>
+        <S ID="S-50965">In Proceedings of the 8 th Conference of the Association for Machine Translation in the Americas (AMTA-08), Waikiki, Honolulu, HI, USA.</S>
+        <S ID="S-50966">Richard Zens, Franz Josef Och, and Hermann Ney.</S>
+      </P>
+      <P>
+        <S ID="S-50967">2002.</S>
+        <S ID="S-50968">Phrase-Based Statistical Machine Translation.</S>
+        <S ID="S-50969">In M. Jarke, J. Koehler, and G. Lakemeyer, editors, KI- 2002: Advances in Artificial Intelligence, Proceedings of the 25 th Annual German Conference on AI, (KI- 2002), pages 18&#8211;32.</S>
+        <S ID="S-50970">Springer Verlag, Aachen, Germany.</S>
+      </P>
+      <P>
+        <S ID="S-50971">Bing Zhao and Yaser Al-onaizan.</S>
+        <S ID="S-50972">2008.</S>
+        <S ID="S-50973">Generalizing Local and Non-Local Word-Reordering Patterns for Syntax-Based Machine Translation.</S>
+        <S ID="S-50974">In Proceedings of The Conference on Empirical Methods in Natural Language Processig (EMNLP-08).</S>
+        <S ID="S-50975">Andreas Zollmann, Ashish Venugopal, Stephan Vogel,</S>
+      </P>
+      <P>
+        <S ID="S-50976">and Alex Waibel.</S>
+        <S ID="S-50977">2006.</S>
+        <S ID="S-50978">The CMU-UKA Syntax Augmented Machine Translation System for IWSLT-06.</S>
+        <S ID="S-50979">In Proceedings of International Workshop on Spoken Language Translation (IWSLT-06), Kyoto, Japan.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES/>
+</PAPER>

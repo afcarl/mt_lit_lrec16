@@ -1,0 +1,2209 @@
+<document>
+  <filename>W02-1018</filename>
+  <authors>
+    <author>Daniel Marcu</author>
+  </authors>
+  <title>Association for Computational Linguistics. A Phrase-Based, Joint Probability Model for Statistical Machine Translation</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>We present a joint probability model for statistical machine translation, which automatically learns word and phrase equivalents from bilingual corpora. Translations produced with parameters estimated using the joint model are more accurate than translations produced using IBM Model 4.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We present a joint probability model for statistical machine translation, which automatically learns word and phrase equivalents from bilingual corpora.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Translations produced with parameters estimated using the joint model are more accurate than translations produced using IBM Model 4.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Motivation</title>
+        <text>Most of the noisy-channel-based models used in statistical machine translation (MT) (Brown et al., 1993) are conditional probability models. In the noisy-channel framework, each source sentence e in a parallel corpus is assumed to &#8220;generate&#8221; a target sentence f by means of a stochastic process, whose parameters are estimated using traditional EM techniques (Dempster et al., 1977). The generative model explains how source words are mapped into target words and how target words are re-ordered to yield well-formed target sentences. A variety of methods are used to account for the re-ordering stage: word-based (Brown et al., 1993), templatebased (Och et al., 1999), and syntax-based (Yamada and Knight, 2001), to name just a few. Although these models use different generative processes to explain how translated words are re-ordered in a target language, at the lexical level they are quite similar; all these models assume that source words are individually translated into target words. 1
+1 The individual words may contain a non-existent element,
+called NULL.
+We suspect that MT researchers have so far chosen to automatically learn translation lexicons defined only over words for primarily pragmatic reasons. Large scale bilingual corpora with vocabularies in the range of hundreds of thousands yield very large translation lexicons. Tuning the probabilities associated with these large lexicons is a difficult enough task to deter one from trying to scale up to learning phrase-based lexicons. Unfortunately, trading space requirements and efficiency for explanatory power often yields non-intuitive results.
+Consider, for example, the parallel corpus of three sentence pairs shown in Figure 1. Intuitively, if we allow any Source words to be aligned to any Target words, the best alignment that we can come up with is the one in Figure 1.c. Sentence pair (S2, T2) offers strong evidence that &#8220;b c&#8221; in language S means the same thing as &#8220;x&#8221; in language T. On the basis of this evidence, we expect the system to also learn from sentence pair (S1, T1) that &#8220;a&#8221; in language S means the same thing as &#8220;y&#8221; in language T. Unfortunately, if one works with translation models that do not allow Target words to be aligned to more than one Source word &#8212; as it is the case in the IBM models (Brown et al., 1993) &#8212; it is impossible to learn that the phrase &#8220;b c&#8221; in language S means the same thing as word &#8220;x&#8221; in language T. The IBM Model 4 (Brown et al., 1993), for example, converges to the word alignments shown in Figure 1.b and learns the translation probabilities shown in Figure 1.a. 2 Since in the IBM model one cannot link a Target word to more than a Source word, the training procedure
+1999).
+2 To train the IBM-4 model, we used Giza (Al-Onaizan et al.,
+
+
+
+a) b) c) d) e)
+yields unintuitive translation probabilities. (Note that another good word-for-word model is one that assigns high probability to p(x b) and p(z b) and low probability to p(x c).)
+In this paper, we describe a translation model that assumes that lexical correspondences can be established not only at the word level, but at the phrase level as well. In constrast with many previous approaches (Brown et al., 1993; Och et al., 1999; Yamada and Knight, 2001), our model does not try to capture how Source sentences can be mapped into Target sentences, but rather how Source and Target sentences can be generated simultaneously. In other words, in the style of Melamed (2001), we estimate a joint probability model that can be easily marginalized in order to yield conditional probability models for both source-to-target and target-tosource machine translation applications. The main difference between our work and that of Melamed is that we learn joint probability models of translation equivalence not only between words but also between phrases and we show that these models can be used not only for the extraction of bilingual lexicons but also for the automatic translation of unseen sentences.
+In the rest of the paper, we first describe our model (Section 2) and explain how it can be implemented/trained (Section 3). We briefly describe a decoding algorithm that works in conjunction with our model (Section 4) and evaluate the performance of a translation system that uses the joint-probability model (Section 5). We end with a discussion of the strengths and weaknesses of our model as compared to other models proposed in the literature.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Most of the noisy-channel-based models used in statistical machine translation (MT) (Brown et al., 1993) are conditional probability models.</text>
+              <doc_id>2</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the noisy-channel framework, each source sentence e in a parallel corpus is assumed to &#8220;generate&#8221; a target sentence f by means of a stochastic process, whose parameters are estimated using traditional EM techniques (Dempster et al., 1977).</text>
+              <doc_id>3</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The generative model explains how source words are mapped into target words and how target words are re-ordered to yield well-formed target sentences.</text>
+              <doc_id>4</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>A variety of methods are used to account for the re-ordering stage: word-based (Brown et al., 1993), templatebased (Och et al., 1999), and syntax-based (Yamada and Knight, 2001), to name just a few.</text>
+              <doc_id>5</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Although these models use different generative processes to explain how translated words are re-ordered in a target language, at the lexical level they are quite similar; all these models assume that source words are individually translated into target words.</text>
+              <doc_id>6</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>1</text>
+              <doc_id>7</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 The individual words may contain a non-existent element,</text>
+              <doc_id>8</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>called NULL.</text>
+              <doc_id>9</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We suspect that MT researchers have so far chosen to automatically learn translation lexicons defined only over words for primarily pragmatic reasons.</text>
+              <doc_id>10</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Large scale bilingual corpora with vocabularies in the range of hundreds of thousands yield very large translation lexicons.</text>
+              <doc_id>11</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Tuning the probabilities associated with these large lexicons is a difficult enough task to deter one from trying to scale up to learning phrase-based lexicons.</text>
+              <doc_id>12</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Unfortunately, trading space requirements and efficiency for explanatory power often yields non-intuitive results.</text>
+              <doc_id>13</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Consider, for example, the parallel corpus of three sentence pairs shown in Figure 1.</text>
+              <doc_id>14</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Intuitively, if we allow any Source words to be aligned to any Target words, the best alignment that we can come up with is the one in Figure 1.c.</text>
+              <doc_id>15</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Sentence pair (S2, T2) offers strong evidence that &#8220;b c&#8221; in language S means the same thing as &#8220;x&#8221; in language T.</text>
+              <doc_id>16</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>On the basis of this evidence, we expect the system to also learn from sentence pair (S1, T1) that &#8220;a&#8221; in language S means the same thing as &#8220;y&#8221; in language T.</text>
+              <doc_id>17</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Unfortunately, if one works with translation models that do not allow Target words to be aligned to more than one Source word &#8212; as it is the case in the IBM models (Brown et al., 1993) &#8212; it is impossible to learn that the phrase &#8220;b c&#8221; in language S means the same thing as word &#8220;x&#8221; in language T.</text>
+              <doc_id>18</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>The IBM Model 4 (Brown et al., 1993), for example, converges to the word alignments shown in Figure 1.b and learns the translation probabilities shown in Figure 1.a.</text>
+              <doc_id>19</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>2 Since in the IBM model one cannot link a Target word to more than a Source word, the training procedure</text>
+              <doc_id>20</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1999).</text>
+              <doc_id>21</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2 To train the IBM-4 model, we used Giza (Al-Onaizan et al.,</text>
+              <doc_id>22</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>23</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>24</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>25</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>a) b) c) d) e)</text>
+              <doc_id>26</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>yields unintuitive translation probabilities.</text>
+              <doc_id>27</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>(Note that another good word-for-word model is one that assigns high probability to p(x b) and p(z b) and low probability to p(x c).</text>
+              <doc_id>28</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>)</text>
+              <doc_id>29</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we describe a translation model that assumes that lexical correspondences can be established not only at the word level, but at the phrase level as well.</text>
+              <doc_id>30</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In constrast with many previous approaches (Brown et al., 1993; Och et al., 1999; Yamada and Knight, 2001), our model does not try to capture how Source sentences can be mapped into Target sentences, but rather how Source and Target sentences can be generated simultaneously.</text>
+              <doc_id>31</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In other words, in the style of Melamed (2001), we estimate a joint probability model that can be easily marginalized in order to yield conditional probability models for both source-to-target and target-tosource machine translation applications.</text>
+              <doc_id>32</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The main difference between our work and that of Melamed is that we learn joint probability models of translation equivalence not only between words but also between phrases and we show that these models can be used not only for the extraction of bilingual lexicons but also for the automatic translation of unseen sentences.</text>
+              <doc_id>33</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In the rest of the paper, we first describe our model (Section 2) and explain how it can be implemented/trained (Section 3).</text>
+              <doc_id>34</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We briefly describe a decoding algorithm that works in conjunction with our model (Section 4) and evaluate the performance of a translation system that uses the joint-probability model (Section 5).</text>
+              <doc_id>35</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We end with a discussion of the strengths and weaknesses of our model as compared to other models proposed in the literature.</text>
+              <doc_id>36</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 A Phrase-Based Joint Probability Model</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>37</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 Model 1</title>
+            <text>In developing our joint probability model, we started out with a very simple generative story. We assume that each sentence pair in our corpus is generated by the following stochastic process:
+1. Generate a bag of concepts &#161; .
+2. For each concept &#162;&#164;&#163;&#166;&#165;&#167;&#161; , generate a pair of phrases &#168;&#169;  &#163; &#169; &#163; , according to the distribution
+&#168;&#169;  &#163; &#169; &#163; , where  &#169; &#163; and &#169; &#163; each contain at least
+one word.
+3. Order the phrases generated in each language so as to create two linear sequences of phrases; these sequences correspond to the sentence pairs in a bilingual corpus.
+For simplicity, we initially assume that the bag of concepts and the ordering of the generated phrases are modeled by uniform distributions. We do not assume that &#162;&#164;&#163; is a hidden variable that generates
+
+
+
+
+
+
+
+MD
+U
+
+
+M
+
+
+
+
+
+M
+&#163; &#169; &#163; &#169;
+the pair &#168;&#169; &#163; , but rather that &#162;&#164;&#163;&#168;&#169; &#163; . Under these assumptions, it follows that the probability of generating a sentence pair (E, F) using concepts
+&#162;&#164;&#163;&#165;&#161; is given by the product of all phrase-tophrase translation probabilities, ! &#168;&#169;  &#163;  &#169; &#163;  that yield bags of phrases that can be ordered linearly so as to obtain the sentences E and F. For example, the sentence pair &#8220;a b c&#8221; &#8212; &#8220;x y&#8221; can be generated using two concepts, (&#8220;a b&#8221; : &#8220;y&#8221;) and (&#8220;c&#8221; : &#8220;x&#8221;); or one concept, (&#8220;a b c&#8221; : &#8220;x y&#8221;), because in both cases the phrases in each language can be arranged in a sequence that would yield the original sentence pair. However, the same sentence pair cannot be generated using the concepts (&#8220;a b&#8221; : &#8220;y&#8221;) and (&#8220;c&#8221; : &#8220;y&#8221;) because the sequence &#8220;x y&#8221; cannot be recreated from the two phrases &#8220;y&#8221; and &#8220;y&#8221;. Similarly, the pair cannot be generated using concepts (&#8220;a c&#8221; : &#8220;x&#8221;) and (&#8220;b&#8221; : &#8220;y&#8221;) because the sequence &#8220;a b c&#8221; cannot be created by catenating the phrases &#8220;a c&#8221; and &#8220;b&#8221;.
+We say that a set of concepts &#161; can be linearized into a sentence pair (E, F) if E and F can be obtained by permuting the phrases
+&#169; &#163; and &#169; &#163; that characterize
+all concepts &#162;&#164;&#163;"&#165;#&#161; . We denote this property using the predicate $%&#168;&amp;')(*+&#161;, . Under this model, the probability of a given sentence pair (E, F) can then be obtained by summing up over all possible ways of generating bags of concepts &#161;-&#165;/. that can be linearized to (E, F).
+0 &#168;&amp;')(12 3 46587 9;:=&lt;?&gt; @A&gt;CB</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In developing our joint probability model, we started out with a very simple generative story.</text>
+                  <doc_id>38</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We assume that each sentence pair in our corpus is generated by the following stochastic process:</text>
+                  <doc_id>39</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1.</text>
+                  <doc_id>40</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Generate a bag of concepts &#161; .</text>
+                  <doc_id>41</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.</text>
+                  <doc_id>42</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each concept &#162;&#164;&#163;&#166;&#165;&#167;&#161; , generate a pair of phrases &#168;&#169;  &#163; &#169; &#163; , according to the distribution</text>
+                  <doc_id>43</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#168;&#169;  &#163; &#169; &#163; , where  &#169; &#163; and &#169; &#163; each contain at least</text>
+                  <doc_id>44</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>one word.</text>
+                  <doc_id>45</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3.</text>
+                  <doc_id>46</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Order the phrases generated in each language so as to create two linear sequences of phrases; these sequences correspond to the sentence pairs in a bilingual corpus.</text>
+                  <doc_id>47</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For simplicity, we initially assume that the bag of concepts and the ordering of the generated phrases are modeled by uniform distributions.</text>
+                  <doc_id>48</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We do not assume that &#162;&#164;&#163; is a hidden variable that generates</text>
+                  <doc_id>49</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>50</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>51</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>52</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>53</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>54</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>55</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>56</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>MD</text>
+                  <doc_id>57</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>U</text>
+                  <doc_id>58</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>59</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>60</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>M</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>62</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>63</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>64</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>65</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text></text>
+                  <doc_id>66</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>M</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#163; &#169; &#163; &#169;</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>the pair &#168;&#169; &#163; , but rather that &#162;&#164;&#163;&#168;&#169; &#163; .</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Under these assumptions, it follows that the probability of generating a sentence pair (E, F) using concepts</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#162;&#164;&#163;&#165;&#161; is given by the product of all phrase-tophrase translation probabilities, !</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#168;&#169;  &#163;  &#169; &#163;  that yield bags of phrases that can be ordered linearly so as to obtain the sentences E and F. For example, the sentence pair &#8220;a b c&#8221; &#8212; &#8220;x y&#8221; can be generated using two concepts, (&#8220;a b&#8221; : &#8220;y&#8221;) and (&#8220;c&#8221; : &#8220;x&#8221;); or one concept, (&#8220;a b c&#8221; : &#8220;x y&#8221;), because in both cases the phrases in each language can be arranged in a sequence that would yield the original sentence pair.</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, the same sentence pair cannot be generated using the concepts (&#8220;a b&#8221; : &#8220;y&#8221;) and (&#8220;c&#8221; : &#8220;y&#8221;) because the sequence &#8220;x y&#8221; cannot be recreated from the two phrases &#8220;y&#8221; and &#8220;y&#8221;.</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Similarly, the pair cannot be generated using concepts (&#8220;a c&#8221; : &#8220;x&#8221;) and (&#8220;b&#8221; : &#8220;y&#8221;) because the sequence &#8220;a b c&#8221; cannot be created by catenating the phrases &#8220;a c&#8221; and &#8220;b&#8221;.</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We say that a set of concepts &#161; can be linearized into a sentence pair (E, F) if E and F can be obtained by permuting the phrases</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#169; &#163; and &#169; &#163; that characterize</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>all concepts &#162;&#164;&#163;"&#165;#&#161; .</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We denote this property using the predicate $%&#168;&amp;')(*+&#161;, .</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Under this model, the probability of a given sentence pair (E, F) can then be obtained by summing up over all possible ways of generating bags of concepts &#161;-&#165;/.</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>that can be linearized to (E, F).</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>0 &#168;&amp;')(12 3 46587 9;:=&lt;?&gt; @A&gt;CB</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 Model 2</title>
+            <text>D E
+&#168;&#169;   &#163;F &#169; &#163; (1)
+Although Model 1 is fairly unsophisticated, we have found that it produces in practice fairly good alignments. However, this model is clearly unsuited for translating unseen sentences as it imposes no constraints on the ordering of the phrases associated with a given concept. In order to account for this, we modify slightly the generative process in Model 1 so as to account for distortions. The generative story of Model 2 is this:
+1. Generate a bag of concepts &#161; .
+2. Initialize E and F to empty sequences G .
+3. Randomly take a concept &#162;+&#163;H&#165;I&#161; and generate a pair of phrases &#168;&#169;  &#163; &#169; &#163; , according to the dis-
+tribution &#168;&#169;  &#163; &#169; &#163; , where  &#169; &#163; and &#169;
+at least one word. Remove then &#162;+&#163; from &#161; .
+4. Append phrase &#169; start position of &#169; &#163; in F.
+&#163; each contain
+&#163; at the end of F. Let J be the
+&#163; at position K in E provided that
+5. Insert phrase &#169; no other phrase occupies any of the positions between K and KL  &#169; &#163; , where
+&#169; &#163; gives the
+length of the phrase
+&#169; &#163; . We hence create the
+alignment between the two phrases &#169; &#163; and
+&#169; &#163;
+with probability
+MON
+D RTS 7P Q 7 MVU
+&#168; 0 T&#168;KL  &#169; &#163; XW!YZ+
+where U &#168;\[)]8 is a position-based distortion distribution.
+6. Repeat steps 3 to 5 until &#161; is empty.
+In Model 2, the probability to generate a sentence pair (E, F) is given by formula (2), where 0_^E` &#168; &#169;
+&#163;
+denotes the position of word J of phrase &#169; &#163; in sentence F and 0_^E` a &#168;&#169;  &#163; denotes the position in sentence E of the center of mass of phrase  &#163; .
+0 D &#168;&amp;')(12 3 &#168;&#169;  &#163; &#169; &#163;Hd
+4T587 9;:=&lt;?&gt; @A&gt;CB Ecb 7P Q 7 (2)
+&#168; 0_^E`  &#168; &#169; &#163; + 0_^E` a &#168;&#169;  &#163;Xf S4e
+Model 2 implements an absolute position-based distortion model, in the style of IBM Model 3. We have tried many types of distortion models. We eventually settled for the model discussed here because it produces better translations during decoding. Since the number of factors involved in computing the probability of an alignment does not vary with the size of the Target phrases into which Source phrases are translated, this model is not predisposed to produce translations that are shorter than the Source sentences given as input.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>D E</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#168;&#169;   &#163;F &#169; &#163; (1)</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Although Model 1 is fairly unsophisticated, we have found that it produces in practice fairly good alignments.</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, this model is clearly unsuited for translating unseen sentences as it imposes no constraints on the ordering of the phrases associated with a given concept.</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In order to account for this, we modify slightly the generative process in Model 1 so as to account for distortions.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The generative story of Model 2 is this:</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1.</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Generate a bag of concepts &#161; .</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Initialize E and F to empty sequences G .</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Randomly take a concept &#162;+&#163;H&#165;I&#161; and generate a pair of phrases &#168;&#169;  &#163; &#169; &#163; , according to the dis-</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>tribution &#168;&#169;  &#163; &#169; &#163; , where  &#169; &#163; and &#169;</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>at least one word.</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Remove then &#162;+&#163; from &#161; .</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Append phrase &#169; start position of &#169; &#163; in F.</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#163; each contain</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#163; at the end of F. Let J be the</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#163; at position K in E provided that</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5.</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Insert phrase &#169; no other phrase occupies any of the positions between K and KL  &#169; &#163; , where</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#169; &#163; gives the</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>length of the phrase</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#169; &#163; .</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We hence create the</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>alignment between the two phrases &#169; &#163; and</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#169; &#163;</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>with probability</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>MON</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>D RTS 7P Q 7 MVU</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#168; 0 T&#168;KL  &#169; &#163; XW!YZ+</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where U &#168;\[)]8 is a position-based distortion distribution.</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6.</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Repeat steps 3 to 5 until &#161; is empty.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In Model 2, the probability to generate a sentence pair (E, F) is given by formula (2), where 0_^E` &#168; &#169;</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#163;</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>denotes the position of word J of phrase &#169; &#163; in sentence F and 0_^E` a &#168;&#169;  &#163; denotes the position in sentence E of the center of mass of phrase  &#163; .</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>0 D &#168;&amp;')(12 3 &#168;&#169;  &#163; &#169; &#163;Hd</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4T587 9;:=&lt;?&gt; @A&gt;CB Ecb 7P Q 7 (2)</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#168; 0_^E`  &#168; &#169; &#163; + 0_^E` a &#168;&#169;  &#163;Xf S4e</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Model 2 implements an absolute position-based distortion model, in the style of IBM Model 3.</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We have tried many types of distortion models.</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We eventually settled for the model discussed here because it produces better translations during decoding.</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since the number of factors involved in computing the probability of an alignment does not vary with the size of the Target phrases into which Source phrases are translated, this model is not predisposed to produce translations that are shorter than the Source sentences given as input.</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Training</title>
+        <text>Training the models described in Section 2 is computationally challenging. Since there is an exponential number of alignments that can generate a sentence pair (E, F), it is clear that we cannot apply the
+&#169;
+
+
+&#163;
+M {
+M {
+
+M {
+B
+
+e
+o
+1. Determine high-frequency n- grams in the bilingual corpus.
+2. Initialize the t-distribution table.
+3. Apply EM training on the Viterbi alignments, while using smoothing.
+4. Generate conditional model probabilities.
+EM training algorithm exhaustively. To estimate the parameters of our model, we apply the algorithm in Figure 2, whose steps are motivated and described below.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Training the models described in Section 2 is computationally challenging.</text>
+              <doc_id>127</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since there is an exponential number of alignments that can generate a sentence pair (E, F), it is clear that we cannot apply the</text>
+              <doc_id>128</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#169;</text>
+              <doc_id>129</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>130</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>131</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#163;</text>
+              <doc_id>132</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>M {</text>
+              <doc_id>133</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>M {</text>
+              <doc_id>134</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>135</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>M {</text>
+              <doc_id>136</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>B</text>
+              <doc_id>137</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>138</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>e</text>
+              <doc_id>139</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>o</text>
+              <doc_id>140</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.</text>
+              <doc_id>141</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Determine high-frequency n- grams in the bilingual corpus.</text>
+              <doc_id>142</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2.</text>
+              <doc_id>143</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Initialize the t-distribution table.</text>
+              <doc_id>144</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>3.</text>
+              <doc_id>145</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Apply EM training on the Viterbi alignments, while using smoothing.</text>
+              <doc_id>146</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>4.</text>
+              <doc_id>147</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Generate conditional model probabilities.</text>
+              <doc_id>148</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>EM training algorithm exhaustively.</text>
+              <doc_id>149</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>To estimate the parameters of our model, we apply the algorithm in Figure 2, whose steps are motivated and described below.</text>
+              <doc_id>150</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Determine high-frequency n-grams in E and F</title>
+            <text>If one assumes from the outset that any phrases
+&#163;g&#165;h4i and &#169; &#163;*&#165;jki can be generated from a concept &#162;&#164;&#163; , one would need a supercomputer in order to
+store in the memory a table that models the &#168;&#169;  &#163;l &#169; &#163;
+distribution. Since we don&#8217;t have access to computers with unlimited memory, we initially learn t distribution entries only for the phrases that occur often in the corpus and for unigrams. Then, through smoothing, we learn t distribution entries for the phrases that occur rarely as well. In order to be considered in step 2 of the algorithm, a phrase has to occur at least five times in the corpus.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>If one assumes from the outset that any phrases</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#163;g&#165;h4i and &#169; &#163;*&#165;jki can be generated from a concept &#162;&#164;&#163; , one would need a supercomputer in order to</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>store in the memory a table that models the &#168;&#169;  &#163;l &#169; &#163;</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>distribution.</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since we don&#8217;t have access to computers with unlimited memory, we initially learn t distribution entries only for the phrases that occur often in the corpus and for unigrams.</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Then, through smoothing, we learn t distribution entries for the phrases that occur rarely as well.</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In order to be considered in step 2 of the algorithm, a phrase has to occur at least five times in the corpus.</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Initialize the t-distribution table</title>
+            <text>Before the EM training procedure starts, one has no idea what word/phrase pairs are likely to share the same meaning. In other words, all alignments that can generate a sentence pair (E, F) can be assumed to have the same probability. Under these conditions, the evidence that a sentence pair (E, F) contributes to the fact that &#168;&#169;  &#163;  &#169; &#163;  are generated by the same concept &#162;&#164;&#163; is given by the number of alignments that can be built between (E, F) that have a concept &#162;&#164;&#163; that is linked to phrase
+&#169; &#163; in sentence E and phrase &#169;
+in sentence F divided by the total number of alignments that can be built between the two sentences. Both these numbers can be easily approximated.
+Given a sentence E of K words, there are m*&#168;KlnJA ways in which the K words can be partitioned into J non-empty sets/concepts, where m*&#168;KlnJA is the Stirling number of second kind.
+m*&#168;KlnJA2po Jrq
+M6s
+3 &#163; Sut
+&#168;lv
+&#163;Ew J [Tx
+There are also m*&#168;\|VnJA ways in which the |
+&#168;Jyvz[lF{ (3)
+words of a sentence F can be partitioned into J nonempty sets. Given that any words in E can be mapped to any words in F, it follows that there are
+} a &#163; :=~&gt; a&#8364;B S4e Jrq+m*&#168;KlnJA&#65533;m*&#168;\|VnJA alignments that can be
+built between two sentences (E, F) of lengths K and
+| , respectively. When a concept &#162;&#164;&#163; generates two
+phrases &#168;&#169;  &#163;  &#169; &#163;  of length &#8218; and &#402; , respectively, there are only K&#8222;v'&#8218; and |&#8230;v"&#402; words left to link. Hence, in the absence of any other information, the probability that phrases
+&#169; &#163; and &#169; &#163; are generated by the same
+concept &#162;&#164;&#163; is given by formula (4).
+s;&#8225; s;&#710; } a &#163; :&#8224;~ &gt; a
+S4e Jrq+m*&#168;Kuvz&#8218;_nJA&#65533;m*&#168;\|&#8240;v&#402;6nJA } a &#163; :&#8224;~&#352;&gt; a&#8364;B
+S4e Jrq+m*&#168;KlnJA&#65533;m*&#168;\|VnJA
+(4)
+Note that the fractional counts returned by equation (4) are only an approximation of the t distribution that we are interested in because the Stirling numbers of the second kind do not impose any restriction on the words that are associated with a given concept be consecutive. However, since formula (4) overestimates the numerator and denominator equally, the approximation works well in practice. In the second step of the algorithm, we apply equation (4) to collect fractional counts for all unigram and high-frequency n-gram pairs in the cartesian product defined over the phrases in each sentence pair (E, F) in a corpus. We sum over all these t-counts and we normalize to obtain an initial joint distribution  . This step amounts to running the EM algorithm for one step over all possible alignments in the corpus.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Before the EM training procedure starts, one has no idea what word/phrase pairs are likely to share the same meaning.</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In other words, all alignments that can generate a sentence pair (E, F) can be assumed to have the same probability.</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Under these conditions, the evidence that a sentence pair (E, F) contributes to the fact that &#168;&#169;  &#163;  &#169; &#163;  are generated by the same concept &#162;&#164;&#163; is given by the number of alignments that can be built between (E, F) that have a concept &#162;&#164;&#163; that is linked to phrase</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#169; &#163; in sentence E and phrase &#169;</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>in sentence F divided by the total number of alignments that can be built between the two sentences.</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Both these numbers can be easily approximated.</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Given a sentence E of K words, there are m*&#168;KlnJA ways in which the K words can be partitioned into J non-empty sets/concepts, where m*&#168;KlnJA is the Stirling number of second kind.</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>m*&#168;KlnJA2po Jrq</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>M6s</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 &#163; Sut</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#168;lv</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#163;Ew J [Tx</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>There are also m*&#168;\|VnJA ways in which the |</text>
+                  <doc_id>170</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#168;Jyvz[lF{ (3)</text>
+                  <doc_id>171</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>words of a sentence F can be partitioned into J nonempty sets.</text>
+                  <doc_id>172</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given that any words in E can be mapped to any words in F, it follows that there are</text>
+                  <doc_id>173</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>} a &#163; :=~&gt; a&#8364;B S4e Jrq+m*&#168;KlnJA&#65533;m*&#168;\|VnJA alignments that can be</text>
+                  <doc_id>174</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>built between two sentences (E, F) of lengths K and</text>
+                  <doc_id>175</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>| , respectively.</text>
+                  <doc_id>176</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When a concept &#162;&#164;&#163; generates two</text>
+                  <doc_id>177</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>phrases &#168;&#169;  &#163;  &#169; &#163;  of length &#8218; and &#402; , respectively, there are only K&#8222;v'&#8218; and |&#8230;v"&#402; words left to link.</text>
+                  <doc_id>178</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Hence, in the absence of any other information, the probability that phrases</text>
+                  <doc_id>179</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#169; &#163; and &#169; &#163; are generated by the same</text>
+                  <doc_id>180</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>concept &#162;&#164;&#163; is given by formula (4).</text>
+                  <doc_id>181</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>s;&#8225; s;&#710; } a &#163; :&#8224;~ &gt; a</text>
+                  <doc_id>182</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>S4e Jrq+m*&#168;Kuvz&#8218;_nJA&#65533;m*&#168;\|&#8240;v&#402;6nJA } a &#163; :&#8224;~&#352;&gt; a&#8364;B</text>
+                  <doc_id>183</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>S4e Jrq+m*&#168;KlnJA&#65533;m*&#168;\|VnJA</text>
+                  <doc_id>184</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(4)</text>
+                  <doc_id>185</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Note that the fractional counts returned by equation (4) are only an approximation of the t distribution that we are interested in because the Stirling numbers of the second kind do not impose any restriction on the words that are associated with a given concept be consecutive.</text>
+                  <doc_id>186</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, since formula (4) overestimates the numerator and denominator equally, the approximation works well in practice.</text>
+                  <doc_id>187</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the second step of the algorithm, we apply equation (4) to collect fractional counts for all unigram and high-frequency n-gram pairs in the cartesian product defined over the phrases in each sentence pair (E, F) in a corpus.</text>
+                  <doc_id>188</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We sum over all these t-counts and we normalize to obtain an initial joint distribution  .</text>
+                  <doc_id>189</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This step amounts to running the EM algorithm for one step over all possible alignments in the corpus.</text>
+                  <doc_id>190</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>3.3 EM training on Viterbi alignments</title>
+            <text>Given a non-uniform t distribution, phrase-to-phrase alignments have different weights and there are no
+U
+other tricks one can apply to collect fractional counts over all possible alignments in polynomial time. Starting with step 3 of the algorithm in Figure 2, for each sentence pair in a corpus, we greedily produce an initial alignment by linking together phrases so as to create concepts that have high t probabilities. We then hillclimb towards the Viterbi alignment of highest probability by breaking and merging concepts, swapping words between concepts, and moving words across concepts. We compute the probabilities associated with all the alignments we generate during the hillclimbing process and collect t counts over all concepts in these alignments. We apply this Viterbi-based EM training procedure for a few iterations. The first iterations estimate the alignment probabilities using Model 1. The rest of the iterations estimate the alignment probabilities using Model 2. During training, we apply smoothing so we can associate non-zero values to phrase-pairs that do not occur often in the corpus.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Given a non-uniform t distribution, phrase-to-phrase alignments have different weights and there are no</text>
+                  <doc_id>191</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>U</text>
+                  <doc_id>192</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>other tricks one can apply to collect fractional counts over all possible alignments in polynomial time.</text>
+                  <doc_id>193</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Starting with step 3 of the algorithm in Figure 2, for each sentence pair in a corpus, we greedily produce an initial alignment by linking together phrases so as to create concepts that have high t probabilities.</text>
+                  <doc_id>194</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We then hillclimb towards the Viterbi alignment of highest probability by breaking and merging concepts, swapping words between concepts, and moving words across concepts.</text>
+                  <doc_id>195</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We compute the probabilities associated with all the alignments we generate during the hillclimbing process and collect t counts over all concepts in these alignments.</text>
+                  <doc_id>196</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We apply this Viterbi-based EM training procedure for a few iterations.</text>
+                  <doc_id>197</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The first iterations estimate the alignment probabilities using Model 1.</text>
+                  <doc_id>198</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The rest of the iterations estimate the alignment probabilities using Model 2.</text>
+                  <doc_id>199</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>During training, we apply smoothing so we can associate non-zero values to phrase-pairs that do not occur often in the corpus.</text>
+                  <doc_id>200</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>3.4 Derivation of conditional probability model</title>
+            <text>At the end of the training procedure, we take marginals on the joint probability distributions  and . This yields conditional probability distributions
+&#168; &#169; &#163;  &#169; &#163;  and U &#168; 0_^E` (
+decoding.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>At the end of the training procedure, we take marginals on the joint probability distributions  and .</text>
+                  <doc_id>201</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This yields conditional probability distributions</text>
+                  <doc_id>202</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#168; &#169; &#163;  &#169; &#163;  and U &#168; 0_^E` (</text>
+                  <doc_id>203</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>decoding.</text>
+                  <doc_id>204</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>4</index>
+            <title>3.5 Discussion</title>
+            <text>0_^E` &amp;+ which we use for
+When we run the training procedure in Figure 2 on the corpus in Figure 1, after four Model 1 iterations we obtain the alignments in Figure 1.d and the joint and conditional probability distributions shown in Figure 1.e. At prima facie, the Viterbi alignment for the first sentence pair appears incorrect because we, as humans, have a natural tendency to build alignments between the smallest phrases possible. However, note that the choice made by our model is quite reasonable. After all, in the absence of additional information, the model can either assume that &#8220;a&#8221; and &#8220;y&#8221; mean the same thing or that phrases &#8220;a b c&#8221; and &#8220;x y&#8221; mean the same thing. The model chose to give more weight to the second hypothesis, while preserving some probability mass for the first one.
+Also note that although the joint distribution puts the second hypothesis at an advantage, the conditional distribution does not. The conditional distribution in Figure 1.e is consistent with our intuitions that tell us that it is reasonable both to translate &#8220;a b c&#8221; into &#8220;x y&#8221;, as well as &#8220;a&#8221; into &#8220;y&#8221;. The conditional distribution mirrors perfectly our intuitions.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>0_^E` &amp;+ which we use for</text>
+                  <doc_id>205</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>When we run the training procedure in Figure 2 on the corpus in Figure 1, after four Model 1 iterations we obtain the alignments in Figure 1.d and the joint and conditional probability distributions shown in Figure 1.e.</text>
+                  <doc_id>206</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At prima facie, the Viterbi alignment for the first sentence pair appears incorrect because we, as humans, have a natural tendency to build alignments between the smallest phrases possible.</text>
+                  <doc_id>207</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, note that the choice made by our model is quite reasonable.</text>
+                  <doc_id>208</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>After all, in the absence of additional information, the model can either assume that &#8220;a&#8221; and &#8220;y&#8221; mean the same thing or that phrases &#8220;a b c&#8221; and &#8220;x y&#8221; mean the same thing.</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The model chose to give more weight to the second hypothesis, while preserving some probability mass for the first one.</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Also note that although the joint distribution puts the second hypothesis at an advantage, the conditional distribution does not.</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The conditional distribution in Figure 1.e is consistent with our intuitions that tell us that it is reasonable both to translate &#8220;a b c&#8221; into &#8220;x y&#8221;, as well as &#8220;a&#8221; into &#8220;y&#8221;.</text>
+                  <doc_id>212</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The conditional distribution mirrors perfectly our intuitions.</text>
+                  <doc_id>213</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Decoding</title>
+        <text>For decoding, we have implemented a greedy procedure similar to that proposed by Germann et al. (2001). Given a Foreign sentence F, we first produce a gloss of it by selecting phrases in h i that maximize the probability 0 &#168;&amp;')(1 . We then iteratively hillclimb by modifying E and the alignment between E and F so as to maximize the formula
+0 &#168;&amp; 0 &#168;( &amp; . We hillclimb by modifying an existing alignment/translation through a set of operations that modify locally the aligment/translation built until a given time. These operations replace the English side of an alignment with phrases of different probabilities, merge and break existing concepts, and swap words across concepts. The probability p(E) is computed using a simple trigram language model that was trained using the CMU Language Modeling Toolkit (Clarkson and Rosenfeld, 1997). The language model is estimated at the word (not phrase) level. Figure 3 shows the steps taken by our decoder in order to find the translation of sentence &#8220;je vais me arr&#234;ter l&#224; .&#8221; Each intermediate translation in Figure 3 is preceded by its probability and succeded by the operation that changes it to yield a translation of higher probability.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>For decoding, we have implemented a greedy procedure similar to that proposed by Germann et al. (2001).</text>
+              <doc_id>214</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Given a Foreign sentence F, we first produce a gloss of it by selecting phrases in h i that maximize the probability 0 &#168;&amp;')(1 .</text>
+              <doc_id>215</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We then iteratively hillclimb by modifying E and the alignment between E and F so as to maximize the formula</text>
+              <doc_id>216</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0 &#168;&amp; 0 &#168;( &amp; .</text>
+              <doc_id>217</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We hillclimb by modifying an existing alignment/translation through a set of operations that modify locally the aligment/translation built until a given time.</text>
+              <doc_id>218</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>These operations replace the English side of an alignment with phrases of different probabilities, merge and break existing concepts, and swap words across concepts.</text>
+              <doc_id>219</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The probability p(E) is computed using a simple trigram language model that was trained using the CMU Language Modeling Toolkit (Clarkson and Rosenfeld, 1997).</text>
+              <doc_id>220</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The language model is estimated at the word (not phrase) level.</text>
+              <doc_id>221</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Figure 3 shows the steps taken by our decoder in order to find the translation of sentence &#8220;je vais me arr&#234;ter l&#224; .&#8221; Each intermediate translation in Figure 3 is preceded by its probability and succeded by the operation that changes it to yield a translation of higher probability.</text>
+              <doc_id>222</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Evaluation</title>
+        <text>To evaluate our system, we trained both Giza (IBM Model 4) (Al-Onaizan et al., 1999) and our joint probability model on a French-English parallel corpus of 100,000 sentence pairs from the Hansard corpus. The sentences in the corpus were at most 20 words long. The English side had a total of 1,073,480 words (21,484 unique tokens). The French side had a total of 1,177,143 words (28,132 unique tokens).
+We translated 500 unseen sentences, which were uniformly distributed across lengths 6, 8, 10, 15, and 20. For each group of 100 sentences, we manually determined the number of sentences translated perfectly by the IBM model decoder of Germann et al. (2001) and the decoder that uses the joint prob-
+1.28e&#8722;14
+7.50e&#8722;11
+2.97e&#8722;10
+7.75e&#8722;10
+1.09e&#8722;09
+9.46e&#8722;08
+je vais me arreter la .
+i . me to that .
+je vais me arreter la .
+i want me to that .
+je vais me arreter la .
+i want me to there .
+je vais me arreter la .
+i want me stop there .
+je vais me arreter la .
+let me to stop there .
+je vais me arreter la .
+i am going to stop there .
+changeWordTrans("vais", "want")
+FuseAndChangeTrans("la .", "there .")
+ChangeWordTrans("arreter","stop")
+FuseAndChange("je vais","let me")
+FuseAndChange("je vais me", "i am going to")
+ability model. We also evaluated the translations automatically, using the IBM-Bleu metric (Papineni et al., 2002). The results in Table 1 show that the phrased-based translation model proposed in this paper significantly outperforms IBM Model 4 on both the subjective and objective metrics.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>To evaluate our system, we trained both Giza (IBM Model 4) (Al-Onaizan et al., 1999) and our joint probability model on a French-English parallel corpus of 100,000 sentence pairs from the Hansard corpus.</text>
+              <doc_id>223</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The sentences in the corpus were at most 20 words long.</text>
+              <doc_id>224</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The English side had a total of 1,073,480 words (21,484 unique tokens).</text>
+              <doc_id>225</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The French side had a total of 1,177,143 words (28,132 unique tokens).</text>
+              <doc_id>226</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We translated 500 unseen sentences, which were uniformly distributed across lengths 6, 8, 10, 15, and 20.</text>
+              <doc_id>227</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For each group of 100 sentences, we manually determined the number of sentences translated perfectly by the IBM model decoder of Germann et al. (2001) and the decoder that uses the joint prob-</text>
+              <doc_id>228</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.28e&#8722;14</text>
+              <doc_id>229</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>7.50e&#8722;11</text>
+              <doc_id>230</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2.97e&#8722;10</text>
+              <doc_id>231</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>7.75e&#8722;10</text>
+              <doc_id>232</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.09e&#8722;09</text>
+              <doc_id>233</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>9.46e&#8722;08</text>
+              <doc_id>234</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>je vais me arreter la .</text>
+              <doc_id>235</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i .</text>
+              <doc_id>236</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>me to that .</text>
+              <doc_id>237</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>je vais me arreter la .</text>
+              <doc_id>238</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i want me to that .</text>
+              <doc_id>239</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>je vais me arreter la .</text>
+              <doc_id>240</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i want me to there .</text>
+              <doc_id>241</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>je vais me arreter la .</text>
+              <doc_id>242</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i want me stop there .</text>
+              <doc_id>243</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>je vais me arreter la .</text>
+              <doc_id>244</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>let me to stop there .</text>
+              <doc_id>245</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>je vais me arreter la .</text>
+              <doc_id>246</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i am going to stop there .</text>
+              <doc_id>247</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>changeWordTrans("vais", "want")</text>
+              <doc_id>248</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>FuseAndChangeTrans("la .</text>
+              <doc_id>249</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>", "there .</text>
+              <doc_id>250</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>")</text>
+              <doc_id>251</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>ChangeWordTrans("arreter","stop")</text>
+              <doc_id>252</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>FuseAndChange("je vais","let me")</text>
+              <doc_id>253</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>FuseAndChange("je vais me", "i am going to")</text>
+              <doc_id>254</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>ability model.</text>
+              <doc_id>255</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We also evaluated the translations automatically, using the IBM-Bleu metric (Papineni et al., 2002).</text>
+              <doc_id>256</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The results in Table 1 show that the phrased-based translation model proposed in this paper significantly outperforms IBM Model 4 on both the subjective and objective metrics.</text>
+              <doc_id>257</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 Discussion</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>258</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>6.1 Limitations</title>
+            <text>The main shortcoming of the phrase-based model in this paper concerns the size of the t-table and the cost of the training procedure we currently apply. To keep the memory requirements manageable, we arbitrarily restricted the system to learning phrase translations of at most six words on each side. Also, the swap, break, and merge operations used during the Viterbi training are computationally expensive. We are currently investigating the applicability of dynamic programming techniques to increase the speed of the training procedure.
+Clearly, there are language pairs for which it would be helpful to allow concepts to be realized as non-contiguous phrases. The English word &#8220;not&#8221;, for example, is often translated into two French words, &#8220;ne&#8221; and &#8220;pas&#8221;. But &#8220;ne&#8221; and &#8220;pas&#8221; almost never occur in adjacent positions in French texts. At the outset of this work, we attempted to develop a translation model that enables concepts to be mapped into non-contiguous phrases. But we were not able to scale and train it on large amounts of data. The model described in this paper cannot learn that the English word &#8220;not&#8221; corresponds to the French words &#8220;ne&#8221; and &#8220;pas&#8221;. However, our model learns to deal with negation by memorizing longer phrase translation equivalents, such as (&#8220;ne est pas&#8221;, &#8220;is not&#8221;); (&#8220;est inadmissible&#8221;, &#8220;is not good enough&#8221;); and (&#8220;ne est pas ici&#8221;, &#8220;is not here&#8221;).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The main shortcoming of the phrase-based model in this paper concerns the size of the t-table and the cost of the training procedure we currently apply.</text>
+                  <doc_id>259</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To keep the memory requirements manageable, we arbitrarily restricted the system to learning phrase translations of at most six words on each side.</text>
+                  <doc_id>260</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Also, the swap, break, and merge operations used during the Viterbi training are computationally expensive.</text>
+                  <doc_id>261</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We are currently investigating the applicability of dynamic programming techniques to increase the speed of the training procedure.</text>
+                  <doc_id>262</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Clearly, there are language pairs for which it would be helpful to allow concepts to be realized as non-contiguous phrases.</text>
+                  <doc_id>263</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The English word &#8220;not&#8221;, for example, is often translated into two French words, &#8220;ne&#8221; and &#8220;pas&#8221;.</text>
+                  <doc_id>264</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>But &#8220;ne&#8221; and &#8220;pas&#8221; almost never occur in adjacent positions in French texts.</text>
+                  <doc_id>265</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At the outset of this work, we attempted to develop a translation model that enables concepts to be mapped into non-contiguous phrases.</text>
+                  <doc_id>266</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>But we were not able to scale and train it on large amounts of data.</text>
+                  <doc_id>267</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The model described in this paper cannot learn that the English word &#8220;not&#8221; corresponds to the French words &#8220;ne&#8221; and &#8220;pas&#8221;.</text>
+                  <doc_id>268</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, our model learns to deal with negation by memorizing longer phrase translation equivalents, such as (&#8220;ne est pas&#8221;, &#8220;is not&#8221;); (&#8220;est inadmissible&#8221;, &#8220;is not good enough&#8221;); and (&#8220;ne est pas ici&#8221;, &#8220;is not here&#8221;).</text>
+                  <doc_id>269</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>6.2 Comparison with other work</title>
+            <text>A number of researchers have already gone beyond word-level translations in various MT settings. For example, Melamed (2001) uses wordlevel alignments in order to learn translations of noncompositional compounds. Och and Ney (1999) learn phrase-to-phrase mappings involving word classes, which they call &#8220;templates&#8221;, and exploit them in a statistical machine translation system. And Marcu (2001) extracts phrase translations from automatically aligned corpora and uses them in conjunction with a word-for-word statistical translation system. However, none of these approaches learn simultaneously the translation of phrases/templates and the translation of words. As a consequence, there is a chance that the learning procedure will not discover phrase-level patterns that occur often in the data. In our approach, phrases are not treated differently from individual words, and as a consequence the likelihood of the EM algorithm converging to a better local maximum is increased. Working with phrase translations that are learned independent of a translation model can also affect the decoder performance. For example, in our previous work (Marcu, 2001), we have used a statistical translation memory of phrases in conjunction with a statistical translation model (Brown et al., 1993). The phrases in the translation memory were automatically extracted from the Viterbi alignments produced by Giza (Al-Onaizan et al., 1999) and reused in decoding. The decoder described in (Marcu, 2001) starts from a gloss that uses the translations in the translation memory and then tries to improve on the gloss translation by modifying it incrementally, in the style described in Section 4. However, because the decoder hill-climbs on a word-forword translation model probability, it often discards good phrasal translations in favour of word-for-word translations of higher probability. The decoder in Section 4 does not have this problem because it hillclimbs on translation model probabilities in which phrases play a crucial role.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>A number of researchers have already gone beyond word-level translations in various MT settings.</text>
+                  <doc_id>270</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, Melamed (2001) uses wordlevel alignments in order to learn translations of noncompositional compounds.</text>
+                  <doc_id>271</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Och and Ney (1999) learn phrase-to-phrase mappings involving word classes, which they call &#8220;templates&#8221;, and exploit them in a statistical machine translation system.</text>
+                  <doc_id>272</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>And Marcu (2001) extracts phrase translations from automatically aligned corpora and uses them in conjunction with a word-for-word statistical translation system.</text>
+                  <doc_id>273</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, none of these approaches learn simultaneously the translation of phrases/templates and the translation of words.</text>
+                  <doc_id>274</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As a consequence, there is a chance that the learning procedure will not discover phrase-level patterns that occur often in the data.</text>
+                  <doc_id>275</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In our approach, phrases are not treated differently from individual words, and as a consequence the likelihood of the EM algorithm converging to a better local maximum is increased.</text>
+                  <doc_id>276</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Working with phrase translations that are learned independent of a translation model can also affect the decoder performance.</text>
+                  <doc_id>277</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, in our previous work (Marcu, 2001), we have used a statistical translation memory of phrases in conjunction with a statistical translation model (Brown et al., 1993).</text>
+                  <doc_id>278</doc_id>
+                  <sec_id>8</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The phrases in the translation memory were automatically extracted from the Viterbi alignments produced by Giza (Al-Onaizan et al., 1999) and reused in decoding.</text>
+                  <doc_id>279</doc_id>
+                  <sec_id>9</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The decoder described in (Marcu, 2001) starts from a gloss that uses the translations in the translation memory and then tries to improve on the gloss translation by modifying it incrementally, in the style described in Section 4.</text>
+                  <doc_id>280</doc_id>
+                  <sec_id>10</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, because the decoder hill-climbs on a word-forword translation model probability, it often discards good phrasal translations in favour of word-for-word translations of higher probability.</text>
+                  <doc_id>281</doc_id>
+                  <sec_id>11</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The decoder in Section 4 does not have this problem because it hillclimbs on translation model probabilities in which phrases play a crucial role.</text>
+                  <doc_id>282</doc_id>
+                  <sec_id>12</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TET</source>
+        <caption>Table 1: Comparison of IBM and Phrase-Based, Joint Probability Models on a translation task.</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Model</cell>
+              <cell>Percent perfect translations</cell>
+              <cell>IBM Bleu score</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>Sentence length</cell>
+              <cell>Sentence length</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>6</cell>
+              <cell>8</cell>
+              <cell>10</cell>
+              <cell>15</cell>
+              <cell>20</cell>
+              <cell>Avg.</cell>
+              <cell>6</cell>
+              <cell>8</cell>
+              <cell>10</cell>
+              <cell>15</cell>
+              <cell>20</cell>
+              <cell>Avg.</cell>
+            </row>
+            <row>
+              <cell>IBM</cell>
+              <cell>36</cell>
+              <cell>26</cell>
+              <cell>35</cell>
+              <cell>11</cell>
+              <cell>2</cell>
+              <cell>22</cell>
+              <cell>0.2076</cell>
+              <cell>0.2040</cell>
+              <cell>0.2414</cell>
+              <cell>0.2248</cell>
+              <cell>0.2011</cell>
+              <cell>0.2158</cell>
+            </row>
+            <row>
+              <cell>Phrase-based</cell>
+              <cell>43</cell>
+              <cell>37</cell>
+              <cell>33</cell>
+              <cell>19</cell>
+              <cell>6</cell>
+              <cell>28</cell>
+              <cell>0.2574</cell>
+              <cell>0.2181</cell>
+              <cell>0.2435</cell>
+              <cell>0.2407</cell>
+              <cell>0.2028</cell>
+              <cell>0.2325</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Yaser Al-Onaizan</author>
+          <author>Jan Curin</author>
+          <author>Michael Jahr</author>
+          <author>Kevin Knight</author>
+          <author>John Lafferty</author>
+          <author>Dan Melamed</author>
+          <author>Franz-Josef Och</author>
+          <author>David Purdy</author>
+          <author>Noah A Smith</author>
+          <author>David Yarowsky</author>
+        </authors>
+        <title>Statistical machine translation. Final Report, JHU Summer Workshop.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>1999</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Peter F Brown</author>
+          <author>Stephen A Della Pietra</author>
+          <author>Vincent J Della Pietra</author>
+          <author>Robert L Mercer</author>
+        </authors>
+        <title>The mathematics of statistical machine translation: Parameter estimation.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>1993</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Philip Clarkson</author>
+          <author>Ronald Rosenfeld</author>
+        </authors>
+        <title>Statistical language modeling using the CMU-Cambridge toolkit.</title>
+        <publication>In Proceedings of Eurospeech,</publication>
+        <pages>None</pages>
+        <date>1997</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Al-Onaizan et al., 1999</string>
+        <sentence_id>39717</sentence_id>
+        <char_offset>60</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>0</reference_id>
+        <string>Al-Onaizan et al., 1999</string>
+        <sentence_id>39772</sentence_id>
+        <char_offset>113</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>1</reference_id>
+        <string>Brown et al., 1993</string>
+        <sentence_id>39496</sentence_id>
+        <char_offset>85</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>1</reference_id>
+        <string>Brown et al., 1993</string>
+        <sentence_id>39499</sentence_id>
+        <char_offset>80</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>1</reference_id>
+        <string>Brown et al., 1993</string>
+        <sentence_id>39512</sentence_id>
+        <char_offset>165</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>1</reference_id>
+        <string>Brown et al., 1993</string>
+        <sentence_id>39513</sentence_id>
+        <char_offset>17</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>1</reference_id>
+        <string>Brown et al., 1993</string>
+        <sentence_id>39525</sentence_id>
+        <char_offset>44</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>1</reference_id>
+        <string>Brown et al., 1993</string>
+        <sentence_id>39771</sentence_id>
+        <char_offset>159</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>2</reference_id>
+        <string>Clarkson and Rosenfeld, 1997</string>
+        <sentence_id>39714</sentence_id>
+        <char_offset>129</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

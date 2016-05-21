@@ -1,0 +1,875 @@
+<PAPER>
+  <FILENO/>
+  <TITLE></TITLE>
+  <AUTHORS/>
+  <ABSTRACT/>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-19477">The search space of Phrase-Based Statistical Machine Translation (PBSMT) systems has the form of a very large directed acyclic graph.</S>
+        <S ID="S-19478">In several softwares, an approximation of this search space can be outputted, either as a n-best list containing the n top hypotheses found by the decoder, or as a phrase or word graph (lattice) which compactly encodes those hypotheses that have survived search space pruning.</S>
+        <S ID="S-19479">Lattices usually contain much more hypotheses than n-best lists and better approximate the search space.</S>
+      </P>
+      <P>
+        <S ID="S-19480">Exploring the PBSMT search space is one of the few means to perform diagnostic analysis and to better understand the behavior of the system (Turchi et al., 2008; Auli et al., 2009).</S>
+        <S ID="S-19481">Useful diagnostics are, for instance, provided by looking at the best (oracle) hypotheses contained in the search space, i.e, those hypotheses that have the highest quality score with respect to one or several references.</S>
+        <S ID="S-19482">Such oracle hypotheses can be used for failure analysis and to better understand the bottlenecks of existing translation systems (Wisniewski et al., 2010).</S>
+        <S ID="S-19483">Indeed, the inability to faithfully reproduce reference translations can have many causes, such as scantiness of the translation table, insufficient expressiveness of reordering models, inadequate scoring function, non-literal references, over-pruned lattices, etc. Oracle decoding has several other applications: for instance, in (Liang et al., 2006; Chiang et al., 2008) it is used as a work-around to the problem of non-reachability of the reference in discriminative training of MT systems.</S>
+        <S ID="S-19484">Lattice reranking (Li and Khudanpur, 2009), a promising way to improve MT systems, also relies on oracle decoding to build the training data for a reranking algorithm.</S>
+      </P>
+      <P>
+        <S ID="S-19485">For sentence level metrics, finding oracle hypotheses in n-best lists is a simple issue; however, solving this problem on lattices proves much more challenging, due to the number of embedded hypotheses, which prevents the use of bruteforce approaches.</S>
+        <S ID="S-19486">When using BLEU, or rather sentence-level approximations thereof, the problem is in fact known to be NP-hard (Leusch et al., 2008).</S>
+        <S ID="S-19487">This complexity stems from the fact that the contribution of a given edge to the total modified n-gram precision can not be computed without looking at all other edges on the path.</S>
+        <S ID="S-19488">Similar (or worse) complexity result are expected</S>
+      </P>
+      <P>
+        <S ID="S-19489">for other metrics such as METEOR (Banerjee and Lavie, 2005) or TER (Snover et al., 2006).</S>
+        <S ID="S-19490">The exact computation of oracles under corpus level metrics, such as BLEU, poses supplementary combinatorial problems that will not be addressed in this work.</S>
+      </P>
+      <P>
+        <S ID="S-19491">In this paper, we present two original methods for finding approximate oracle hypotheses on lattices.</S>
+        <S ID="S-19492">The first one is based on a linear approximation of the corpus BLEU, that was originally designed for efficient Minimum Bayesian Risk decoding on lattices (Tromble et al., 2008).</S>
+        <S ID="S-19493">The second one, based on Integer Linear Programming, is an extension to lattices of a recent work on failure analysis for phrase-based decoders (Wisniewski et al., 2010).</S>
+        <S ID="S-19494">In this framework, we study two decoding strategies: one based on a generic ILP solver, and one, based on Lagrangian relaxation.</S>
+        <S ID="S-19495">Our contribution is also experimental as we compare the quality of the BLEU approximations and the time performance of these new approaches with several existing methods, for different language pairs and using the lattice generation capacities of two publicly-available state-of-theart phrase-based decoders: Moses 1 and N-code 2 .</S>
+      </P>
+      <P>
+        <S ID="S-19496">The rest of this paper is organized as follows.</S>
+        <S ID="S-19497">In Section 2, we formally define the oracle decoding task and recall the formalism of finite state automata on semirings.</S>
+        <S ID="S-19498">We then describe (Section 3) two existing approaches for solving this task, before detailing our new proposals in sections 4 and 5.</S>
+        <S ID="S-19499">We then report evaluations of the existing and new oracles on machine translation tasks.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Preliminaries</HEADER>
+      <P>
+        <S ID="S-19568"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Oracle Decoding Task</HEADER>
+        <P>
+          <S ID="S-19500">We assume that a phrase-based decoder is able to produce, for each source sentence f, a lattice L f = &#12296;Q, &#926;&#12297;, with # {Q} vertices (states) and # {&#926;} edges.</S>
+          <S ID="S-19501">Each edge carries a source phrase f i , an associated output phrase e i as well as a feature vector &#175;h i , the components of which encode various compatibility measures between f i and e i .</S>
+        </P>
+        <P>
+          <S ID="S-19502">We further assume that L f is a word lattice, meaning that each e i carries a single word 3 and</S>
+        </P>
+        <P>
+          <S ID="S-19503">1 http://www.statmt.org/moses/ 2 http://ncode.limsi.fr/ 3 Converting a phrase lattice to a word lattice is a simple</S>
+        </P>
+        <P>
+          <S ID="S-19504">matter of redistributing a compound input or output over a</S>
+        </P>
+        <P>
+          <S ID="S-19505">that it contains a unique initial state q 0 and a unique final state q F .</S>
+          <S ID="S-19506">Let &#928; f denote the set of all paths from q 0 to q F in L f .</S>
+          <S ID="S-19507">Each path &#960; &#8712; &#928; f corresponds to a possible translation e &#960; .</S>
+          <S ID="S-19508">The job of a (conventional) decoder is to find the best path(s) in L f using scores that combine the edges&#8217; feature vectors with the parameters &#175;&#955; learned during tuning.</S>
+          <S ID="S-19509">In oracle decoding, the decoder&#8217;s job is quite different, as we assume that at least a reference r f is provided to evaluate the quality of each individual hypothesis.</S>
+          <S ID="S-19510">The decoder therefore aims at finding the path &#960; &#8727; that generates the hypothesis that best matches r f .</S>
+          <S ID="S-19511">For this task, only the output labels e i will matter, the other informations can be left aside.</S>
+          <S ID="S-19512">4 Oracle decoding assumes the definition of a measure of the similarity between a reference and a hypothesis.</S>
+          <S ID="S-19513">In this paper we will consider sentence-level approximations of the popular BLEU score (Papineni et al., 2002).</S>
+          <S ID="S-19514">BLEU is formally defined for two parallel corpora, E = {e j } J j=1 and R = {r j} J j=1 , each containing J sentences as: (</S>
+        </P>
+        <P>
+          <S ID="S-19515">&#8719; n ) 1/n</S>
+        </P>
+        <P>
+          <S ID="S-19516">n-BLEU(E, R) = BP &#183; p m , (1)</S>
+        </P>
+        <P>
+          <S ID="S-19517">m=1</S>
+        </P>
+        <P>
+          <S ID="S-19518">where BP = min(1, e 1&#8722;c 1(R)/c 1 (E) ) is the brevity penalty and p m = c m (E, R)/c m (E) are clipped or modified m-gram precisions: c m (E) is the total number of word m-grams in E; c m (E, R) accumulates over sentences the number of m- grams in e j that also belong to r j .</S>
+          <S ID="S-19519">These counts are clipped, meaning that a m-gram that appears k times in E and l times in R, with k &gt; l, is only counted l times.</S>
+          <S ID="S-19520">As it is well known, BLEU performs a compromise between precision, which is directly appears in Equation (1), and recall, which is indirectly taken into account via the brevity penalty.</S>
+          <S ID="S-19521">In most cases, Equation (1) is computed with n = 4 and we use BLEU as a synonym for</S>
+        </P>
+        <P>
+          <S ID="S-19522">4-BLEU.</S>
+        </P>
+        <P>
+          <S ID="S-19523">BLEU is defined for a pair of corpora, but, as an</S>
+        </P>
+        <P>
+          <S ID="S-19524">oracle decoder is working at the sentence-level, it should rely on an approximation of BLEU that can</S>
+        </P>
+        <P>
+          <S ID="S-19525">linear chain of arcs.</S>
+          <S ID="S-19526">4 The algorithms described below can be straightforwardly generalized to compute oracle hypotheses under combined metrics mixing model scores and quality measures (Chiang et al., 2008), by weighting each edge with its model score and by using these weights down the pipe.</S>
+        </P>
+        <P>
+          <S ID="S-19527">evaluate the similarity between a single hypothesis and its reference.</S>
+          <S ID="S-19528">This approximation introduces a discrepancy as gathering sentences with the highest (local) approximation may not result in the highest possible (corpus-level) BLEU score.</S>
+          <S ID="S-19529">Let BLEU &#8242; be such a sentence-level approximation of BLEU.</S>
+          <S ID="S-19530">Then lattice oracle decoding is the task of finding an optimal path &#960; &#8727; (f) among all paths &#928; f for a given f, and amounts to the following optimization problem:</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Compromises of Oracle Decoding</HEADER>
+        <P>
+          <S ID="S-19531">As proved by Leusch et al. (2008), even with brevity penalty dropped, the problem of deciding whether a confusion network contains a hypothesis with clipped uni- and bigram precisions all equal to 1.0 is NP-complete (and so is the associated optimization problem of oracle decoding for 2-BLEU).</S>
+          <S ID="S-19532">The case of more general word and phrase lattices and 4-BLEU score is consequently also NP-complete.</S>
+          <S ID="S-19533">This complexity stems from chaining up of local unigram decisions that, due to the clipping constraints, have non-local effect on the bigram precision scores.</S>
+          <S ID="S-19534">It is consequently necessary to keep a possibly exponential number of non-recombinable hypotheses (characterized by counts for each n-gram in the reference) until very late states in the lattice.</S>
+        </P>
+        <P>
+          <S ID="S-19535">These complexity results imply that any oracle decoder has to waive either the form of the objective function, replacing BLEU with better-behaved scoring functions, or the exactness of the solution, relying on approximate heuristic search algorithms.</S>
+          <S ID="S-19536">In Table 1, we summarize different compromises that the existing (section 3), as well as our novel (sections 4 and 5) oracle decoders, have to make.</S>
+          <S ID="S-19537">The &#8220;target&#8221; and &#8220;target level&#8221; columns specify the targeted score.</S>
+          <S ID="S-19538">None of the decoders optimizes it directly: their objective function is rather the approximation of BLEU given in the &#8220;target replacement&#8221; column.</S>
+          <S ID="S-19539">Column &#8220;search&#8221; details the accuracy of the target replacement optimization.</S>
+          <S ID="S-19540">Finally, columns &#8220;clipping&#8221; and &#8220;brevity&#8221; indicate whether the corresponding properties of BLEU score are considered in the target substitute and in the search algorithm.</S>
+          <S ID="S-19541">2.3 Finite State Acceptors</S>
+        </P>
+        <P>
+          <S ID="S-19542">The implementations of the oracles described in the first part of this work (sections 3 and 4) use the common formalism of finite state acceptors (FSA) over different semirings and are implemented using the generic OpenFST toolbox (Allauzen et al., 2007).</S>
+        </P>
+        <P>
+          <S ID="S-19543">A (&#8853;, &#8855;)-semiring K over a set K is a system &#12296;K, &#8853;, &#8855;, &#175;0, &#175;1&#12297;, where &#12296;K, &#8853;, &#175;0&#12297; is a commutative monoid with identity element &#175;0, and &#12296;K, &#8855;, &#175;1&#12297; is a monoid with identity element &#175;1.</S>
+          <S ID="S-19544">&#8855; distributes over &#8853;, so that a &#8855; (b &#8853; c) = (a &#8855; b) &#8853; (a &#8855; c) and (b &#8853; c) &#8855; a = (b &#8855; a) &#8853; (c &#8855; a) and element &#175;0 annihilates K (a &#8855; &#175;0 = &#175;0 &#8855; a = &#175;0).</S>
+        </P>
+        <P>
+          <S ID="S-19545">Let A = (&#931;, Q, I, F, E) be a weighted finitestate acceptor with labels in &#931; and weights in K, meaning that the transitions (q, &#963;, q &#8242; ) in A carry a weight w &#8712; K. Formally, E is a mapping from (Q &#215; &#931; &#215; Q) into K; likewise, initial I and final weight F functions are mappings from Q into K.</S>
+          <S ID="S-19546">We borrow the notations of Mohri (2009): if &#958; = (q, a, q &#8242; ) is a transition in domain(E), p(&#958;) = q (resp.</S>
+          <S ID="S-19547">n(&#958;) = q &#8242; ) denotes its origin (resp.</S>
+          <S ID="S-19548">destination) state, w(&#958;) = &#963; its label and E(&#958;) its weight.</S>
+          <S ID="S-19549">These notations extend to paths: if &#960; is a path in A, p(&#960;) (resp.</S>
+          <S ID="S-19550">n(&#960;)) is its initial (resp.</S>
+          <S ID="S-19551">ending) state and w(&#960;) is the label along the path.</S>
+          <S ID="S-19552">A finite state transducer (FST) is an FSA with output alphabet, so that each transition carries a pair of input/output symbols.</S>
+        </P>
+        <P>
+          <S ID="S-19553">As discussed in Sections 3 and 4, several oracle decoding algorithms can be expressed as shortestpath problems, provided a suitable definition of the underlying acceptor and associated semiring.</S>
+          <S ID="S-19554">In particular, quantities such as: &#8853;</S>
+        </P>
+        <P>
+          <S ID="S-19555">E(&#960;), (3)</S>
+        </P>
+        <P>
+          <S ID="S-19556">&#960;&#8712;&#928;(A)</S>
+        </P>
+        <P>
+          <S ID="S-19557">where the total weight of a successful path &#960; = &#958; 1 .</S>
+          <S ID="S-19558">.</S>
+          <S ID="S-19559">.</S>
+          <S ID="S-19560">&#958; l in A is computed as:</S>
+        </P>
+        <P>
+          <S ID="S-19561">E(&#960;) =I(p(&#958; 1 )) &#8855; [</S>
+        </P>
+        <P>
+          <S ID="S-19562">l &#8855;</S>
+        </P>
+        <P>
+          <S ID="S-19563">i=1</S>
+        </P>
+        <P>
+          <S ID="S-19564">E(&#958; i ) ] &#8855; F (n(&#958; l ))</S>
+        </P>
+        <P>
+          <S ID="S-19565">can be efficiently found by generic shortest distance algorithms over acyclic graphs (Mohri, 2002).</S>
+          <S ID="S-19566">For FSA-based implementations over semirings where &#8853; = max, the optimization problem (2) is thus reduced to Equation (3), while the oracle-specific details can be incorporated into in the definition of &#8855;.</S>
+        </P>
+        <P>
+          <S ID="S-19567">existing this paper oracle target target level target replacement search clipping brevity</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Existing Algorithms</HEADER>
+      <P>
+        <S ID="S-19601">In this section, we describe our reimplementation of two approximate search algorithms that have been proposed in the literature to solve the oracle decoding problem for BLEU.</S>
+        <S ID="S-19602">In addition to their approximate nature, none of them accounts for the fact that the count of each matching word has to be clipped.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Language Model Oracle (LM)</HEADER>
+        <P>
+          <S ID="S-19569">The simplest approach we consider is introduced in (Li and Khudanpur, 2009), where oracle decoding is reduced to the problem of finding the most likely hypothesis under a n-gram language model trained with the sole reference translation.</S>
+        </P>
+        <P>
+          <S ID="S-19570">Let us suppose we have a n-gram language model that gives a probability P (e n |e 1 .</S>
+          <S ID="S-19571">.</S>
+          <S ID="S-19572">.</S>
+          <S ID="S-19573">e n&#8722;1 ) of word e n given the n &#8722; 1 previous words.</S>
+          <S ID="S-19574">The probability of a hypothesis e is then P n (e|r) = &#8719; i=1 P (e i+n|e i .</S>
+          <S ID="S-19575">.</S>
+          <S ID="S-19576">.</S>
+          <S ID="S-19577">e i+n&#8722;1 ).</S>
+          <S ID="S-19578">The language model can conveniently be represented as a FSA A LM , with each arc carrying a negative logprobability weight and with additional &#961;-type failure transitions to accommodate for back-off arcs.</S>
+        </P>
+        <P>
+          <S ID="S-19579">If we train, for each source sentence f, a separate language model A LM (r f ) using only the reference r f , oracle decoding amounts to finding a shortest (most probable) path in the weighted FSA resulting from the composition L &#9702; A LM (r f ) over the (min, +)-semiring:</S>
+        </P>
+        <P>
+          <S ID="S-19580">&#960; &#8727; LM(f) = ShortestPath(L &#9702; A LM (r f )).</S>
+          <S ID="S-19581">This approach replaces the optimization of n-</S>
+        </P>
+        <P>
+          <S ID="S-19582">BLEU with a search for the most probable path</S>
+        </P>
+        <P>
+          <S ID="S-19583">under a simplistic n-gram language model.</S>
+          <S ID="S-19584">One may expect the most probable path to select frequent n-gram from the reference, thus augmenting n-BLEU.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Partial BLEU Oracle (PB)</HEADER>
+        <P>
+          <S ID="S-19585">Another approach is put forward in (Dreyer et al., 2007) and used in (Li and Khudanpur, 2009): oracle translations are shortest paths in a lattice L, where the weight of each path &#960; is the sentence level log BLEU(&#960;) score of the corresponding complete or partial hypothesis:</S>
+        </P>
+        <P>
+          <S ID="S-19586">log BLEU(&#960;) = 1 4 &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19587">m=1...4</S>
+        </P>
+        <P>
+          <S ID="S-19588">log p m .</S>
+          <S ID="S-19589">(4)</S>
+        </P>
+        <P>
+          <S ID="S-19590">Here, the brevity penalty is ignored and n- gram precisions are offset to avoid null counts: p m = (c m (e &#960; , r) + 0.1)/(c m (e &#960; ) + 0.1).</S>
+          <S ID="S-19591">This approach has been reimplemented using the FST formalism by defining a suitable semiring.</S>
+          <S ID="S-19592">Let each weight of the semiring keep a set of tuples accumulated up to the current state of the lattice.</S>
+          <S ID="S-19593">Each tuple contains three words of recent history, a partial hypothesis as well as current values of the length of the partial hypothesis, n- gram counts (4 numbers) and the sentence-level log BLEU score defined by Equation (4).</S>
+          <S ID="S-19594">In the beginning each arc is initialized with a singleton set containing one tuple with a single word as the partial hypothesis.</S>
+          <S ID="S-19595">For the semiring operations we define one common &#8855;-operation and two versions of the &#8853;-operation: &#8226; L 1 &#8855; P B L 2 &#8211; appends a word on the edge of L 2 to L 1 &#8217;s hypotheses, shifts their recent histories and updates n-gram counts, lengths, and current score; &#8226; L 1 &#8853; P B L 2 &#8211; merges all sets from L 1 and L 2 and recombinates those having the same recent history; &#8226; L 1 &#8853; P Bl L 2 &#8211; merges all sets from L 1 and L 2 and recombinates those having the same recent history and the same hypothesis length.</S>
+        </P>
+        <P>
+          <S ID="S-19596">If several hypotheses have the same recent history (and length in the case of &#8853; P Bl ), recombination removes all of them, but the one</S>
+        </P>
+        <P>
+          <S ID="S-19597">(a) &#8710; 1 (b) &#8710; 2 (c) &#8710; 3</S>
+        </P>
+        <P>
+          <S ID="S-19598">with the largest current BLEU score.</S>
+          <S ID="S-19599">Optimal path is then found by launching the generic ShortestDistance(L) algorithm over one of the semirings above.</S>
+        </P>
+        <P>
+          <S ID="S-19600">The (&#8853; P Bl , &#8855; P B )-semiring, in which the equal length requirement also implies equal brevity penalties, is more conservative in recombining hypotheses and should achieve final BLEU that is least as good as that obtained with the (&#8853; P B , &#8855; P B )-semiring 5 .</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Linear BLEU Oracle (LB)</HEADER>
+      <P>
+        <S ID="S-19603">In this section, we propose a new oracle based on the linear approximation of the corpus BLEU introduced in (Tromble et al., 2008).</S>
+        <S ID="S-19604">While this approximation was earlier used for Minimum Bayes Risk decoding in lattices (Tromble et al., 2008; Blackwood et al., 2010), we show here how it can also be used to approximately compute an oracle translation.</S>
+      </P>
+      <P>
+        <S ID="S-19605">Given five real parameters &#952; 0...4 and a word vocabulary &#931;, Tromble et al. (2008) showed that one can approximate the corpus-BLEU with its firstorder (linear) Taylor expansion:</S>
+      </P>
+      <P>
+        <S ID="S-19606">4&#8721; &#8721; lin BLEU(&#960;) = &#952; 0 |e &#960; |+ &#952; n c u (e &#960; )&#948; u (r),</S>
+      </P>
+      <P>
+        <S ID="S-19607">n=1 u&#8712;&#931; n (5)</S>
+      </P>
+      <P>
+        <S ID="S-19608">where c u (e) is the number of times the n-gram u appears in e, and &#948; u (r) is an indicator variable testing the presence of u in r.</S>
+      </P>
+      <P>
+        <S ID="S-19609">To exploit this approximation for oracle decoding, we construct four weighted FSTs &#8710; n containing a (final) state for each possible (n &#8722; 1)-</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 See, however, experiments in Section 6.</HEADER>
+      <P>
+        <S ID="S-19752">gram, and all weighted transitions of the kind (&#963;1 n&#8722;1 , &#963; n : &#963;1 n/&#952; n &#215; &#948; &#963; n</S>
+      </P>
+      <P>
+        <S ID="S-19753">(r), &#963;2 n ), where &#963;s are in &#931;, input word sequence &#963;1 n&#8722;1 and output sequence &#963;2 n , are, respectively, the maximal prefix and suffix of an n-gram &#963;1 n.</S>
+        <S ID="S-19754">In supplement, we add auxiliary states corresponding to m-grams (m &lt; n &#8722; 1), whose functional purpose is to help reach one of the main (n &#8722; 1)-gram states.</S>
+        <S ID="S-19755">There are |&#931;|n&#8722;1 &#8722;1</S>
+      </P>
+      <P>
+        <S ID="S-19756">|&#931;|&#8722;1 , n &gt; 1,</S>
+      </P>
+      <P>
+        <S ID="S-19757">such supplementary states and their transitions are (&#963;1 k, &#963; k+1 : &#963;1 k+1 /0, &#963;1 k+1 ), k = 1 .</S>
+        <S ID="S-19758">.</S>
+        <S ID="S-19759">.</S>
+        <S ID="S-19760">n&#8722;2.</S>
+        <S ID="S-19761">Apart from these auxiliary states, the rest of the graph (i.e., all final states) reproduces the structure of the well-known de Bruijn graph B(&#931;, n) (see Figure 1).</S>
+        <S ID="S-19762">To actually compute the best hypothesis, we first weight all arcs in the input FSA L with &#952; 0 to obtain &#8710; 0 .</S>
+        <S ID="S-19763">This makes each word&#8217;s weight equal in a hypothesis path, and the total weight of the path in &#8710; 0 is proportional to the number of words in it.</S>
+        <S ID="S-19764">Then, by sequentially composing &#8710; 0 with other &#8710; n s, we discount arcs whose output n-gram corresponds to a matching n-gram.</S>
+        <S ID="S-19765">The amount of discount is regulated by the ratio between &#952; n &#8217;s for n &gt; 0.</S>
+      </P>
+      <P>
+        <S ID="S-19766">With all operations performed over the (min, +)-semiring, the oracle translation is then given by:</S>
+      </P>
+      <P>
+        <S ID="S-19767">&#960; &#8727; LB = ShortestPath(&#8710; 0 &#9702;&#8710; 1 &#9702;&#8710; 2 &#9702;&#8710; 3 &#9702;&#8710; 4 ).</S>
+      </P>
+      <P>
+        <S ID="S-19768">We set parameters &#952; n as in (Tromble et al., 2008): &#952; 0 = 1, roughly corresponding to the brevity penalty (each word in a hypothesis adds up equally to the final path length) and &#952; n = &#8722;(4p &#183; r n&#8722;1 ) &#8722;1 , which are increasing discounts</S>
+      </P>
+      <P>
+        <S ID="S-19769">for matching n-grams.</S>
+        <S ID="S-19770">The values of p and r were found by grid search with a 0.05 step value.</S>
+        <S ID="S-19771">A typical result of the grid evaluation of the LB oracle for German to English WMT&#8217;11 task is displayed on Figure 2.</S>
+        <S ID="S-19772">The optimal values for the other pairs of languages were roughly in the same ballpark, with p &#8776; 0.3 and r &#8776; 0.2.</S>
+      </P>
+      <P>
+        <S ID="S-19773">5 Oracles with n-gram Clipping</S>
+      </P>
+      <P>
+        <S ID="S-19774">In this section, we describe two new oracle decoders that take n-gram clipping into account.</S>
+        <S ID="S-19775">These oracles leverage on the well-known fact that the shortest path problem, at the heart of all the oracles described so far, can be reduced straightforwardly to an Integer Linear Programming (ILP) problem (Wolsey, 1998).</S>
+        <S ID="S-19776">Once oracle decoding is formulated as an ILP problem, it is relatively easy to introduce additional constraints, for instance to enforce n-gram clipping.</S>
+        <S ID="S-19777">We will first describe the optimization problem of oracle decoding and then present several ways to efficiently solve it.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Problem Description</HEADER>
+        <P>
+          <S ID="S-19610">Throughout this section, abusing the notations, we will also think of an edge &#958; i as a binary variable describing whether the edge is &#8220;selected&#8221; or not.</S>
+          <S ID="S-19611">The set {0, 1} #{&#926;} of all possible edge assignments will be denoted by P.</S>
+          <S ID="S-19612">Note that &#928;, the set of all paths in the lattice is a subset of P: by enforcing some constraints on an assignment &#958; in P, it can be guaranteed that it will represent a path in the lattice.</S>
+          <S ID="S-19613">For the sake of presentation, we assume that each edge &#958; i generates a single word w(&#958; i ) and we focus first on finding the optimal hypothesis with respect to the sentence approximation of the 1-BLEU score.</S>
+          <S ID="S-19614">As 1-BLEU is decomposable, it is possible to where &#920; 1 and &#920; 2 are two positive constants chosen to maximize the corpus BLEU score 6 .</S>
+          <S ID="S-19615">Constant &#920; 1 (resp.</S>
+          <S ID="S-19616">&#920; 2 ) is a reward (resp.</S>
+          <S ID="S-19617">a penalty) for generating a word in the reference (resp.</S>
+          <S ID="S-19618">not in the reference).</S>
+          <S ID="S-19619">The score of an assignment &#958; &#8712; P is then defined as: score(&#958;) = &#8721; #{&#926;}</S>
+        </P>
+        <P>
+          <S ID="S-19620">i=1</S>
+        </P>
+        <P>
+          <S ID="S-19621">&#958; i &#183; &#952; i .</S>
+          <S ID="S-19622">This score can be seen as a compromise between the number of common words in the hypothesis and the reference (accounting for recall) and the number of words of the hypothesis that do not appear in the reference (accounting for precision).</S>
+          <S ID="S-19623">As explained in Section 2.3, finding the oracle hypothesis amounts to solving the shortest distance (or path) problem (3), which can be reformulated by a constrained optimization problem (Wolsey, 1998):</S>
+        </P>
+        <P>
+          <S ID="S-19624">#{&#926;}</S>
+        </P>
+        <P>
+          <S ID="S-19625">&#8721; arg max &#958; i &#183; &#952; i (6)</S>
+        </P>
+        <P>
+          <S ID="S-19626">&#958;&#8712;P</S>
+        </P>
+        <P>
+          <S ID="S-19627">i=1</S>
+        </P>
+        <P>
+          <S ID="S-19628">s.t.</S>
+          <S ID="S-19629">&#8721; &#8721; &#958; = 1, &#958; = 1</S>
+        </P>
+        <P>
+          <S ID="S-19630">&#958;&#8712;&#926; &#8722; (q F )</S>
+        </P>
+        <P>
+          <S ID="S-19631">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19632">&#958;&#8712;&#926; + (q)</S>
+        </P>
+        <P>
+          <S ID="S-19633">&#958; &#8722;</S>
+        </P>
+        <P>
+          <S ID="S-19634">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19635">&#958;&#8712;&#926; &#8722; (q)</S>
+        </P>
+        <P>
+          <S ID="S-19636">&#958;&#8712;&#926; + (q 0 )</S>
+        </P>
+        <P>
+          <S ID="S-19637">&#958; = 0, q &#8712; Q\{q 0 , q F }</S>
+        </P>
+        <P>
+          <S ID="S-19638">where q 0 (resp.</S>
+          <S ID="S-19639">q F ) is the initial (resp.</S>
+          <S ID="S-19640">final) state of the lattice and &#926; &#8722; (q) (resp.</S>
+          <S ID="S-19641">&#926; + (q)) denotes the set of incoming (resp.</S>
+          <S ID="S-19642">outgoing) edges of state q.</S>
+          <S ID="S-19643">These path constraints ensure that the solution of the problem is a valid path in the lattice.</S>
+        </P>
+        <P>
+          <S ID="S-19644">The optimization problem in Equation (6) can be further extended to take clipping into account.</S>
+          <S ID="S-19645">Let us introduce, for each word w, a variable &#947; w that denotes the number of times w appears in the hypothesis clipped to the number of times, it appears in the reference.</S>
+          <S ID="S-19646">Formally, &#947; w is defined by: &#9127; &#9131; &#9128; &#8721; &#9132; &#947; w = min &#958;, c w (r) &#9129; &#9133;</S>
+        </P>
+        <P>
+          <S ID="S-19647">&#958;&#8712;&#937;(w)</S>
+        </P>
+        <P>
+          <S ID="S-19648">6 We tried several combinations of &#920; 1 and &#920; 2 and kept</S>
+        </P>
+        <P>
+          <S ID="S-19649">the one that had the highest corpus 4-BLEU score.</S>
+        </P>
+        <P>
+          <S ID="S-19650">where &#937; (w) is the subset of edges generating w, and &#8721; &#958;&#8712;&#937;(w) &#958; is the number of occurrences of w in the solution and c w (r) is the number of occurrences of w in the reference r.</S>
+          <S ID="S-19651">Using the &#947; variables, we define a &#8220;clipped&#8221; approximation of</S>
+        </P>
+        <P>
+          <S ID="S-19652">1-BLEU:</S>
+        </P>
+        <P>
+          <S ID="S-19653">&#9115;</S>
+        </P>
+        <P>
+          <S ID="S-19654">&#920; 1 &#183; &#8721; #{&#926;} &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19655">&#947; w &#8722; &#920; 2 &#183; &#9117; &#958; i &#8722; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19656">w w i=1</S>
+        </P>
+        <P>
+          <S ID="S-19657">&#947; w</S>
+        </P>
+        <P>
+          <S ID="S-19658">Indeed, the clipped number of words in the hypothesis that appear in the reference is given by</S>
+        </P>
+        <P>
+          <S ID="S-19659">&#8721;w &#947; w, and &#8721; #{&#926;} i=1</S>
+        </P>
+        <P>
+          <S ID="S-19660">&#958; i &#8722; &#8721; w &#947; w corresponds to the number of words in the hypothesis that do not appear in the reference or that are surplus to the clipped count.</S>
+        </P>
+        <P>
+          <S ID="S-19661">Finally, the clipped lattice oracle is defined by the following optimization problem:</S>
+        </P>
+        <P>
+          <S ID="S-19662">arg max</S>
+        </P>
+        <P>
+          <S ID="S-19663">&#958;&#8712;P,&#947; w</S>
+        </P>
+        <P>
+          <S ID="S-19664">(&#920; 1 + &#920; 2 ) &#183; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19665">w</S>
+        </P>
+        <P>
+          <S ID="S-19666">&#9118;</S>
+        </P>
+        <P>
+          <S ID="S-19667">&#9120;</S>
+        </P>
+        <P>
+          <S ID="S-19668">#{&#926;}</S>
+        </P>
+        <P>
+          <S ID="S-19669">&#8721; &#947; w &#8722; &#920; 2 &#183;</S>
+        </P>
+        <P>
+          <S ID="S-19670">s.t.</S>
+          <S ID="S-19671">&#947; w &#8805; 0, &#947; w &#8804; c w (r), &#947; w &#8804; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19672">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19673">&#958;&#8712;&#926; &#8722; (q F )</S>
+        </P>
+        <P>
+          <S ID="S-19674">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19675">&#958;&#8712;&#926; + (q)</S>
+        </P>
+        <P>
+          <S ID="S-19676">&#958; = 1,</S>
+        </P>
+        <P>
+          <S ID="S-19677">&#958; &#8722;</S>
+        </P>
+        <P>
+          <S ID="S-19678">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19679">&#958;&#8712;&#926; + (q 0 )</S>
+        </P>
+        <P>
+          <S ID="S-19680">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19681">&#958;&#8712;&#926; &#8722; (q)</S>
+        </P>
+        <P>
+          <S ID="S-19682">&#958; = 1</S>
+        </P>
+        <P>
+          <S ID="S-19683">&#958;&#8712;&#937;(w)</S>
+        </P>
+        <P>
+          <S ID="S-19684">i=1</S>
+        </P>
+        <P>
+          <S ID="S-19685">&#958;</S>
+        </P>
+        <P>
+          <S ID="S-19686">&#958; i</S>
+        </P>
+        <P>
+          <S ID="S-19687">(7)</S>
+        </P>
+        <P>
+          <S ID="S-19688">&#958; = 0, q &#8712; Q \ {q 0 , q F }</S>
+        </P>
+        <P>
+          <S ID="S-19689">where the first three sets of constraints are the linearization of the definition of &#947; w , made possible by the positivity of &#920; 1 and &#920; 2 , and the last three sets of constraints are the path constraints.</S>
+        </P>
+        <P>
+          <S ID="S-19690">In our implementation we generalized this optimization problem to bigram lattices, in which each edge is labeled by the bigram it generates.</S>
+          <S ID="S-19691">Such bigram FSAs can be produced by composing the word lattice with &#8710; 2 from Section 4.</S>
+          <S ID="S-19692">In this case, the reward of an edge will be defined as a combination of the (clipped) number of unigram matches and bigram matches, and solving the optimization problem yields a 2-BLEU optimal hypothesis.</S>
+          <S ID="S-19693">The approach can be further generalized to higher-order BLEU or other metrics, as long as the reward of an edge can be computed locally.</S>
+          <S ID="S-19694">The constrained optimization problem (7) can be solved efficiently using off-the-shelf ILP solvers 7 .</S>
+        </P>
+        <P>
+          <S ID="S-19695">7 In our experiments we used Gurobi (Optimization,</S>
+        </P>
+        <P>
+          <S ID="S-19696">2010) a commercial ILP solver that offers free academic license.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Shortest Path Oracle (SP)</HEADER>
+        <P>
+          <S ID="S-19697">As a trivial special class of the above formulation, we also define a Shortest Path Oracle (SP) that solves the optimization problem in (6).</S>
+          <S ID="S-19698">As no clipping constraints apply, it can be solved efficiently using the standard Bellman algorithm.</S>
+        </P>
+        <P>
+          <S ID="S-19699">5.3 Oracle Decoding through Lagrangian Relaxation (RLX)</S>
+        </P>
+        <P>
+          <S ID="S-19700">In this section, we introduce another method to solve problem (7) without relying on an external ILP solver.</S>
+          <S ID="S-19701">Following (Rush et al., 2010; Chang and Collins, 2011), we propose an original method for oracle decoding based on Lagrangian relaxation.</S>
+          <S ID="S-19702">This method relies on the idea of relaxing the clipping constraints: starting from an unconstrained problem, the counts clipping is enforced by incrementally strengthening the weight of paths satisfying the constraints.</S>
+        </P>
+        <P>
+          <S ID="S-19703">The oracle decoding problem with clipping constraints amounts to solving:</S>
+        </P>
+        <P>
+          <S ID="S-19704">arg min</S>
+        </P>
+        <P>
+          <S ID="S-19705">&#958;&#8712;&#928;</S>
+        </P>
+        <P>
+          <S ID="S-19706">s.t.</S>
+        </P>
+        <P>
+          <S ID="S-19707">#{&#926;}</S>
+        </P>
+        <P>
+          <S ID="S-19708">&#8721; &#8722;</S>
+        </P>
+        <P>
+          <S ID="S-19709">i=1</S>
+        </P>
+        <P>
+          <S ID="S-19710">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19711">&#958;&#8712;&#937;(w)</S>
+        </P>
+        <P>
+          <S ID="S-19712">&#958; i &#183; &#952; i (8)</S>
+        </P>
+        <P>
+          <S ID="S-19713">&#958; &#8804; c w (r), w &#8712; r</S>
+        </P>
+        <P>
+          <S ID="S-19714">where, by abusing the notations, r also denotes the set of words in the reference.</S>
+          <S ID="S-19715">For sake of clarity, the path constraints are incorporated into the domain (the arg min runs over &#928; and not over P).</S>
+          <S ID="S-19716">To solve this optimization problem we consider its dual form and use Lagrangian relaxation to deal with clipping constraints.</S>
+        </P>
+        <P>
+          <S ID="S-19717">Let &#955; = {&#955; w } w&#8712;r be positive Lagrange multipliers, one for each different word of the reference, then the Lagrangian of the problem (8) is:</S>
+        </P>
+        <P>
+          <S ID="S-19718">#{&#926;}</S>
+        </P>
+        <P>
+          <S ID="S-19719">&#8721; L(&#955;, &#958;) = &#8722; &#958; i &#952; i + &#8721; &#955; w &#9117; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19720">w&#8712;r i=1</S>
+        </P>
+        <P>
+          <S ID="S-19721">&#9115;</S>
+        </P>
+        <P>
+          <S ID="S-19722">&#958;&#8712;&#937;(w)</S>
+        </P>
+        <P>
+          <S ID="S-19723">&#9118;</S>
+        </P>
+        <P>
+          <S ID="S-19724">&#958; &#8722; c w (r) &#9120;</S>
+        </P>
+        <P>
+          <S ID="S-19725">The dual objective is L(&#955;) = min &#958; L(&#955;, &#958;) and the dual problem is: max &#955;,&#955;&#8829;0 L(&#955;).</S>
+          <S ID="S-19726">To solve the latter, we first need to work out the dual objective:</S>
+        </P>
+        <P>
+          <S ID="S-19727">&#958; &#8727; = arg min L(&#955;, &#958;)</S>
+        </P>
+        <P>
+          <S ID="S-19728">&#958;&#8712;&#928;</S>
+        </P>
+        <P>
+          <S ID="S-19729">#{&#926;}</S>
+        </P>
+        <P>
+          <S ID="S-19730">&#8721; ( ) = arg min &#958; i &#955;w(&#958;i ) &#8722; &#952; i</S>
+        </P>
+        <P>
+          <S ID="S-19731">&#958;&#8712;&#928; i=1</S>
+        </P>
+        <P>
+          <S ID="S-19732">where we assume that &#955; w(&#958;i ) is 0 when word w(&#958; i ) is not in the reference.</S>
+          <S ID="S-19733">In the same way as in Section 5.2, the solution of this problem can be efficiently retrieved with a shortest path algorithm.</S>
+        </P>
+        <P>
+          <S ID="S-19734">It is possible to optimize L(&#955;) by noticing that it is a concave function.</S>
+          <S ID="S-19735">It can be shown (Chang and Collins, 2011) that, at convergence, the clipping constraints will be enforced in the optimal solution.</S>
+          <S ID="S-19736">In this work, we chose to use a simple gradient descent to solve the dual problem.</S>
+          <S ID="S-19737">A subgradient of the dual objective is:</S>
+        </P>
+        <P>
+          <S ID="S-19738">&#8706;L(&#955;) &#8706;&#955; w = &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-19739">&#958;&#8712;&#937;(w)&#8745;&#958; &#8727; &#958; &#8722; c w (r).</S>
+        </P>
+        <P>
+          <S ID="S-19740">Each component of the gradient corresponds to the difference between the number of times the word w appears in the hypothesis and the number of times it appears in the reference.</S>
+          <S ID="S-19741">The algorithm below sums up the optimization of task (8).</S>
+          <S ID="S-19742">In the algorithm &#945; (t) corresponds to the step size at the t th iteration.</S>
+          <S ID="S-19743">In our experiments we used a constant step size of 0.1.</S>
+          <S ID="S-19744">Compared to the usual gradient descent algorithm, there is an additional projection step of &#955; on the positive orthant, which enforces the constraint &#955; &#8829; 0.</S>
+        </P>
+        <P>
+          <S ID="S-19745">&#8704;w, &#955; (0) w &#8592; 0 for t = 1 &#8594; T do</S>
+        </P>
+        <P>
+          <S ID="S-19746">&#958; &#8727;(t) &#8721; = arg min &#958; i &#958; i &#183; (&#955; )</S>
+        </P>
+        <P>
+          <S ID="S-19747">w(&#958;i ) &#8722; &#952; i</S>
+        </P>
+        <P>
+          <S ID="S-19748">if all clipping constraints are enforced then optimal solution found else for w &#8712; r do</S>
+        </P>
+        <P>
+          <S ID="S-19749">n w &#8592; n.</S>
+          <S ID="S-19750">of occurrences of w in &#958; &#8727;(t) &#955; (t) w &#955; (t) w</S>
+        </P>
+        <P>
+          <S ID="S-19751">&#8592; &#955; (t) w</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Experiments</HEADER>
+      <P>
+        <S ID="S-19778">+ &#945; (t) &#183; (n w &#8722; c w (r)) &#8592; max(0, &#955; (t) w )</S>
+      </P>
+      <P>
+        <S ID="S-19779">For the proposed new oracles and the existing approaches, we compare the quality of oracle translations and the average time per sentence needed to compute them 8 on several datasets for 3 language pairs, using lattices generated by two opensource decoders: N-code and Moses 9 (Figures 3</S>
+      </P>
+      <P>
+        <S ID="S-19780">8 Experiments were run in parallel on a server with 64G</S>
+      </P>
+      <P>
+        <S ID="S-19781">of RAM and 2 Xeon CPUs with 4 cores at 2.3 GHz.</S>
+        <S ID="S-19782">9 As the ILP (and RLX) oracle were implemented in</S>
+      </P>
+      <P>
+        <S ID="S-19783">Python, we pruned Moses lattices to accelerate task preparation for it.</S>
+      </P>
+      <P>
+        <S ID="S-19784">test oracle decoder fr2en de2en en2de</S>
+      </P>
+      <P>
+        <S ID="S-19785">and 4).</S>
+        <S ID="S-19786">Systems were trained on the data provided for the WMT&#8217;11 Evaluation task 10 , tuned on the WMT&#8217;09 test data and evaluated on WMT&#8217;10 test set 11 to produce lattices.</S>
+        <S ID="S-19787">The BLEU test scores and oracle scores on 100-best lists with the approximation (4) for N-code and Moses are given in Table 2.</S>
+        <S ID="S-19788">It is not until considering 10,000-best lists that n-best oracles achieve performance comparable to the (mediocre) SP oracle.</S>
+      </P>
+      <P>
+        <S ID="S-19789">To make a fair comparison with the ILP and RLX oracles which optimize 2-BLEU, we included 2-BLEU versions of the LB and LM oracles, identified below with the &#8220;-2g&#8221; suffix.</S>
+        <S ID="S-19790">The two versions of the PB oracle are respectively denoted as PB and PBl, by the type of the &#8853;- operation they consider (Section 3.2).</S>
+        <S ID="S-19791">Parameters p and r for the LB-4g oracle for N-code were found with grid search and reused for Moses: p = 0.25, r = 0.15 (fr2en); p = 0.175, r = 0.575 (en2de) and p = 0.35, r = 0.425 (de2en).</S>
+        <S ID="S-19792">Correspondingly, for the LB-2g oracle: p = 0.3, r = 0.15; p = 0.3, r = 0.175 and p = 0.575, r = 0.1.</S>
+      </P>
+      <P>
+        <S ID="S-19793">The proposed LB, ILP and RLX oracles were the best performing oracles, with the ILP and RLX oracles being considerably faster, suffering only a negligible decrease in BLEU, compared to the 4-BLEU-optimized LB oracle.</S>
+        <S ID="S-19794">We stopped RLX oracle after 20 iterations, as letting it converge had a small negative effect (&#8764;1 point of the corpus BLEU), because of the sentence/corpus discrepancy ushered by the BLEU score approximation.</S>
+        <S ID="S-19795">Experiments showed consistently inferior performance of the LM-oracle resulting from the optimization of the sentence probability rather than</S>
+      </P>
+      <P>
+        <S ID="S-19796">BLEU.</S>
+        <S ID="S-19797">The PB oracle often performed comparably to our new oracles, however, with sporadic resource-consumption bursts, that are difficult to</S>
+      </P>
+      <P>
+        <S ID="S-19798">10 http://www.statmt.org/wmt2011 11 All BLEU scores are reported using the multi-bleu.pl</S>
+      </P>
+      <P>
+        <S ID="S-19799">script.</S>
+      </P>
+      <P>
+        <S ID="S-19800">avoid without more cursory hypotheses recombination strategies and the induced effect on the translations quality.</S>
+        <S ID="S-19801">The length-aware PBl oracle has unexpectedly poorer scores compared to its length-agnostic PB counterpart, while it should, at least, stay even, as it takes the brevity penalty into account.</S>
+        <S ID="S-19802">We attribute this fact to the complex effect of clipping coupled with the lack of control of the process of selecting one hypothesis among several having the same BLEU score, length and recent history.</S>
+        <S ID="S-19803">Anyhow, BLEU scores of both of PB oracles are only marginally different, so the PBl&#8217;s conservative policy of pruning and, consequently, much heavier memory consumption makes it an unwanted choice.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion</HEADER>
+      <P>
+        <S ID="S-19804">We proposed two methods for finding oracle translations in lattices, based, respectively, on a linear approximation to the corpus-level BLEU and on integer linear programming techniques.</S>
+        <S ID="S-19805">We also proposed a variant of the latter approach based on Lagrangian relaxation that does not rely on a third-party ILP solver.</S>
+        <S ID="S-19806">All these oracles have superior performance to existing approaches, in terms of the quality of the found translations, resource consumption and, for the LB-2g oracles, in terms of speed.</S>
+        <S ID="S-19807">It is thus possible to use better approximations of BLEU than was previously done, taking the corpus-based nature of BLEU, or clipping constrainst into account, delivering better oracles without compromising speed.</S>
+      </P>
+      <P>
+        <S ID="S-19808">Using 2-BLEU and 4-BLEU oracles yields comparable performance, which confirms the intuition that hypotheses sharing many 2-grams, would likely have many common 3- and 4-grams as well.</S>
+        <S ID="S-19809">Taking into consideration the exceptional speed of the LB-2g oracle, in practice one can safely optimize for 2-BLEU instead of 4-BLEU, saving large amounts of time for oracle decoding on long sentences.</S>
+      </P>
+      <P>
+        <S ID="S-19810">Overall, these experiments accentuate the acuteness of scoring problems that plague modern decoders: very good hypotheses exist for most input sentences, but are poorly evaluated by a linear combination of standard features functions.</S>
+        <S ID="S-19811">Even though the tuning procedure can be held responsible for part of the problem, the comparison between lattice and n-best oracles shows that the beam search leaves good hypotheses out of the n- best list until very high value of n, that are never used in practice.</S>
+      </P>
+      <P>
+        <S ID="S-19812">Acknowledgments</S>
+      </P>
+      <P>
+        <S ID="S-19813">This work has been partially funded by OSEO under the Quaero program.</S>
+      </P>
+      <P>
+        <S ID="S-19814">References</S>
+      </P>
+      <P>
+        <S ID="S-19815">Cyril Allauzen, Michael Riley, Johan Schalkwyk, Wojciech Skut, and Mehryar Mohri.</S>
+        <S ID="S-19816">2007.</S>
+        <S ID="S-19817">OpenFst: A general and efficient weighted finite-state transducer library.</S>
+        <S ID="S-19818">In Proc. of the Int.</S>
+        <S ID="S-19819">Conf. on Implementation and Application of Automata, pages 11&#8211; 23.</S>
+        <S ID="S-19820">Michael Auli, Adam Lopez, Hieu Hoang, and Philipp</S>
+      </P>
+      <P>
+        <S ID="S-19821">Koehn.</S>
+        <S ID="S-19822">2009.</S>
+        <S ID="S-19823">A systematic analysis of translation model search spaces.</S>
+        <S ID="S-19824">In Proc. of WMT, pages 224&#8211; 232, Athens, Greece.</S>
+        <S ID="S-19825">Satanjeev Banerjee and Alon Lavie.</S>
+        <S ID="S-19826">2005.</S>
+        <S ID="S-19827">ME-</S>
+      </P>
+      <P>
+        <S ID="S-19828">TEOR: An automatic metric for MT evaluation with improved correlation with human judgments.</S>
+        <S ID="S-19829">In Proc. of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation, pages 65&#8211;72, Ann Arbor, MI, USA.</S>
+        <S ID="S-19830">Graeme Blackwood, Adri&#224; de Gispert, and William</S>
+      </P>
+      <P>
+        <S ID="S-19831">Byrne.</S>
+        <S ID="S-19832">2010.</S>
+        <S ID="S-19833">Efficient path counting transducers for minimum bayes-risk decoding of statistical machine translation lattices.</S>
+        <S ID="S-19834">In Proc. of the ACL 2010 Conference Short Papers, pages 27&#8211;32, Stroudsburg, PA, USA.</S>
+        <S ID="S-19835">Yin-Wen Chang and Michael Collins.</S>
+        <S ID="S-19836">2011.</S>
+        <S ID="S-19837">Exact decoding of phrase-based translation models through lagrangian relaxation.</S>
+        <S ID="S-19838">In Proc. of the 2011 Conf. on EMNLP, pages 26&#8211;37, Edinburgh, UK.</S>
+        <S ID="S-19839">David Chiang, Yuval Marton, and Philip Resnik.</S>
+        <S ID="S-19840">2008.</S>
+        <S ID="S-19841">Online large-margin training of syntactic and structural translation features.</S>
+        <S ID="S-19842">In Proc. of the 2008 Conf. on EMNLP, pages 224&#8211;233, Honolulu, Hawaii.</S>
+        <S ID="S-19843">Markus Dreyer, Keith B. Hall, and Sanjeev P. Khudanpur.</S>
+        <S ID="S-19844">2007.</S>
+        <S ID="S-19845">Comparing reordering constraints for SMT using efficient BLEU oracle computation.</S>
+        <S ID="S-19846">In Proc. of the Workshop on Syntax and Structure in Statistical Translation, pages 103&#8211;110, Morristown, NJ, USA.</S>
+        <S ID="S-19847">Gregor Leusch, Evgeny Matusov, and Hermann Ney.</S>
+      </P>
+      <P>
+        <S ID="S-19848">2008.</S>
+        <S ID="S-19849">Complexity of finding the BLEU-optimal hypothesis in a confusion network.</S>
+        <S ID="S-19850">In Proc. of the 2008 Conf. on EMNLP, pages 839&#8211;847, Honolulu, Hawaii.</S>
+        <S ID="S-19851">Zhifei Li and Sanjeev Khudanpur.</S>
+        <S ID="S-19852">2009.</S>
+        <S ID="S-19853">Efficient extraction of oracle-best translations from hypergraphs.</S>
+        <S ID="S-19854">In Proc. of Human Language Technologies: The 2009 Annual Conf. of the North American Chapter of the ACL, Companion Volume: Short Papers, pages 9&#8211;12, Morristown, NJ, USA.</S>
+        <S ID="S-19855">Percy Liang, Alexandre Bouchard-C&#244;t&#233;, Dan Klein, and Ben Taskar.</S>
+        <S ID="S-19856">2006.</S>
+        <S ID="S-19857">An end-to-end discriminative approach to machine translation.</S>
+        <S ID="S-19858">In Proc. of the 21st Int.</S>
+        <S ID="S-19859">Conf. on Computational Linguistics and the 44th annual meeting of the ACL, pages 761&#8211; 768, Morristown, NJ, USA.</S>
+      </P>
+      <P>
+        <S ID="S-19860">Mehryar Mohri.</S>
+        <S ID="S-19861">2002.</S>
+        <S ID="S-19862">Semiring frameworks and algorithms for shortest-distance problems.</S>
+        <S ID="S-19863">J. Autom.</S>
+        <S ID="S-19864">Lang.</S>
+        <S ID="S-19865">Comb., 7:321&#8211;350.</S>
+        <S ID="S-19866">Mehryar Mohri.</S>
+        <S ID="S-19867">2009.</S>
+        <S ID="S-19868">Weighted automata algorithms.</S>
+        <S ID="S-19869">In Manfred Droste, Werner Kuich, and Heiko Vogler, editors, Handbook of Weighted Automata, chapter 6, pages 213&#8211;254.</S>
+        <S ID="S-19870">Gurobi Optimization.</S>
+        <S ID="S-19871">2010.</S>
+        <S ID="S-19872">Gurobi optimizer, April.</S>
+      </P>
+      <P>
+        <S ID="S-19873">Version 3.0.</S>
+        <S ID="S-19874">Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing Zhu.</S>
+        <S ID="S-19875">2002.</S>
+        <S ID="S-19876">BLEU: a method for automatic evaluation of machine translation.</S>
+        <S ID="S-19877">In Proc. of the Annual Meeting of the ACL, pages 311&#8211;318.</S>
+        <S ID="S-19878">Alexander M. Rush, David Sontag, Michael Collins,</S>
+      </P>
+      <P>
+        <S ID="S-19879">and Tommi Jaakkola.</S>
+        <S ID="S-19880">2010.</S>
+        <S ID="S-19881">On dual decomposition and linear programming relaxations for natural language processing.</S>
+        <S ID="S-19882">In Proc. of the 2010 Conf. on EMNLP, pages 1&#8211;11, Stroudsburg, PA, USA.</S>
+        <S ID="S-19883">Matthew Snover, Bonnie Dorr, Richard Schwartz, Linnea Micciulla, and John Makhoul.</S>
+        <S ID="S-19884">2006.</S>
+        <S ID="S-19885">A study of translation edit rate with targeted human annotation.</S>
+        <S ID="S-19886">In Proc. of the Conf. of the Association for Machine Translation in the America (AMTA), pages 223&#8211;231.</S>
+        <S ID="S-19887">Roy W. Tromble, Shankar Kumar, Franz Och, and</S>
+      </P>
+      <P>
+        <S ID="S-19888">Wolfgang Macherey.</S>
+        <S ID="S-19889">2008.</S>
+        <S ID="S-19890">Lattice minimum bayes-risk decoding for statistical machine translation.</S>
+        <S ID="S-19891">In Proc. of the Conf. on EMNLP, pages 620&#8211; 629, Stroudsburg, PA, USA.</S>
+        <S ID="S-19892">Marco Turchi, Tijl De Bie, and Nello Cristianini.</S>
+        <S ID="S-19893">2008.</S>
+        <S ID="S-19894">Learning performance of a machine translation system: a statistical and computational analysis.</S>
+        <S ID="S-19895">In Proc. of WMT, pages 35&#8211;43, Columbus, Ohio.</S>
+        <S ID="S-19896">Guillaume Wisniewski, Alexandre Allauzen, and Fran&#231;ois Yvon.</S>
+        <S ID="S-19897">2010.</S>
+        <S ID="S-19898">Assessing phrase-based translation models with oracle decoding.</S>
+        <S ID="S-19899">In Proc. of the 2010 Conf. on EMNLP, pages 933&#8211;943, Stroudsburg, PA, USA.</S>
+        <S ID="S-19900">L. Wolsey.</S>
+        <S ID="S-19901">1998.</S>
+        <S ID="S-19902">Integer Programming.</S>
+        <S ID="S-19903">John Wiley</S>
+      </P>
+      <P>
+        <S ID="S-19904">&amp; Sons, Inc.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES/>
+</PAPER>

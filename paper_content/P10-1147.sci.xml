@@ -1,0 +1,868 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Discriminative Modeling of Extraction Sets for Machine Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>John DeNero</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-30720">We present a discriminative model that directly predicts which set of phrasal translation rules should be extracted from a sentence pair.</A-S>
+    <A-S ID="S-30721">Our model scores extraction sets: nested collections of all the overlapping phrase pairs consistent with an underlying word alignment.</A-S>
+    <A-S ID="S-30722">Extraction set models provide two principle advantages over word-factored alignment models.</A-S>
+    <A-S ID="S-30723">First, we can incorporate features on phrase pairs, in addition to word links.</A-S>
+    <A-S ID="S-30724">Second, we can optimize for an extraction-based loss function that relates directly to the end task of generating translations.</A-S>
+    <A-S ID="S-30725">Our model gives improvements in alignment quality relative to state-of-the-art unsupervised and supervised baselines, as well as providing up to a 1.4 improvement in BLEU score in Chinese-to-English translation experiments.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-30726">In the last decade, the field of statistical machine translation has shifted from generating sentences word by word to systems that recycle whole fragments of training examples, expressed as translation rules.</S>
+        <S ID="S-30727">This general paradigm was first pursued using contiguous phrases (Och et al., 1999; <REF ID="R-24" RPTR="38">Koehn et al., 2003</REF>), and has since been generalized to a wide variety of hierarchical and syntactic formalisms.</S>
+        <S ID="S-30728">The training stage of statistical systems focuses primarily on discovering translation rules in parallel corpora.</S>
+        <S ID="S-30729">Most systems discover translation rules via a two-stage pipeline: a parallel corpus is aligned at the word level, and then a second procedure extracts fragment-level rules from word-aligned sentence pairs.</S>
+        <S ID="S-30730">This paper offers a model-based alternative to phrasal rule extraction, which merges this two-stage pipeline into a single step.</S>
+        <S ID="S-30731">We present a discriminative model that directly predicts which set of phrasal translation rules should be extracted from a sentence pair.</S>
+        <S ID="S-30732">Our model predicts extraction sets: combinatorial objects that include the set of all overlapping phrasal translation rules consistent with an underlying word-level alignment.</S>
+        <S ID="S-30733">This approach provides additional discriminative power relative to word aligners because extraction sets are scored based on the phrasal rules they contain in addition to word-to-word alignment links.</S>
+        <S ID="S-30734">Moreover, the structure of our model directly reflects the purpose of alignment models in general, which is to discover translation rules.</S>
+        <S ID="S-30735">We address several challenges to training and applying an extraction set model.</S>
+        <S ID="S-30736">First, we would like to leverage existing word-level alignment resources.</S>
+        <S ID="S-30737">To do so, we define a deterministic mapping from word alignments to extraction sets, inspired by existing extraction procedures.</S>
+        <S ID="S-30738">In our mapping, possible alignment links have a precise interpretation that dictates what phrasal translation rules can be extracted from a sentence pair.</S>
+        <S ID="S-30739">This mapping allows us to train with existing annotated data sets and use the predictions from word-level aligners as features in our extraction set model.</S>
+        <S ID="S-30740">Second, our model solves a structured prediction problem, and the choice of loss function during training affects model performance.</S>
+        <S ID="S-30741">We optimize for a phrase-level F-measure in order to focus learning on the task of predicting phrasal rules rather than word alignment links.</S>
+      </P>
+      <P>
+        <S ID="S-30742">Third, our discriminative approach requires that we perform inference in the space of extraction sets.</S>
+        <S ID="S-30743">Our model does not factor over disjoint wordto-word links or minimal phrase pairs, and so existing inference procedures do not directly apply.</S>
+        <S ID="S-30744">However, we show that the dynamic program for a block ITG aligner can be augmented to score extraction sets that are indexed by underlying ITG word alignments (<REF ID="R-33" RPTR="52">Wu, 1997</REF>).</S>
+        <S ID="S-30745">We also describe a</S>
+      </P>
+      <P>
+        <S ID="S-30746">&#65533;&#65533; [past] st] &#963;(f j )</S>
+      </P>
+      <P>
+        <S ID="S-30747">&#65533; o]</S>
+      </P>
+      <P>
+        <S ID="S-30748">&#65533; ar]</S>
+      </P>
+      <P>
+        <S ID="S-30749">&#65533;]</S>
+      </P>
+      <P>
+        <S ID="S-30750">[two]</S>
+      </P>
+      <P>
+        <S ID="S-30751">[year]</S>
+      </P>
+      <P>
+        <S ID="S-30752">[in]</S>
+      </P>
+      <P>
+        <S ID="S-30753">[after]</S>
+      </P>
+      <P>
+        <S ID="S-30754">[dinner]</S>
+      </P>
+      <P>
+        <S ID="S-30755">[after]</S>
+      </P>
+      <P>
+        <S ID="S-30756">[I]</S>
+      </P>
+      <P>
+        <S ID="S-30757">[sleep]</S>
+      </P>
+      <P>
+        <S ID="S-30758">&#963;(e i )</S>
+      </P>
+      <P>
+        <S ID="S-30759">[past tense]</S>
+      </P>
+      <P>
+        <S ID="S-30760">&#963;(e i )</S>
+      </P>
+      <P>
+        <S ID="S-30761">&#963;(f j )</S>
+      </P>
+      <P>
+        <S ID="S-30762">On February 15 2010 On February 15 2010</S>
+      </P>
+      <P>
+        <S ID="S-30763">2010&#65533;2010&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-30764">2&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-30765">15&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-30766">coarse-to-fine inference approach that allows us to scale our method to long sentences.</S>
+      </P>
+      <P>
+        <S ID="S-30767">Our extraction set model outperforms both unsupervised and supervised word aligners at predicting word alignments and extraction sets.</S>
+        <S ID="S-30768">We also demonstrate that extraction sets are useful for end-to-end machine translation.</S>
+        <S ID="S-30769">Our model improves translation quality relative to state-of-theart Chinese-to-English baselines across two publicly available systems, providing total BLEU improvements of 1.2 in Moses, a phrase-based system, and 1.4 in a Joshua, a hierarchical system (Koehn et al., 2007; <REF ID="R-26" RPTR="43">Li et al., 2009</REF>)</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Extraction Set Models</HEADER>
+      <P>
+        <S ID="S-30841">2&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-30842">15&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-30843">The input to our model is an unaligned sentence pair, and the output is an extraction set of phrasal translation rules.</S>
+        <S ID="S-30844">Word-level alignments are generated as a byproduct of inference.</S>
+        <S ID="S-30845">We first specify the relationship between word alignments and extraction sets, then define our model.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Extraction Sets from Word Alignments</HEADER>
+        <P>
+          <S ID="S-30770">Rule extraction is a standard concept in machine translation: word alignment constellations license particular sets of overlapping rules, from which subsets are selected according to limits on phrase length (<REF ID="R-24" RPTR="39">Koehn et al., 2003</REF>), number of gaps (<REF ID="R-08" RPTR="10">Chiang, 2007</REF>), count of internal tree nodes (<REF ID="R-17" RPTR="24">Galley et al., 2006</REF>), etc.</S>
+          <S ID="S-30771">In this paper, we focus on phrasal rule extraction (i.e., phrase pair extraction), upon which most other extraction procedures are based.</S>
+        </P>
+        <P>
+          <S ID="S-30772">Given a sentence pair (e, f), phrasal rule extraction defines a mapping from a set of word-to-word</S>
+        </P>
+        <P>
+          <S ID="S-30773">Type (a) 1: Type Language-specific 1: Language-specific function function words omitted words omitted in the other in the language other language</S>
+        </P>
+        <P>
+          <S ID="S-30774">&#65533; [go over] Distribution over &#65533; [go over] Distribution over possible possible link types link types</S>
+        </P>
+        <P>
+          <S ID="S-30775">&#65533;&#65533; &#65533;&#65533; [Earth] [Earth]</S>
+        </P>
+        <P>
+          <S ID="S-30776">over the Earth 65% over the Earth 65%</S>
+        </P>
+        <P>
+          <S ID="S-30777">Type 2: Type Role-equivalent</S>
+        </P>
+        <P>
+          <S ID="S-30778">2: Role-equivalent pairs that word pairs</S>
+        </P>
+        <P>
+          <S ID="S-30779">are not that lexical</S>
+        </P>
+        <P>
+          <S ID="S-30780">are equivalents not lexical equivalents</S>
+        </P>
+        <P>
+          <S ID="S-30781">was discovered was discovered</S>
+        </P>
+        <P>
+          <S ID="S-30782">&#65533; [passive marker] &#65533; [passive marker]</S>
+        </P>
+        <P>
+          <S ID="S-30783">&#65533;&#65533; [discover] &#65533;&#65533; [discover]</S>
+        </P>
+        <P>
+          <S ID="S-30784">31% 31%</S>
+        </P>
+        <P>
+          <S ID="S-30785">(b) &#963;(e 1 )</S>
+        </P>
+        <P>
+          <S ID="S-30786">of the possible alignment links in our data set.</S>
+          <S ID="S-30787">&#963;(f 2 ) 2010&#65533; 2&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-30788">&#963;(f alignment 2 ) links A = {(i, j)} to an extraction set 15&#65533; 2&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-30789">of bispans R n (A) = {[g, h) &#8660; [k, l)}, where each bispan links target span [g, h) to source span</S>
+        </P>
+        <P>
+          <S ID="S-30790">15&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-30791">[k, l).</S>
+          <S ID="S-30792">1 The maximum On February phrase length 15 2010 n ensures that max(h &#8722; g, l &#8722; k) &#8804; n.</S>
+        </P>
+        <P>
+          <S ID="S-30793">We canOndescribe Februarythis 15 mapping 2010 PDT via word-tophrase projections, as illustrated in Figure 1.</S>
+          <S ID="S-30794">Let word e i project to the phrasal span &#963;(e i ), where [ ) &#963;(e i ) = min j , max j + 1 (1)</S>
+        </P>
+        <P>
+          <S ID="S-30795">j&#8712;J i j&#8712;J i</S>
+        </P>
+        <P>
+          <S ID="S-30796">J i = {j : (i, j) &#8712; A}</S>
+        </P>
+        <P>
+          <S ID="S-30797">and likewise each word f j projects to a span of e. Then, R n (A) includes a bispan [g, h) &#8660; [k, l) iff</S>
+        </P>
+        <P>
+          <S ID="S-30798">&#963;(e i ) &#8838; [k, l) &#8704;i &#8712; [g, h)</S>
+        </P>
+        <P>
+          <S ID="S-30799">&#963;(f j ) &#8838; [g, h) &#8704;j &#8712; [k, l)</S>
+        </P>
+        <P>
+          <S ID="S-30800">That is, every word in one of the phrasal spans must project within the other.</S>
+          <S ID="S-30801">This mapping is deterministic, and so we can interpret a word-level alignment A as also specifying the phrasal rules that should be extracted from a sentence pair.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Possible and Null Alignment Links</HEADER>
+        <P>
+          <S ID="S-30802">We have not yet accounted for two special cases in annotated corpora: possible alignments and null alignments.</S>
+          <S ID="S-30803">To analyze these annotations, we consider a particular data set: a hand-aligned portion 1 We use the fencepost indexing scheme used commonly for parsing.</S>
+          <S ID="S-30804">Words are 0-indexed.</S>
+          <S ID="S-30805">Spans are inclusive on the lower bound and exclusive on the upper bound.</S>
+          <S ID="S-30806">For example, the span [0, 2) includes the first two words of a sentence.</S>
+        </P>
+        <P>
+          <S ID="S-30807">of the NIST MT02 Chinese-to-English test set, which has been used in previous alignment experiments (<REF ID="R-01" RPTR="1">Ayan et al., 2005</REF>; <REF ID="R-10" RPTR="15">DeNero and Klein, 2007</REF>; <REF ID="R-19" RPTR="26">Haghighi et al., 2009</REF>).</S>
+          <S ID="S-30808">Possible links account for 22% of all alignment links in these data, and we found that most of these links fall into two categories.</S>
+          <S ID="S-30809">First, possible links are used to align function words that have no equivalent in the other language, but colocate with aligned content words, such as English determiners.</S>
+          <S ID="S-30810">Second, they are used to mark pairs of words or short phrases that are not lexical equivalents, but which play equivalent roles in each sentence.</S>
+          <S ID="S-30811">Figure 2 shows examples of these two use cases, along with their corpus frequencies.</S>
+          <S ID="S-30812">2 On the other hand, null alignments are used sparingly in our annotated data.</S>
+          <S ID="S-30813">More than 90% of words participate in some alignment link.</S>
+          <S ID="S-30814">The unaligned words typically express content in one sentence that is absent in its translation.</S>
+          <S ID="S-30815">Figure 3 illustrates how we interpret possible and null links in our projection.</S>
+          <S ID="S-30816">Possible links are typically not included in extraction procedures because most aligners predict only sure links.</S>
+          <S ID="S-30817">However, we see a natural interpretation for possible links in rule extraction: they license phrasal rules that both include and exclude them.</S>
+          <S ID="S-30818">We exclude null alignments from extracted phrases because they often indicate a mismatch in content.</S>
+          <S ID="S-30819">We achieve these effects by redefining the projection operator &#963;. Let A (s) be the subset of A that are sure links, then let the index set J i used for projection &#963; in Equation 1 be</S>
+        </P>
+        <P>
+          <S ID="S-30820">Here, J i is a set of integers, and &#963;(e i ) for null aligned e i will be [&#8722;1, |f |+ 1) by Equation 1.</S>
+          <S ID="S-30821">Of course, the characteristics of our aligned corpus may not hold for other annotated corpora or other language pairs.</S>
+          <S ID="S-30822">However, we hope that the overall effectiveness of our modeling approach will influence future annotation efforts to build corpora that are consistent with this interpretation.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 A Linear Model of Extraction Sets</HEADER>
+        <P>
+          <S ID="S-30823">We now define a linear model that scores extraction sets.</S>
+          <S ID="S-30824">We restrict our model to score only co-</S>
+        </P>
+        <P>
+          <S ID="S-30825">projection of otherwise unaligned words, which in turn license overlapping phrases.</S>
+          <S ID="S-30826">In this example, &#963;(f 2 ) = [1, 2) does not include the possible link at (1, 0) because of the sure link at (1, 1), but &#963;(e 1 ) = [1, 2) does use the possible link because it would otherwise be unaligned.</S>
+          <S ID="S-30827">The word &#8220;PDT&#8221; is null aligned, and so its projection &#963;(e 4 ) = [&#8722;1, 4) extends beyond the bounds of the sentence, excluding &#8220;PDT&#8221; from all phrase pairs.</S>
+          <S ID="S-30828">herent extraction sets R n (A), those that are licensed by an underlying word alignment A with sure alignments A (s) &#8838; A.</S>
+          <S ID="S-30829">Conditioned on a sentence pair (e, f) and maximum phrase length n, we score extraction sets via a feature vector</S>
+        </P>
+        <P>
+          <S ID="S-30830">&#966; b (g, h, k, l) Because the projection operator R n (&#183;) is a deterministic function, we can abbreviate &#966;(A (s) , R n (A)) as &#966;(A) without loss of information, although we emphasize that A is a set of sure and possible alignments, and &#966;(A) does not decompose as a sum of vectors on individual word-level alignment links.</S>
+          <S ID="S-30831">Our model is parameterized by a weight vector &#952;, which scores an extraction set R n (A) as &#952; &#183; &#966;(A).</S>
+          <S ID="S-30832">To further limit the space of extraction sets we are willing to consider, we restrict A to block inverse transduction grammar (ITG) alignments, a space that allows many-to-many alignments through phrasal terminal productions, but otherwise enforces at-most-one-to-one phrase matchings with ITG reordering patterns (<REF ID="R-06" RPTR="6">Cherry and Lin, 2007</REF>; <REF ID="R-36" RPTR="57">Zhang et al., 2008</REF>).</S>
+          <S ID="S-30833">The ITG constraint</S>
+        </P>
+        <P>
+          <S ID="S-30834">of the block alignment patterns that serve as terminal productions of the ITG that restricts the output space of our model.</S>
+          <S ID="S-30835">These terminal productions cover up to n = 3 words in each sentence and include a mixture of sure (filled) and possible (striped) word-level alignment links.</S>
+          <S ID="S-30836">is more computationally convenient than arbitrarily ordered phrase matchings (<REF ID="R-33" RPTR="53">Wu, 1997</REF>; <REF ID="R-11" RPTR="18">DeNero and Klein, 2008</REF>).</S>
+          <S ID="S-30837">However, the space of block ITG alignments is expressive enough to include the vast majority of patterns observed in handannotated parallel corpora (<REF ID="R-19" RPTR="27">Haghighi et al., 2009</REF>).</S>
+          <S ID="S-30838">In summary, our model scores all R n (A) for A &#8712; ITG(e, f) where A can include block terminals of size up to n.</S>
+          <S ID="S-30839">In our experiments, n = 3.</S>
+          <S ID="S-30840">Unlike previous work, we allow possible alignment links to appear in the block terminals, as depicted in Figure 4.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Model Estimation</HEADER>
+      <P>
+        <S ID="S-30869">We estimate the weights &#952; of our extraction set model discriminatively using the margin-infused relaxed algorithm (MIRA) of <REF ID="R-09" RPTR="14">Crammer and Singer (2003)</REF>&#8212;a large-margin, perceptron-style, online learning algorithm.</S>
+        <S ID="S-30870">MIRA has been used successfully in MT to estimate both alignment models (<REF ID="R-19" RPTR="28">Haghighi et al., 2009</REF>) and translation models (<REF ID="R-07" RPTR="9">Chiang et al., 2008</REF>).</S>
+        <S ID="S-30871">For each training example, MIRA requires that we find the alignment A m corresponding to the highest scoring extraction set R n (A m ) under the current model, A m = arg max A&#8712;ITG(e,f) &#952; &#183; &#966;(A) (2) Section 4 describes our approach to solving this search problem for model inference.</S>
+        <S ID="S-30872">MIRA updates away from R n (A m ) and toward a gold extraction set R n (A g ).</S>
+        <S ID="S-30873">Some handannotated alignments are outside of the block ITG Inference &#963;(f details 2 ) appear in Section 4.3.</S>
+      </P>
+      <P>
+        <S ID="S-30874">where &#964; is the minimal On step February size that 15 will 2010 ensurePDT we prefer A g to A m by a margin greater than the loss L(A m ; A g ), capped at some maximum update size C to provide regularization.</S>
+        <S ID="S-30875">We use C = 0.01 in experiments.</S>
+        <S ID="S-30876">The step size is a closed form function of the loss and feature vectors: &#964; =</S>
+      </P>
+      <P>
+        <S ID="S-30877">We train the model for 30 iterations over the training set, shuffling the order each time, and we average the weight vectors observed after each iteration to estimate our final model.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Extraction Set Loss Function</HEADER>
+        <P>
+          <S ID="S-30846"></S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Features on Extraction Sets</HEADER>
+        <P>
+          <S ID="S-30847">The discriminative power of our model is driven by the features on sure word alignment links &#966; a (i, j) and bispans &#966; b (g, h, k, l).</S>
+          <S ID="S-30848">In both cases, the most important features come from the predictions of unsupervised models trained on large parallel corpora, which provide frequency and cooccurrence information.</S>
+        </P>
+        <P>
+          <S ID="S-30849">To score word-to-word links, we use the posterior predictions of a jointly trained HMM alignment model (<REF ID="R-27" RPTR="45">Liang et al., 2006</REF>).</S>
+          <S ID="S-30850">The remaining features include a dictionary feature, an identical word feature, an absolute position distortion feature, and features for numbers and punctuation.</S>
+        </P>
+        <P>
+          <S ID="S-30851">To score phrasal translation rules in an extraction set, we use a mixture of feature types.</S>
+          <S ID="S-30852">Extraction set models allow us to incorporate the same phrasal relative frequency statistics that drive phrase-based translation performance (<REF ID="R-24" RPTR="40">Koehn et al., 2003</REF>).</S>
+          <S ID="S-30853">To implement these frequency features, we extract a phrase table from the alignment predictions of a jointly trained unsupervised HMM model using Moses (Koehn et al., 2007), and score bispans using the resulting features.</S>
+          <S ID="S-30854">We also include indicator features on lexical templates for the 50 most common words in each language, as in <REF ID="R-19" RPTR="32">Haghighi et al. (2009)</REF>.</S>
+          <S ID="S-30855">We include indicators for the number of words and Chinese characters in rules.</S>
+          <S ID="S-30856">One useful indicator feature exploits the fact that capitalized terms in English tend to align to Chinese words with three or more characters.</S>
+          <S ID="S-30857">On 1-by-n or n-by-1 phrasal rules, we include indicator features of fertility for common words.</S>
+          <S ID="S-30858">3 We also include monolingual phrase features that expose useful information to the model.</S>
+          <S ID="S-30859">For instance, English bigrams beginning with &#8220;the&#8221; are often extractable phrases.</S>
+          <S ID="S-30860">English trigrams with a hyphen as the second word are typically extractable, meaning that the first and third words align to consecutive Chinese words.</S>
+          <S ID="S-30861">When any conjugation of the word &#8220;to be&#8221; is followed by a verb, indicating passive voice or progressive tense, the two words tend to align together.</S>
+          <S ID="S-30862">Our feature set also includes bias features on phrasal rules and links, which control the number of null-aligned words and number of rules licensed.</S>
+          <S ID="S-30863">In total, our final model includes 4,249 individual features, dominated by various instantiations of lexical templates.</S>
+        </P>
+        <P>
+          <S ID="S-30864">3 Limiting lexicalized features to common words helps</S>
+        </P>
+        <P>
+          <S ID="S-30865">prevent overfitting.</S>
+        </P>
+        <P>
+          <S ID="S-30866">or</S>
+        </P>
+        <P>
+          <S ID="S-30867">In the past two years</S>
+        </P>
+        <P>
+          <S ID="S-30868">&#65533;&#65533; [past]</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Model Inference</HEADER>
+      <P>
+        <S ID="S-30948">l</S>
+      </P>
+      <P>
+        <S ID="S-30949">Equation 2 asks for the highest scoring extraction set under our model, R n (A m ), which we also require at test time.</S>
+        <S ID="S-30950">Although we have restricted A m &#8712; ITG(e, f), our extraction set model does not</S>
+      </P>
+      <P>
+        <S ID="S-30951">&#65533; [after]</S>
+      </P>
+      <P>
+        <S ID="S-30952">factor over ITG productions, and so the dynamic program for a vanilla block ITG will not suffice to</S>
+      </P>
+      <P>
+        <S ID="S-30953">k =2 &#65533;&#65533; [dinner]</S>
+      </P>
+      <P>
+        <S ID="S-30954">find R n (A m ).</S>
+        <S ID="S-30955">To see this, consider the extraction set in Figure 5.</S>
+        <S ID="S-30956">An ITG decomposition of the &#65533; un-[afterderlying alignment imposes a hierarchical bracketing onl =4 each sentence, and some bispan in the &#65533; ex-[Itraction set for this alignment will cross any such bracketing.</S>
+        <S ID="S-30957">Hence, g =1the score of h =3 some licensed &#65533; bis-[sleeppan will be non-local to the ITG decomposition.</S>
+      </P>
+      <P>
+        <S ID="S-30958">&#65533; [past tense]</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 A Dynamic Program for Extraction Sets</HEADER>
+        <P>
+          <S ID="S-30878">After dinner I slept</S>
+        </P>
+        <P>
+          <S ID="S-30879">If we treat the maximum phrase length n as a fixed constant, then we can define a dynamic program to search the space of extraction sets.</S>
+          <S ID="S-30880">An ITG derivation for some alignment A decomposes into two sub-derivations for A L and A R .</S>
+          <S ID="S-30881">4 The model score of A, which scores extraction set R n (A), decomposes over A L and A R , along with any phrasal bispans licensed by adjoining A L and A R .</S>
+        </P>
+        <P>
+          <S ID="S-30882">&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-30883">&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-30884">&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-30885">[two]</S>
+        </P>
+        <P>
+          <S ID="S-30886">[year]</S>
+        </P>
+        <P>
+          <S ID="S-30887">[in]</S>
+        </P>
+        <P>
+          <S ID="S-30888">&#952; &#183; &#966;(A) = &#952; &#183; &#966;(A L ) + &#952; &#183; &#966;(A R ) + I(A L , A R )</S>
+        </P>
+        <P>
+          <S ID="S-30889">where I(A L , A R ) is &#952; &#183; &#8721; &#966;(g, h, k, l) summed over licensed bispans [g, h) &#8660; [k, l) that overlap the boundary between A L and A R .</S>
+          <S ID="S-30890">5</S>
+        </P>
+        <P>
+          <S ID="S-30891">4 We abuse notation in conflating an alignment A with its</S>
+        </P>
+        <P>
+          <S ID="S-30892">derivation.</S>
+          <S ID="S-30893">All derivations of the same alignment receive the same score, and we only compute the max, not the sum.</S>
+          <S ID="S-30894">5 We focus on the case of adjoining two aligned bispans.</S>
+        </P>
+        <P>
+          <S ID="S-30895">Our algorithm easily extends to include null alignments, but we focus on the non-null setting for simplicity.</S>
+        </P>
+        <P>
+          <S ID="S-30896">&#963;(e i )</S>
+        </P>
+        <P>
+          <S ID="S-30897">&#963;(f j )</S>
+        </P>
+        <P>
+          <S ID="S-30898">&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-30899">[in] On February 15 2010</S>
+        </P>
+        <P>
+          <S ID="S-30900">In the past two years</S>
+        </P>
+        <P>
+          <S ID="S-30901">k</S>
+        </P>
+        <P>
+          <S ID="S-30902">l</S>
+        </P>
+        <P>
+          <S ID="S-30903">g h</S>
+        </P>
+        <P>
+          <S ID="S-30904">bispans.</S>
+          <S ID="S-30905">The state must encode whether a sure link orders search states from small to large, where we appears in each edge column or row, but the &#65533;spe-[after] cific location of edge links is not required.</S>
+          <S ID="S-30906">words contained within it.</S>
+          <S ID="S-30907">For each size, we main- define the size of a bispan as the total number of</S>
+        </P>
+        <P>
+          <S ID="S-30908">l =4 &#65533; [I] tain a separate agenda.</S>
+          <S ID="S-30909">Only when the agenda for</S>
+        </P>
+        <P>
+          <S ID="S-30910">size k is exhausted does the parser proceed to process the agenda for size k + 1.</S>
+          <S ID="S-30911">In order tog compute =1 I(A h L , A</S>
+        </P>
+        <P>
+          <S ID="S-30912">=3 R ), we need &#65533; certain information about the alignment configura- [sleep]</S>
+        </P>
+        <P>
+          <S ID="S-30913">tions of A L and A R where they adjoin at a corner.</S>
+          <S ID="S-30914">We also employ coarse-to-fine search to speed &#65533; (past) The state must represent (a) the specific alignment links in the nAfter &#8722; 1 deep dinner corner I of each sleptA, and (b) whether any sure alignments appear in the rows or columns extending from those corners.</S>
+          <S ID="S-30915">6 With this information, we can infer the bispans licensed by adjoining A L and A R , as in Figure 6.</S>
+        </P>
+        <P>
+          <S ID="S-30916">Applying our score recurrence yields a polynomial-time dynamic program.</S>
+          <S ID="S-30917">This dynamic program is an instance of ITG bitext parsing, where the grammar uses symbols to encode the alignment contexts described above.</S>
+          <S ID="S-30918">This context-as-symbol augmentation of the grammar is similar in character to augmenting symbols with lexical items to score language models during hierarchical decoding (<REF ID="R-08" RPTR="11">Chiang, 2007</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Coarse-to-Fine Inference and Pruning</HEADER>
+        <P>
+          <S ID="S-30919">Exhaustive inference under an ITG requires O(k 6 ) time in sentence length k, and is prohibitively slow when there is no sparsity in the grammar.</S>
+          <S ID="S-30920">Maintaining the context necessary to score non-local bispans further increases running time.</S>
+          <S ID="S-30921">That is, ITG inference is organized around search states associated with a grammar symbol and a bispan; augmenting grammar symbols also augments this state space.</S>
+          <S ID="S-30922">To parse quickly, we prune away search states using predictions from the more efficient HMM</S>
+        </P>
+        <P>
+          <S ID="S-30923">6 The number of configuration states does not depend on</S>
+        </P>
+        <P>
+          <S ID="S-30924">the size of A because corners have fixed size, and because the position of links within rows or columns is not needed.</S>
+        </P>
+        <P>
+          <S ID="S-30925">alignment model (<REF ID="R-40" RPTR="63">Ney and Vogel, 1996</REF>).</S>
+          <S ID="S-30926">We discard all states corresponding to bispans that are incompatible with 3 or more alignment links under an intersected HMM&#8212;a proven approach to pruning the space of ITG alignments (<REF ID="R-35" RPTR="56">Zhang and Gildea, 2006</REF>; <REF ID="R-19" RPTR="29">Haghighi et al., 2009</REF>).</S>
+          <S ID="S-30927">Pruning in this way reduces the search space dramatically, but only rarely prohibits correct alignments.</S>
+          <S ID="S-30928">The oracle alignment error rate for the block ITG model class is 1.4%; the oracle alignment error rate for</S>
+        </P>
+        <P>
+          <S ID="S-30929">up inference (<REF ID="R-04" RPTR="4">Charniak and Caraballo, 1998</REF>).</S>
+          <S ID="S-30930">In the coarse pass, we search over the space of ITG alignments, but score only features on alignment links and bispans that are local to terminal blocks.</S>
+          <S ID="S-30931">This simplification eliminates the need to augment grammar symbols, and so we can exhaustively explore the (pruned) space.</S>
+          <S ID="S-30932">We then compute outside scores for bispans under a max-sum semiring (<REF ID="R-18" RPTR="25">Goodman, 1996</REF>).</S>
+          <S ID="S-30933">In the fine pass with the full extraction set model, we impose a maximum size of 10,000 for each agenda.</S>
+          <S ID="S-30934">We order states on agendas by the sum of their inside score under the full model and the outside score computed in the coarse pass, pruning all states not within the fixed agenda beam size.</S>
+          <S ID="S-30935">Search states that are popped off agendas are indexed by their corner locations for fast lookup when constructing new states.</S>
+          <S ID="S-30936">For each corner and size combination, built states are maintained in sorted order according to their inside score.</S>
+          <S ID="S-30937">This ordering allows us to stop combining states early when the results are falling off the agenda beams.</S>
+          <S ID="S-30938">Similar search and beaming strategies appear in many decoders for machine translation (<REF ID="R-20" RPTR="34">Huang and Chiang, 2007</REF><REF ID="R-08" RPTR="12">Chiang, 2007</REF>; <REF ID="R-23" RPTR="37">Koehn and Haddow, 2009</REF>; <REF ID="R-38" RPTR="61">Moore and Quirk, 2007</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Finding Pseudo-Gold ITG Alignments</HEADER>
+        <P>
+          <S ID="S-30939">Equation 3 asks for the block ITG alignment A g that is closest to a reference alignment A t , which may not lie in ITG(e,f).</S>
+          <S ID="S-30940">We search for</S>
+        </P>
+        <P>
+          <S ID="S-30941">uses an admissible heuristic for bispans that counts the number of gold links outside of [k, l) but within [g, h).</S>
+          <S ID="S-30942">Above, the heuristic is 1, which is also the minimal number of alignment errors that an ITG alignment will incur using this bispan.</S>
+          <S ID="S-30943">A g using A* bitext parsing (<REF ID="R-22" RPTR="36">Klein and Manning, 2003</REF>).</S>
+          <S ID="S-30944">Search states, which correspond to bispans [g, h) &#8660; [k, l), are scored by the number of errors within the bispan plus the number of (i, j) &#8712; A t such that j &#8712; [k, l) but i /&#8712; [g, h) (recall errors).</S>
+          <S ID="S-30945">As an admissible heuristic for the future cost of a bispan [g, h) &#8660; [k, l), we count the number of (i, j) &#8712; A t such that i &#8712; [g, h) but j /&#8712; [k, l), as depicted in Figure 7.</S>
+          <S ID="S-30946">These links will become recall errors eventually.</S>
+          <S ID="S-30947">A* search with this heuristic makes no errors, and the time required to compute pseudo-gold alignments is negligible.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Relationship to Previous Work</HEADER>
+      <P>
+        <S ID="S-30959">Our model is certainly not the first alignment approach to include structures larger than words.</S>
+        <S ID="S-30960">Model-based phrase-to-phrase alignment was proposed early in the history of phrase-based translation as a method for training translation models (<REF ID="R-29" RPTR="48">Marcu and Wong, 2002</REF>).</S>
+        <S ID="S-30961">A variety of unsupervised models refined this initial work with priors (<REF ID="R-13" RPTR="20">DeNero et al., 2008</REF>; <REF ID="R-03" RPTR="3">Blunsom et al., 2009</REF>) and inference constraints (<REF ID="R-12" RPTR="19">DeNero et al., 2006</REF>; <REF ID="R-02" RPTR="2">Birch et al., 2006</REF>; <REF ID="R-06" RPTR="7">Cherry and Lin, 2007</REF>; <REF ID="R-36" RPTR="58">Zhang et al., 2008</REF>).</S>
+        <S ID="S-30962">These models fundamentally differ from ours in that they stipulate a segmentation of the sentence pair into phrases, and only align the minimal phrases in that segmentation.</S>
+        <S ID="S-30963">Our model scores the larger overlapping phrases that result from composing these minimal phrases.</S>
+        <S ID="S-30964">Discriminative alignment is also a wellexplored area.</S>
+        <S ID="S-30965">Most work has focused on predicting word alignments via partial matching inference algorithms (<REF ID="R-37" RPTR="60">Melamed, 2000</REF>; <REF ID="R-32" RPTR="51">Taskar et al., 2005</REF>; <REF ID="R-39" RPTR="62">Moore, 2005</REF>; <REF ID="R-25" RPTR="42">Lacoste-Julien et al., 2006</REF>).</S>
+        <S ID="S-30966">Work in semi-supervised estimation has also contributed evidence that hand-annotations are useful for training alignment models (<REF ID="R-15" RPTR="22">Fraser and Marcu, 2006</REF>; <REF ID="R-16" RPTR="23">Fraser and Marcu, 2007</REF>).</S>
+        <S ID="S-30967">The ITG grammar formalism, the corresponding word alignment class, and inference procedures for the class have also been explored extensively (<REF ID="R-33" RPTR="54">Wu, 1997</REF>; <REF ID="R-34" RPTR="55">Zhang and Gildea, 2005</REF>; <REF ID="R-06" RPTR="8">Cherry and Lin, 2007</REF>; <REF ID="R-36" RPTR="59">Zhang et al., 2008</REF>).</S>
+        <S ID="S-30968">At the intersection of these lines of work, discriminative ITG models have also been proposed, including one-to-one alignment models (<REF ID="R-05" RPTR="5">Cherry and Lin, 2006</REF>) and block models (<REF ID="R-19" RPTR="30">Haghighi et al., 2009</REF>).</S>
+        <S ID="S-30969">Our model directly extends this research agenda with first-class possible links, overlapping phrasal rule features, and an extraction-level loss function.</S>
+        <S ID="S-30970"><REF ID="R-21" RPTR="35">K&#228;&#228;ri&#228;inen (2009)</REF> trains a translation model discriminatively using features on overlapping phrase pairs.</S>
+        <S ID="S-30971">That work differs from ours in that it uses fixed word alignments and focuses on translation model estimation, while we focus on alignment and translate using standard relative frequency estimators.</S>
+        <S ID="S-30972"><REF ID="R-14" RPTR="21">Deng and Zhou (2009)</REF> present an alignment combination technique that uses phrasal features.</S>
+        <S ID="S-30973">Our approach differs in two ways.</S>
+        <S ID="S-30974">First, their approach is tightly coupled to the input alignments, while we perform a full search over the space of ITG alignments.</S>
+        <S ID="S-30975">Also, their approach uses greedy search, while our search is optimal aside from pruning and beaming.</S>
+        <S ID="S-30976">Despite these differences, their strong results reinforce our claim that phraselevel information is useful for alignment.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Experiments</HEADER>
+      <P>
+        <S ID="S-31016">We evaluate our extraction set model by the bispans it predicts, the word alignments it generates, and the translations generated by two end-to-end systems.</S>
+        <S ID="S-31017">Table 1 compares the five systems described below, including three baselines.</S>
+        <S ID="S-31018">All supervised aligners were optimized for bispan F 5 .</S>
+        <S ID="S-31019">Unsupervised Baseline: GIZA++.</S>
+        <S ID="S-31020">We trained GIZA++ (<REF ID="R-41" RPTR="65">Och and Ney, 2003</REF>) using the default parameters included with the Moses training script (Koehn et al., 2007).</S>
+        <S ID="S-31021">The designated regimen concludes by Viterbi aligning under Model 4 in both directions.</S>
+        <S ID="S-31022">We combined these alignments with</S>
+      </P>
+      <P>
+        <S ID="S-31023">1459 the grow-diag heuristic (<REF ID="R-24" RPTR="41">Koehn et al., 2003</REF>).</S>
+        <S ID="S-31024">Unsupervised Baseline: Joint HMM.</S>
+        <S ID="S-31025">We trained and combined two HMM alignment models (<REF ID="R-40" RPTR="64">Ney and Vogel, 1996</REF>) using the Berkeley Aligner.</S>
+        <S ID="S-31026">7 We initialized the HMM model parameters with jointly trained Model 1 parameters (<REF ID="R-27" RPTR="46">Liang et al., 2006</REF>), combined word-toword posteriors by averaging (soft union), and decoded with the competitive thresholding heuristic of <REF ID="R-10" RPTR="17">DeNero and Klein (2007)</REF>, yielding a state-ofthe-art unsupervised baseline.</S>
+        <S ID="S-31027">Supervised Baseline: Block ITG.</S>
+        <S ID="S-31028">We discriminatively trained a block ITG aligner with only sure links, using block terminal productions up to 3 words by 3 words in size.</S>
+        <S ID="S-31029">This supervised baseline is a reimplementation of the MIRA-trained model of <REF ID="R-19" RPTR="33">Haghighi et al. (2009)</REF>.</S>
+        <S ID="S-31030">We use the same features and parser implementation for this model as we do for our extraction set model to ensure a clean comparison.</S>
+        <S ID="S-31031">To remain within the alignment class, MIRA updates this model toward a pseudogold alignment with only sure links.</S>
+        <S ID="S-31032">This model does not score any overlapping bispans.</S>
+        <S ID="S-31033">Extraction Set Coarse Pass.</S>
+        <S ID="S-31034">We add possible links to the output of the block ITG model by adding the mixed terminal block productions described in Section 2.3.</S>
+        <S ID="S-31035">This model scores overlapping phrasal rules contained within terminal blocks that result from including or excluding possible links.</S>
+        <S ID="S-31036">However, this model does not score bispans that cross bracketing of ITG derivations.</S>
+        <S ID="S-31037">Full Extraction Set Model.</S>
+        <S ID="S-31038">Our full model includes possible links and features on extraction sets for phrasal bispans with a maximum size of 3.</S>
+        <S ID="S-31039">Model inference is performed using the coarseto-fine scheme described in Section 4.2.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Data</HEADER>
+        <P>
+          <S ID="S-30977">In this paper, we focus exclusively on Chinese-to- English translation.</S>
+          <S ID="S-30978">We performed our discriminative training and alignment evaluations using a hand-aligned portion of the NIST MT02 test set, which consists of 150 training and 191 test sentences (<REF ID="R-00" RPTR="0">Ayan and Dorr, 2006</REF>).</S>
+          <S ID="S-30979">We trained the baseline HMM on 11.3 million words of FBIS newswire data, a comparable dataset to those used in previous alignment evaluations on our test set (<REF ID="R-10" RPTR="16">DeNero and Klein, 2007</REF>; <REF ID="R-19" RPTR="31">Haghighi et al., 2009</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-30980">7 http://code.google.com/p/berkeleyaligner</S>
+        </P>
+        <P>
+          <S ID="S-30981">Our end-to-end translation experiments were tuned and evaluated on sentences up to length 40 from the NIST MT04 and MT05 test sets.</S>
+          <S ID="S-30982">For these experiments, we trained on a 22.1 million word parallel corpus consisting of sentences up to length 40 of newswire data from the GALE program, subsampled from a larger data set to promote overlap with the tune and test sets.</S>
+          <S ID="S-30983">This corpus also includes a bilingual dictionary.</S>
+          <S ID="S-30984">To improve performance, we retrained our aligner on a retokenized version of the hand-annotated data to match the tokenization of our corpus.</S>
+          <S ID="S-30985">8 We trained a language model with Kneser-Ney smoothing on 262 million words of newswire using SRILM (<REF ID="R-31" RPTR="50">Stolcke, 2002</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Word and Phrase Alignment</HEADER>
+        <P>
+          <S ID="S-30986">The first panel of Table 1 gives a word-level evaluation of all five aligners.</S>
+          <S ID="S-30987">We use the alignment error rate (AER) measure: precision is the fraction of sure links in the system output that are sure or possible in the reference, and recall is the fraction of sure links in the reference that the system outputs as sure.</S>
+          <S ID="S-30988">For this evaluation, possible links produced by our extraction set models are ignored.</S>
+          <S ID="S-30989">The full extraction set model performs the best by a small margin, although it was not tuned for word alignment.</S>
+        </P>
+        <P>
+          <S ID="S-30990">The second panel gives a phrasal rule-level evaluation, which measures the degree to which these aligners matched the extraction sets of handannotated alignments, R 3 (A t ).</S>
+          <S ID="S-30991">9 To compete fairly, all models were evaluated on the full extraction sets induced by the word alignments they predicted.</S>
+          <S ID="S-30992">Again, the extraction set model outperformed the baselines, particularly on the F 5 measure for which these systems were trained.</S>
+        </P>
+        <P>
+          <S ID="S-30993">Our coarse pass extraction set model performed nearly as well as the full model.</S>
+          <S ID="S-30994">We believe these models perform similarly for two reasons.</S>
+          <S ID="S-30995">First, most of the information needed to predict an extraction set can be inferred from word links and phrasal rules contained within ITG terminal productions.</S>
+          <S ID="S-30996">Second, the coarse-to-fine inference may be constraining the full phrasal model to predict similar output to the coarse model.</S>
+          <S ID="S-30997">This similarity persists in translation experiments.</S>
+        </P>
+        <P>
+          <S ID="S-30998">8 All alignment results are reported under the annotated</S>
+        </P>
+        <P>
+          <S ID="S-30999">data set&#8217;s original tokenization.</S>
+          <S ID="S-31000">9 While pseudo-gold approximations to the annotation</S>
+        </P>
+        <P>
+          <S ID="S-31001">were used for training, the evaluation is always performed relative to the original human annotation.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.3 Translation Experiments</HEADER>
+        <P>
+          <S ID="S-31002">We evaluate the alignments predicted by our model using two publicly available, open-source, state-of-the-art translation systems.</S>
+          <S ID="S-31003">Moses is a phrase-based system with lexicalized reordering (Koehn et al., 2007).</S>
+          <S ID="S-31004">Joshua (<REF ID="R-26" RPTR="44">Li et al., 2009</REF>) is an implementation of Hiero (<REF ID="R-08" RPTR="13">Chiang, 2007</REF>) using a suffix-array-based grammar extraction approach (<REF ID="R-28" RPTR="47">Lopez, 2007</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-31005">Both of these systems take word alignments as input, and neither of these systems accepts possible links in the alignments they consume.</S>
+          <S ID="S-31006">To interface with our extraction set models, we produced three sets of sure-only alignments from our model predictions: one that omitted possible links, one that converted all possible links to sure links, and one that includes each possible link with 0.5 probability.</S>
+          <S ID="S-31007">These three sets were aggregated and rules were extracted from all three.</S>
+          <S ID="S-31008">The training set we used for MT experiments is quite heterogenous and noisy compared to our alignment test sets, and the supervised aligners did not handle certain sentence pairs in our parallel corpus well.</S>
+          <S ID="S-31009">In some cases, pruning based on consistency with the HMM caused parse failures, which in turn caused training sentences to be skipped.</S>
+          <S ID="S-31010">To account for these issues, we added counts of phrasal rules extracted from the baseline HMM to the counts produced by supervised aligners.</S>
+        </P>
+        <P>
+          <S ID="S-31011">In Moses, our extraction set model predicts the set of phrases extracted by the system, and so the estimation techniques for the alignment model and translation model both share a common underlying representation: extraction sets.</S>
+          <S ID="S-31012">Empirically, we observe a BLEU score improvement of 1.2 over the best unsupervised baseline and 0.8 over the block ITG supervised baseline (<REF ID="R-30" RPTR="49">Papineni et al., 2002</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-31013">In Joshua, hierarchical rule extraction is based upon phrasal rule extraction, but abstracts away sub-phrases to create a grammar.</S>
+          <S ID="S-31014">Hence, the extraction sets we predict are closely linked to the representation that this system uses to translate.</S>
+          <S ID="S-31015">The extraction model again outperformed both unsupervised and supervised baselines, by 1.4 BLEU and 1.2 BLEU respectively.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion</HEADER>
+      <P>
+        <S ID="S-31040">Our extraction set model serves to coordinate the alignment and translation model components of a statistical translation system by unifying their representations.</S>
+        <S ID="S-31041">Moreover, our model provides an effective alternative to phrase alignment models that choose a particular phrase segmentation; instead, we predict many overlapping phrases, both large and small, that are mutually consistent.</S>
+        <S ID="S-31042">In future work, we look forward to developing extraction set models for richer formalisms, including hierarchical grammars.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-31043">This project is funded in part by BBN under DARPA contract HR0011-06-C-0022 and by the NSF under grant 0643742.</S>
+      <S ID="S-31044">We thank the anonymous reviewers for their helpful comments.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Necip Fazil Ayan</RAUTHOR>
+      <REFTITLE>Going beyond AER: An extensive analysis of word alignments and their impact on MT.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Necip Fazil Ayan</RAUTHOR>
+      <REFTITLE>Neuralign: combining word alignments using neural networks.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Alexandra Birch</RAUTHOR>
+      <REFTITLE>Constraining the phrase-based, joint probability statistical translation model.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Phil Blunsom</RAUTHOR>
+      <REFTITLE>A Gibbs sampler for phrasal synchronous grammar induction.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Eugene Charniak</RAUTHOR>
+      <REFTITLE>New figures of merit for best-first probabilistic chart parsing.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Colin Cherry</RAUTHOR>
+      <REFTITLE>Soft syntactic constraints for word alignment through discriminative training.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Colin Cherry</RAUTHOR>
+      <REFTITLE>Inversion transduction grammar for joint phrasal translation modeling.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Online large-margin training of syntactic and structural translation features.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation. Computational Linguistics.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Koby Crammer</RAUTHOR>
+      <REFTITLE>Ultraconservative online algorithms for multiclass problems.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>John DeNero</RAUTHOR>
+      <REFTITLE>Tailoring word alignments to syntactic machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>John DeNero</RAUTHOR>
+      <REFTITLE>The complexity of phrase alignment problems.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>John DeNero</RAUTHOR>
+      <REFTITLE>Why generative phrase models underperform surface heuristics.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>John DeNero</RAUTHOR>
+      <REFTITLE>Sampling alignment structure under a bayesian translation model.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>Optimizing word alignment combination for phrase table training.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Alexander Fraser</RAUTHOR>
+      <REFTITLE>Semisupervised training for statistical word alignment.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Alexander Fraser</RAUTHOR>
+      <REFTITLE>Getting the structure right for word alignment: Leaf.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Scalable inference and training of context-rich syntactic translation models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Joshua Goodman</RAUTHOR>
+      <REFTITLE>Parsing algorithms and metrics.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Aria Haghighi</RAUTHOR>
+      <REFTITLE>Better word alignments with supervised ITG models.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Forest rescoring: Faster decoding with integrated language models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Matti K&#228;&#228;ri&#228;inen</RAUTHOR>
+      <REFTITLE>Sinuhe&#8212;statistical machine translation using a globally trained conditional exponential family translation model.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Dan Klein</RAUTHOR>
+      <REFTITLE>A* parsing: Fast exact Viterbi parse selection.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Edinburghs submission to all tracks of the WMT2009 shared task with reordering and speed improvements to Moses.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Simon Lacoste-Julien</RAUTHOR>
+      <REFTITLE>Word alignment via quadratic assignment.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Zhifei Li</RAUTHOR>
+      <REFTITLE>Joshua: An open source toolkit for parsing-based machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Percy Liang</RAUTHOR>
+      <REFTITLE>Alignment by agreement.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Adam Lopez</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation with suffix arrays.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR>Daniel Marcu</RAUTHOR>
+      <REFTITLE>A phrasebased, joint probability model for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="30">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: A method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="31">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>Srilm an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="32">
+      <RAUTHOR>Ben Taskar</RAUTHOR>
+      <REFTITLE>A discriminative matching approach to word alignment.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="33">
+      <RAUTHOR>Dekai Wu</RAUTHOR>
+      <REFTITLE>Stochastic inversion transduction grammars and bilingual parsing of parallel corpora.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="34">
+      <RAUTHOR>Hao Zhang</RAUTHOR>
+      <REFTITLE>Stochastic lexicalized inversion transduction grammar for alignment.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="35">
+      <RAUTHOR>Hao Zhang</RAUTHOR>
+      <REFTITLE>Efficient search for inversion transduction grammar.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="36">
+      <RAUTHOR>Hao Zhang</RAUTHOR>
+      <REFTITLE>Bayesian learning of noncompositional phrases with synchronous parsing.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="37">
+      <RAUTHOR>I Dan Melamed</RAUTHOR>
+      <REFTITLE>Models of translational equivalence among words. Computational Linguistics.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="38">
+      <RAUTHOR>Robert Moore</RAUTHOR>
+      <REFTITLE>Faster beam-search decoding for phrasal statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="39">
+      <RAUTHOR>Robert C Moore</RAUTHOR>
+      <REFTITLE>A discriminative framework for bilingual word alignment.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="40">
+      <RAUTHOR>Hermann Ney</RAUTHOR>
+      <REFTITLE>HMM-based word alignment in statistical translation.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="41">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

@@ -1,0 +1,632 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Discriminative Corpus Weight Estimation for Machine Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>Spyros Matsoukas</AUTHOR>
+    <AUTHOR>Antti-Veikko I Rosti</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-6090">Current statistical machine translation (SMT) systems are trained on sentencealigned and word-aligned parallel text collected from various sources.</A-S>
+    <A-S ID="S-6091">Translation model parameters are estimated from the word alignments, and the quality of the translations on a given test set depends on the parameter estimates.</A-S>
+    <A-S ID="S-6092">There are at least two factors affecting the parameter estimation: domain match and training data quality.</A-S>
+    <A-S ID="S-6093">This paper describes a novel approach for automatically detecting and down-weighing certain parts of the training corpus by assigning a weight to each sentence in the training bitext so as to optimize a discriminative objective function on a designated tuning set.</A-S>
+    <A-S ID="S-6094">This way, the proposed method can limit the negative effects of low quality training data, and can adapt the translation model to the domain of interest.</A-S>
+    <A-S ID="S-6095">It is shown that such discriminative corpus weights can provide significant improvements in Arabic-English translation on various conditions, using a state-of-the-art SMT system.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-6096">Statistical machine translation (SMT) systems rely on a training corpus consisting of sentences in the source language and their respective reference translations to the target language.</S>
+        <S ID="S-6097">These parallel sentences are used to perform automatic word alignment, and extract translation rules with associated probabilities.</S>
+        <S ID="S-6098">Typically, a parallel training corpus is comprised of collections of varying quality and relevance to the translation problem of interest.</S>
+        <S ID="S-6099">For example, an SMT system applied to broadcast conversational data may be trained on a corpus consisting mostly of United Nations and newswire data, with only a very small amount of in-domain broadcast news/conversational data.</S>
+        <S ID="S-6100">In this case, it would be desirable to down-weigh the out-of-domain data relative to the in-domain data during the rule extraction and probability estimation.</S>
+        <S ID="S-6101">Similarly, it would be good to assign a lower weight to data of low quality (e.g., poorly aligned or incorrectly translated sentences) relative to data of high quality.</S>
+        <S ID="S-6102">In this paper, we describe a novel discriminative training method that can be used to estimate a weight for each sentence in the training bitext so as to optimize an objective function &#8211; expected translation edit rate (TER) (Snover et al., 2006) &#8211; on a held-out development set.</S>
+        <S ID="S-6103">The training bitext typically consists of millions of (parallel) sentences, so in order to ensure robust estimation we express each sentence weight as a function of sentencelevel features, and estimate the parameters of this mapping function instead.</S>
+        <S ID="S-6104">Sentence-level features may include the identifier of the collection or genre that the sentence belongs to, the number of tokens in the source or target side, alignment information, etc.</S>
+        <S ID="S-6105">The mapping from features to weights can be implemented via any differentiable function, but in our experiments we used a simple perceptron.</S>
+        <S ID="S-6106">Sentence weights estimated in this fashion are applied directly to the phrase and lexical counts unlike any previously published method to the author&#8217;s knowledge.</S>
+        <S ID="S-6107">The tuning framework is developed for phrase-based SMT models, but the tuned weights are also applicable to the training of a hierarchical model.</S>
+        <S ID="S-6108">In cases where the tuning set used for corpus weight estimation is a close match to the test set, this method yields significant gains in TER, BLEU (Papineni et al., 2002), and ME- TEOR (Lavie and Agarwal, 2007) scores over a state-of-the-art hierarchical baseline.</S>
+      </P>
+      <P>
+        <S ID="S-6109">The paper is organized as follows.</S>
+        <S ID="S-6110">Related work on data selection, data weighting, and model adaptation is presented in Section 2.</S>
+        <S ID="S-6111">The corpus weight</S>
+      </P>
+      <P>
+        <S ID="S-6112">approach and estimation algorithm are described in Section 3.</S>
+        <S ID="S-6113">Experimental evaluation of the approach is presented in Sections 4 and 5.</S>
+        <S ID="S-6114">Section 6 concludes the paper with a few directions for future work.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related Work</HEADER>
+      <P>
+        <S ID="S-6115">Previous work related to corpus weighting may be split into three categories: data selection, data weighting, and translation model adaptation.</S>
+        <S ID="S-6116">The first two approaches may improve the quality of the word alignment and prevent phrase-pairs which are less useful for the domain to be learned.</S>
+        <S ID="S-6117">The model adaptation, on the other hand, may boost the weight of the more relevant phrasepairs or introduce translations for unseen source phrases.</S>
+        <S ID="S-6118">Resnik and Smith (2003) mined parallel text from the web using various filters to identify likely translations.</S>
+        <S ID="S-6119">The filtering may be viewed as a data selection where poor quality translation are discarded before word alignment.</S>
+        <S ID="S-6120">Yasuda et al. (2008) selected subsets of an existing parallel corpus to match the domain of the test set.</S>
+        <S ID="S-6121">The discarded sentence pairs may be valid translations but they do not necessarily improve the translation quality on the test domain.</S>
+        <S ID="S-6122">Mandal et al. (2008) used active learning to select suitable training data for human translation.</S>
+        <S ID="S-6123">Hildebrand et al. (2005) selected comparable sentences from parallel corpora using information retrieval techniques.</S>
+        <S ID="S-6124">Lu et al. (2007) proposed weighting comparable portions of the parallel text before word alignment based on information retrieval.</S>
+        <S ID="S-6125">The relevant portions of the parallel text were given a higher integer weight in GIZA++ word alignment.</S>
+        <S ID="S-6126">Similar effect may be achieved by replicating the relevant subset in the training data.</S>
+      </P>
+      <P>
+        <S ID="S-6127">Lu et al. (2007) also proposed training adapted translation models which were interpolated with a model trained on the entire parallel text.</S>
+        <S ID="S-6128">Snover et al. (2008) used cross-lingual information retrieval to identify possible bias-rules to improve the coverage on the source side.</S>
+        <S ID="S-6129">These rules may cover source phrases for which no translations were learned from the available parallel text.</S>
+        <S ID="S-6130">Koehn and Schroeder (2007) described a procedure for domain adaptation that was using two translation models in decoding, one trained on in-domain data and the other on out-of-domain data.</S>
+        <S ID="S-6131">Phrase translation scores from the two models where combined in a log-linear fashion, with weights estimated based on minimum error rate training (Och, 2003) on a designated tuning set.</S>
+      </P>
+      <P>
+        <S ID="S-6132">The method described in this paper can also be viewed as data filtering or (static) translation adaptation, but it has the following advantages over previously published techniques:</S>
+      </P>
+      <P>
+        <S ID="S-6133">1.</S>
+        <S ID="S-6134">The estimated corpus weights are discriminative and are computed so as to directly optimize an MT performance metric on a pre-defined development set.</S>
+        <S ID="S-6135">Unlike the domain adaptation technique in (Koehn and Schroeder, 2007), which also estimates the adaptation parameters discriminatively, our proposed method does not require a manual specification of the in-domain and outof-domain training data collections.</S>
+        <S ID="S-6136">Instead, it automatically determines which collections are most relevant to the domain of interest, and increases their weight while decreasing the weight assigned to less relevant collections.</S>
+      </P>
+      <P>
+        <S ID="S-6137">2.</S>
+        <S ID="S-6138">All sentences in the parallel corpus can influence the translation model, as opposed to filtering/discarding data.</S>
+        <S ID="S-6139">However, the proposed method can still assign very low weights to parts of the corpus, if it determines that it helps improve MT performance.</S>
+      </P>
+      <P>
+        <S ID="S-6140">3.</S>
+        <S ID="S-6141">The framework used for estimating the corpus weights can be easily extended to support discriminative alignment link-level weights, thus allowing the system to automatically identify which portions of the training sentences are most useful.</S>
+      </P>
+      <P>
+        <S ID="S-6142">Naturally, as with any method, the proposed technique has certain limitations.</S>
+        <S ID="S-6143">Specifically, it is only concerned with influencing the translation rule probabilities via the corpus weights; it does not change the set of rules extracted.</S>
+        <S ID="S-6144">Thus, it is unable to add new translation rules as in Snover et al. (2008).</S>
+        <S ID="S-6145">Also, it can potentially lead to parameter over-fitting, especially if the function that maps sentence features to weights is complex and based on a large number of parameters, or if the development set used for estimating the mapping function does not match the characteristics of the test set.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Corpus Weights Estimation</HEADER>
+      <P>
+        <S ID="S-6287"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Feature Extraction</HEADER>
+        <P>
+          <S ID="S-6146">The purpose of feature extraction is to identify, for each sentence in the parallel training data, a set of features that can be useful in estimating a weight that is correlated with quality or relevance to the MT task at hand.</S>
+          <S ID="S-6147">Starting from sentencealigned, word-aligned parallel training data, one could extract various types of sentence-level features.</S>
+          <S ID="S-6148">For example, we could specify features that describe the two sides of the parallel data or the alignment between them, such as collection id, genre id, number of source tokens, number of target tokens, ratio of number of source and target tokens, number of word alignment links, fraction of source tokens that are unaligned, and fraction of target tokens that are unaligned.</S>
+          <S ID="S-6149">Additionally, we could include information retrieval (IR) related features that reflect the relevance of a training sentence to the domain of interest, e.g., by measuring vector space model (VSM) distance of the sentence to the current tuning set, or its log likelihhod with respect to an in-domain language model.</S>
+          <S ID="S-6150">Note that the collection and genre identifiers (ids) mentioned above are bit vectors.</S>
+          <S ID="S-6151">Each collection in the training set is mapped to a number.</S>
+          <S ID="S-6152">A collection may consist of sentences from multiple genres (e.g., newswire, web, broadcast news, broadcast conversations).</S>
+          <S ID="S-6153">Genres are also mapped to a unique number across the whole training set.</S>
+          <S ID="S-6154">Then, given a sentence in the training bitext, we can extract a binary vector that contains two nonzero bits, one indicating the collection id, and another denoting the genre id.</S>
+        </P>
+        <P>
+          <S ID="S-6155">It is worth mentioning that in the experiments reported later in this paper we made use of only the collection and genre ids as features, although the framework supports general sentence-level features.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Mapping Features to Weights</HEADER>
+        <P>
+          <S ID="S-6156">As mentioned previously, one way to map a feature vector to a weight is to use a perceptron.</S>
+          <S ID="S-6157">A multi-layer neural network may also be used, but at the expense of slower training.</S>
+          <S ID="S-6158">In this work, all of the experiments carried out made use of a perceptron mapping function.</S>
+          <S ID="S-6159">However, it is also possible to cluster the training sentences into classes by training a Gaussian mixture model (GMM) on their respective feature vectors 1 .</S>
+          <S ID="S-6160">Then, given a feature vector we can compute the (posterior) probability that it was generated by one of the N Gaussians in the GMM, and use this N- dimensional vector of posteriors as input to the perceptron.</S>
+          <S ID="S-6161">This is similar to having a neural network with a static hidden layer and Gaussian activation functions.</S>
+          <S ID="S-6162">Given the many choices available in mapping features to weights, we will describe the mapping function in general terms.</S>
+          <S ID="S-6163">Let f i be the n &#215; 1 feature vector corresponding to sentence i. Let &#966;(x; &#955;) denote a function R n &#8594; (0, 1) that is parameterized in terms of the parameter vector &#955; and maps a feature vector x to a scalar weight in (0, 1).</S>
+          <S ID="S-6164">The goal of the automatic corpus weight estimation procedure is to estimate the parameter vector &#955; so as to optimize an objective function on a development set.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Training with Weighted Corpora</HEADER>
+        <P>
+          <S ID="S-6165">Once the sentence features have been mapped to weights, the translation rule extraction and probability estimation can proceed as usual, but with weighted counts.</S>
+          <S ID="S-6166">For example, let w i = &#966;(f i ; &#955;) be the weight assigned to sentence i. Let (s, t) be a source-target phrase pair that can be extracted from the corpus, and A(s) and B(t) indicating the sets of sentences that s and t occur in.</S>
+          <S ID="S-6167">Then, &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-6168">j&#8712;A(s)&#8745;B(t)</S>
+        </P>
+        <P>
+          <S ID="S-6169">P (s|t) = w jc j (s, t) &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-6170">j&#8712;B(t) w (1)</S>
+        </P>
+        <P>
+          <S ID="S-6171">jc j (t)</S>
+        </P>
+        <P>
+          <S ID="S-6172">where c j (&#183;) denotes the number of occurrences of the phrase (or phrase-pair) in sentence j.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.4 Optimizing the Mapping Function</HEADER>
+        <P>
+          <S ID="S-6173">Estimation of the parameters &#955; of the mapping function &#966; can be performed by directly optimizing a suitable objective function on a development set.</S>
+          <S ID="S-6174">Ideally, we would like to estimate the parameters of the mapping function so as to directly optimize an automatic MT performance evaluation metric, such as TER or BLEU on the full translation search space.</S>
+          <S ID="S-6175">However, this is extremely computationally intensive for two reasons: (a) optimizing in the full translation search space requires a new decoding pass for each iteration of optimization; and (b) a direct optimization of TER or</S>
+        </P>
+        <P>
+          <S ID="S-6176">1 Note that in order to train such a GMM it may be necessary to first apply a decorrelating, dimensionality reducing, transform (e.g., principal component analysis) to the features.</S>
+        </P>
+        <P>
+          <S ID="S-6177">BLEU requires the use of a derivative free, slowly converging optimization method such as MERT (Och, 2003), because these objective functions are not differentiable.</S>
+          <S ID="S-6178">In our case, for every parameter vector update we need to essentially retrain the translation model (reestimate the phrase and lexical translation probabilities based on the updated corpus weights), so the cost of each iteration is significantly higher than in a typical MERT application.</S>
+          <S ID="S-6179">For these reasons, in this work we chose to minimize the expected TER over a translation N-best on a designated tuning set, which is a continuous and differentiable function and can be optimized with standard gradient descent methods in a small number of iterations.</S>
+          <S ID="S-6180">Note, that using expected TER is not the only option here; any criterion that can be expressed as a continuous function of the phrase or lexical translation probabilities can be used to optimize &#955;.</S>
+        </P>
+        <P>
+          <S ID="S-6181">Given an N-best of translation hypotheses over a development set of S sentences, we can define the expected TER as follows &#8721; S &#8721; Ns</S>
+        </P>
+        <P>
+          <S ID="S-6182">s=1 j=1</S>
+        </P>
+        <P>
+          <S ID="S-6183">T = p sj&#603; sj &#8721; S</S>
+        </P>
+        <P>
+          <S ID="S-6184">s=1 r (2) s</S>
+        </P>
+        <P>
+          <S ID="S-6185">where N s is the number of translation hypotheses available for segment s; &#603; sj is the minimum raw edit distance between hypothesis j of segment s (or h sj , for short) and the reference translation(s) corresponding to segment s; r s is the average number of reference translation tokens in segment s, and p sj is the posterior probability of hypothesis h sj in the N-best.</S>
+          <S ID="S-6186">The latter is computed as follows e &#947;L sj p sj = &#8721; Ns (3)</S>
+        </P>
+        <P>
+          <S ID="S-6187">k=1 e&#947;L sk</S>
+        </P>
+        <P>
+          <S ID="S-6188">where L sj is the total log likelihood of hypothesis h sj , and &#947; is a tunable scaling factor that can be used to change the dynamic range of the likelihood scores and hence the distribution of posteriors over the N-best.</S>
+          <S ID="S-6189">The hypothesis likelihood L sj is typically computed as a dot product of a decoding weight vector and a vector of various &#8220;feature&#8221; scores, such as log phrase translation probability, log lexical translation probability, log n-gram language model probability, and number of tokens in the hypothesis.</S>
+          <S ID="S-6190">However, in order to simplify this presentation we will assume that it contains a single translation model score, the log phrase translation probability of source given target.</S>
+          <S ID="S-6191">This score is a sum of log conditional probabilities, similar to the one defined in Equation 1.</S>
+          <S ID="S-6192">Therefore, L sj is indirectly a function of the training sentence weights.</S>
+        </P>
+        <P>
+          <S ID="S-6193">In order to minimize the expected TER T , we need to compute the derivative of T with respect to the mapping function parameters &#955;.</S>
+          <S ID="S-6194">Using the chain rule, we get equations (4)-(8), where the summation in Equation 6 is over all source-target phrase pairs in the derivation of hypothesis h sm , &#958; is the decoding weight assigned to the log phrase translation score, and the summation in Equation 7 is over all training sentences 2 .</S>
+        </P>
+        <P>
+          <S ID="S-6195">Thus, in order to compute the derivative of the objective function we first need to calculate</S>
+        </P>
+        <P>
+          <S ID="S-6196">&#8706; ln P (s k |t k ) &#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6197">for every phrase pair (s k , t k ) in the translation N-best based on Equations 7 and 8, which requires time proportional to the number of occurrences of these phrases in the parallel training data.</S>
+          <S ID="S-6198">After that, we can compute &#8706;Lsm &#8706;&#955; for each hypothesis h sm , based on Equation 6.</S>
+          <S ID="S-6199">Finally, we calculate &#8706; ln p sj</S>
+        </P>
+        <P>
+          <S ID="S-6200">&#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6201">and &#8706;T &#8706;&#955; based on Equations 5 and 4, respectively.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.5 Implementation Issues</HEADER>
+        <P>
+          <S ID="S-6202">In our system, the corpus weights were trained based on N-best translation hypotheses generated by a phrase-based MT system on a designated tuning set.</S>
+          <S ID="S-6203">Each translation hypothesis in the N-best has a score that is a (linear) function of the following log translation probabilities: target phrase given source phrase, source phrase given target phrase, and lexical smoothing term.</S>
+          <S ID="S-6204">Additionally, each hypothesis specifies information about its derivation, i.e., which source-target phrase pairs it consists of.</S>
+          <S ID="S-6205">Therefore, given an N-best, we can identify the set of unique phrase pairs and use this information in order to perform a filtered accumulation of the statistics needed for calculating the derivative in Equation 8.</S>
+          <S ID="S-6206">This reduces the storage needed for the sufficient statistics significantly.</S>
+        </P>
+        <P>
+          <S ID="S-6207">Minimization of the expected TER of the N- best hypotheses was performed using the limitedmemory BFGS algorithm (Liu and Nocedal, 1989).</S>
+          <S ID="S-6208">Typically, the parameter vector &#955; required about 30 iterations of LBFGS to converge.</S>
+        </P>
+        <P>
+          <S ID="S-6209">Since the N-best provides only a limited representation of the MT hypothesis search space, we regenerated the N-best after every 30 iterations</S>
+        </P>
+        <P>
+          <S ID="S-6210">2 In the general case where L sj includes other translation</S>
+        </P>
+        <P>
+          <S ID="S-6211">scores, e.g., lexical translation probabilities, the derivative will have to include additional terms.</S>
+        </P>
+        <P>
+          <S ID="S-6212">&#8706;L sm &#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6213">&#8706;T &#8706;&#955; = S &#8721; &#8721;N s</S>
+        </P>
+        <P>
+          <S ID="S-6214">s=1 j=1</S>
+        </P>
+        <P>
+          <S ID="S-6215">&#8706; ln p sj &#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6216">&#8706;L sm &#8706;&#955; = &#8721; (</S>
+        </P>
+        <P>
+          <S ID="S-6217">&#8706;T &#8706; ln p sj &#8706; ln p sj &#8706;&#955; =</S>
+        </P>
+        <P>
+          <S ID="S-6218">Ns = &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-6219">m=1</S>
+        </P>
+        <P>
+          <S ID="S-6220">&#8706; ln p sj &#8706;L sm</S>
+        </P>
+        <P>
+          <S ID="S-6221">(s k ,t k )&#8712;h sm</S>
+        </P>
+        <P>
+          <S ID="S-6222">&#8706;L sm</S>
+        </P>
+        <P>
+          <S ID="S-6223">&#8706;L sm &#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6224">1 &#8721; S</S>
+        </P>
+        <P>
+          <S ID="S-6225">s=1 r s</S>
+        </P>
+        <P>
+          <S ID="S-6226">= &#947;</S>
+        </P>
+        <P>
+          <S ID="S-6227">&#8706; ln P (s k |t k ) &#8706; ln P (s k |t k ) &#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6228">&#8706; ln P (s k |t k ) &#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6229">) &#8721; S</S>
+        </P>
+        <P>
+          <S ID="S-6230">&#8721;N s</S>
+        </P>
+        <P>
+          <S ID="S-6231">s=1 j=1</S>
+        </P>
+        <P>
+          <S ID="S-6232">(</S>
+        </P>
+        <P>
+          <S ID="S-6233">Ns</S>
+        </P>
+        <P>
+          <S ID="S-6234">&#8706;L sj &#8706;&#955; &#8722; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-6235">m=1</S>
+        </P>
+        <P>
+          <S ID="S-6236">p sj &#603; sj &#8706; ln p sj</S>
+        </P>
+        <P>
+          <S ID="S-6237">&#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6238">p sm &#8706;L sm &#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6239">)</S>
+        </P>
+        <P>
+          <S ID="S-6240">&#8721; = &#958; &#8706; ln P (s k|t k ) &#8706;&#955;</S>
+        </P>
+        <P>
+          <S ID="S-6241">(s k ,t k )&#8712;h sm</S>
+        </P>
+        <P>
+          <S ID="S-6242">&#8706; ln P (s k |t k ) &#8706;w i &#8706;w i &#8706;&#955; = &#8721; i</S>
+        </P>
+        <P>
+          <S ID="S-6243">&#8721; &#8706; ln P (s k |t k ) j&#8712;A(s =</S>
+        </P>
+        <P>
+          <S ID="S-6244">k )&#8745;B(t k ) &#948; (j &#8722; i) c j(s k , t k )</S>
+        </P>
+        <P>
+          <S ID="S-6245">&#8721; &#8706;w i j&#8712;A(s k )&#8745;B(t k ) w jc j (s k , t k )</S>
+        </P>
+        <P>
+          <S ID="S-6246">&#948;(x) = { 1 x = 0</S>
+        </P>
+        <P>
+          <S ID="S-6247">0 x &#8800; 0 &#8722;</S>
+        </P>
+        <P>
+          <S ID="S-6248">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-6249">j&#8712;B(t k ) &#948; (j &#8722; i) c j(t k )</S>
+        </P>
+        <P>
+          <S ID="S-6250">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-6251">j&#8712;B(t k ) w jc j (t k )</S>
+        </P>
+        <P>
+          <S ID="S-6252">(4)</S>
+        </P>
+        <P>
+          <S ID="S-6253">(5)</S>
+        </P>
+        <P>
+          <S ID="S-6254">(6)</S>
+        </P>
+        <P>
+          <S ID="S-6255">(7)</S>
+        </P>
+        <P>
+          <S ID="S-6256">(8)</S>
+        </P>
+        <P>
+          <S ID="S-6257">(9)</S>
+        </P>
+        <P>
+          <S ID="S-6258">of LBFGS training, merging new hypotheses with translations from previous iterations.</S>
+          <S ID="S-6259">The overall training procedure is described in more detail below:</S>
+        </P>
+        <P>
+          <S ID="S-6260">1.</S>
+          <S ID="S-6261">Initialize parameter vector &#955; to small random values, so that all training sentences receive approximately equal weights.</S>
+        </P>
+        <P>
+          <S ID="S-6262">2.</S>
+          <S ID="S-6263">Initialize phrase-based MT decoding weights to previously tuned values.</S>
+        </P>
+        <P>
+          <S ID="S-6264">3.</S>
+          <S ID="S-6265">Perform weighted phrase rule extraction as described in Equation 1, to estimate the phrase and lexical translation probabilities.</S>
+        </P>
+        <P>
+          <S ID="S-6266">4.</S>
+          <S ID="S-6267">Decode the tuning set, generating N-best.</S>
+        </P>
+        <P>
+          <S ID="S-6268">5.</S>
+          <S ID="S-6269">Merge N-best hypotheses from previous iterations to current N-best.</S>
+        </P>
+        <P>
+          <S ID="S-6270">6.</S>
+          <S ID="S-6271">Tune decoding weights so as to minimize TER on merged N-best, using a derivative free optimization method.</S>
+          <S ID="S-6272">In our case, we used Powell&#8217;s algorithm (Powell, 1964) modified by Brent as described in (<REF ID="R-00" RPTR="0">Brent, 1973</REF>) 3 .</S>
+        </P>
+        <P>
+          <S ID="S-6273">7.</S>
+          <S ID="S-6274">Identify set of unique source-target phrase pairs in merged N-best.</S>
+        </P>
+        <P>
+          <S ID="S-6275">8.</S>
+          <S ID="S-6276">Extract sufficient statistics from training data for all phrases identified in step 7.</S>
+        </P>
+        <P>
+          <S ID="S-6277">3 This method was first used for N-best based parameter</S>
+        </P>
+        <P>
+          <S ID="S-6278">optimization in (Ostendorf et al., 1991).</S>
+        </P>
+        <P>
+          <S ID="S-6279">9.</S>
+          <S ID="S-6280">Run the LBFGS algorithm to minimize the expected TER in the merged N-best, using the derivative equations described previously.</S>
+        </P>
+        <P>
+          <S ID="S-6281">10.</S>
+          <S ID="S-6282">Assign a weight to each training sentence based on the &#955; values optimized in 9.</S>
+        </P>
+        <P>
+          <S ID="S-6283">11.</S>
+          <S ID="S-6284">Go to step 3.</S>
+        </P>
+        <P>
+          <S ID="S-6285">Typically, the corpus weights converge in about 4-5 main iterations.</S>
+          <S ID="S-6286">The calculation of the derivative is parallelized to speed up computation, requiring about 10 minutes per iteration of LBFGS.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experimental Setup</HEADER>
+      <P>
+        <S ID="S-6324">In this section we describe the setup that was used for all experiments reported in this paper.</S>
+        <S ID="S-6325">Specifically, we provide details about the training data, development sets, and MT systems (phrase-based and hierarchical).</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Training Data</HEADER>
+        <P>
+          <S ID="S-6288">All MT training experiments made use of an Arabic-English corpus of approximately 200 million tokens (English side).</S>
+          <S ID="S-6289">Most of the collections in this corpus are available through the Linguistic Data Consortium (LDC) and are regularly part of the resources specified for the constrained data track of the NIST MT evaluation 4 .</S>
+        </P>
+        <P>
+          <S ID="S-6290">4 For a list of the NIST MT09 constrained training condition resources, see http://www.itl.</S>
+          <S ID="S-6291">nist.gov/iad/mig/tests/mt/2009/MT09_ ConstrainedResources.pdf</S>
+        </P>
+        <P>
+          <S ID="S-6292">The corpus includes data from multiple genres, as shown in Table 1.</S>
+          <S ID="S-6293">The &#8220;Sakhr&#8221; newswire collection is a set of Arabic-to-English and English-to-Arabic data provided by Sakhr Software, totaling about 30.8 million tokens, and is only available to research teams participating in the Defense Advanced Research Projects Agency (DARPA) Global Autonomous Language Exploitation (GALE) program.</S>
+          <S ID="S-6294">The &#8220;LDC Gigaword (ISI)&#8221; collection was produced by automatically detecting and extracting portions of parallel text from the monolingual LDC Arabic and English Gigaword collections, using a method developed at the Information Sciences Institute (ISI) of the University of Southern California.</S>
+        </P>
+        <P>
+          <S ID="S-6295">Data Origin Style</S>
+        </P>
+        <P>
+          <S ID="S-6296">Size (K tokens)</S>
+        </P>
+        <P>
+          <S ID="S-6297">It is easy to see that most of the parallel training data are either newswire or from United Nations.</S>
+          <S ID="S-6298">The amount of web text or broadcast news/conversations is only a very small fraction of the total corpus.</S>
+          <S ID="S-6299">In total, there are 31 collections in the training bitext.</S>
+          <S ID="S-6300">Some collections (especially those released recently by LDC for the GALE project) consist of data from multiple genres.</S>
+          <S ID="S-6301">The total number of unique genres (or data types) in the training set is 10.</S>
+        </P>
+        <P>
+          <S ID="S-6302">Besides the above bitext, we also used approximately 8 billion words of English text for language model (LM) training (3.7B words from the LDC Gigaword corpus, 3.3B words of web-downloaded text, and 1.1B words of data from CNN archives).</S>
+          <S ID="S-6303">This data was used to train two language models: an entropy-pruned trigram LM, used in decoding, and an unpruned 5-gram LM used in N-best rescoring.</S>
+          <S ID="S-6304">Kneser-Ney smoothing was applied to the n-grams in both cases.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Development Sets</HEADER>
+        <P>
+          <S ID="S-6305">The development sets used for tuning and testing the corpus weights and other MT settings were comprised of documents from previous Arabic- English NIST MT evaluation sets and from GALE development/evaluation sets.</S>
+          <S ID="S-6306">Specifically, the newswire Tune and Test sets consist of documents from the following collections: the newswire portion of NIST MT04, MT05, MT06, and MT08 evaluation sets, the GALE Phase 1 (P1) and Phase 2 (P2) evaluation sets, and the GALE P2 and P3 development sets.</S>
+          <S ID="S-6307">The web Tune and Test sets are made of documents from NIST MT06 and MT08, the GALE P1 and P2 evaluation sets, the GALE P2 and P3 development sets, and a held-out portion of the GALE year 1 quarter 4 web training data release.</S>
+        </P>
+        <P>
+          <S ID="S-6308">The audio Tune and Test sets consist of roughly equal parts of news and conversations broadcast from November 2005 through May 2007 by major Arabic-speaking television and radio stations (e.g., Al-Jazeera, Al-Arabiya, Syrian TV), totaling approximately 14 hours of speech.</S>
+          <S ID="S-6309">The audio was processed through automated speech recognition (ASR) in order to produce (errorful) transcripts that were used as input to all MT decoding experiments reported in this paper.</S>
+          <S ID="S-6310">However, the corpus weight estimation was carried out based on N-best MT of the Arabic audio reference transcriptions (i.e., the transcripts had no speech recognition errors, and contained full punctuation).</S>
+        </P>
+        <P>
+          <S ID="S-6311">It is important to note that some of the documents in the above devsets have multiple reference translations (usually 4), while others have only one.</S>
+          <S ID="S-6312">Most of the documents in the newswire sets have 4 references, but unfortunately the web and audio sets have, on average, less than 2 reference translations per segment.</S>
+          <S ID="S-6313">More details are listed in Table 2.</S>
+        </P>
+        <P>
+          <S ID="S-6314">Another important note is that, although the audio sets consist of both broadcast news (BN) and broadcast conversations (BC), we did not perform BN or BC-specific tuning.</S>
+          <S ID="S-6315">Corpus weights and MT decoding parameters were optimized based on a single Tune set, on a mix of BN and BC data.</S>
+          <S ID="S-6316">However, when we report speech translation results in later sections, we break down the perfor-</S>
+        </P>
+        <P>
+          <S ID="S-6317">Genre</S>
+        </P>
+        <P>
+          <S ID="S-6318">mance by genre.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 MT Systems</HEADER>
+        <P>
+          <S ID="S-6319">Experiments were performed using two types of statistical MT systems: a phrase-based system, similar to Pharaoh (Koehn, 2004), and a stateof-the-art, hierarchical string-to-dependency-tree system, similar to (Shen et al., 2008).</S>
+        </P>
+        <P>
+          <S ID="S-6320">The phrase-based MT system employs a pruned 3-gram LM in decoding, and can optionally generate N-best unique translation hypotheses which are used to estimate the corpus weights, as described in Section 3.</S>
+        </P>
+        <P>
+          <S ID="S-6321">The hierarchical MT system performs decoding with the same 3-gram LM, generates N-best of unique translation hypotheses, and then rescores them using a large, unpruned 5-gram LM in order to select the best scoring translation.</S>
+          <S ID="S-6322">It is worth mentioning that this hierarchical MT system provides a very strong baseline; it achieves a casesensitive BLEU score of 52.20 on the newswire portion of the NIST MT08 evaluation set, which is similar to the score of the second-best system that participated in the unconstrained data track of the NIST MT08 evaluation.</S>
+        </P>
+        <P>
+          <S ID="S-6323">Both types of models were trained on the same word alignments generated by GIZA++ (Och and Ney, 2003).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Results</HEADER>
+      <P>
+        <S ID="S-6351">In this section we report results on the Arabic newswire, web, and audio development sets, using both phrase-based and hierarchical MT systems, in terms of TER, BLEU 5 , and METEOR (Lavie and Agarwal, 2007).</S>
+        <S ID="S-6352">Whenever corpus weights are used, they were estimated on the designated Tune set using the phrase-based MT sys-</S>
+      </P>
+      <P>
+        <S ID="S-6353">5 The brevity penalty was calculated using the formula in</S>
+      </P>
+      <P>
+        <S ID="S-6354">the original IBM paper, rather than the more recent definition implemented in the NIST mteval-v11b.pl script.</S>
+      </P>
+      <P>
+        <S ID="S-6355">tem.</S>
+        <S ID="S-6356">Only the collection and genre ids were used as sentence features in order to estimate the corpus weights.</S>
+        <S ID="S-6357">As mentioned in Section 4.1, the training bitext consists of 31 collections and 10 genres, so each training sentence was assigned a 41- dimensional binary vector indicating its particular collection/genre combination.</S>
+        <S ID="S-6358">That vector was then mapped into a single weight using a perceptron.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Phrase-based MT</HEADER>
+        <P>
+          <S ID="S-6326">Results using the phrase-based MT system are shown in Table 3.</S>
+          <S ID="S-6327">In all cases, the decoding weights were optimized so as to minimize TER on the designated Tune set.</S>
+          <S ID="S-6328">On newswire, the discriminative corpus weights provide 0.8% absolute gain in TER, in both Tune and Test sets.</S>
+          <S ID="S-6329">On web, the TER gain is 0.9% absolute on Tune and 0.5% on Test.</S>
+          <S ID="S-6330">On the audio Test set, the TER gain is 0.5% on BN and 1.4% on BC.</S>
+          <S ID="S-6331">Significant improvements were also obtained in the BLEU and METEOR scores, on all sets and conditions.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Hierarchical MT</HEADER>
+        <P>
+          <S ID="S-6332">Results using the hierarchical MT system are shown in Table 4.</S>
+          <S ID="S-6333">The hierarchical system used different tuning criteria in each genre.</S>
+          <S ID="S-6334">On newswire, the decoding weights were optimized so as to maximize BLEU, while on web and audio the tuning was based on 0.5TER+0.5(1&#8722;BLEU) (referred to as TERBLEU in what follows).</S>
+          <S ID="S-6335">Note that these were the criteria for tuning the decoding weights; whenever corpus weights were used, they were taken from the phrase-based system.</S>
+        </P>
+        <P>
+          <S ID="S-6336">It is interesting to see that gains from discriminative corpus weights carry over to the more powerful hierarchical MT system.</S>
+          <S ID="S-6337">On newswire Test, the gain in BLEU is 0.8; on web Test, the gain in TERBLEU is 0.3.</S>
+          <S ID="S-6338">On the audio Test set, the corpus weights provide 0.7 and 0.75 TERBLEU reduction on BN and BC, respectively.</S>
+          <S ID="S-6339">As with the</S>
+        </P>
+        <P>
+          <S ID="S-6340">Set</S>
+        </P>
+        <P>
+          <S ID="S-6341">Tune</S>
+        </P>
+        <P>
+          <S ID="S-6342">Test</S>
+        </P>
+        <P>
+          <S ID="S-6343">Corpus Weights</S>
+        </P>
+        <P>
+          <S ID="S-6344">(a) Results on Arabic text.</S>
+        </P>
+        <P>
+          <S ID="S-6345">Set</S>
+        </P>
+        <P>
+          <S ID="S-6346">Tune</S>
+        </P>
+        <P>
+          <S ID="S-6347">Test</S>
+        </P>
+        <P>
+          <S ID="S-6348">Corpus Weights</S>
+        </P>
+        <P>
+          <S ID="S-6349">(b) Results on Arabic audio.</S>
+        </P>
+        <P>
+          <S ID="S-6350">phrase-based system, all metrics improve from the use of corpus weights, in all sets/conditions.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusions</HEADER>
+      <P>
+        <S ID="S-6359">We have described a novel approach for estimating a weight for each sentence in a parallel training corpus so as to optimize MT performance of a phrase-based statistical MT system.</S>
+        <S ID="S-6360">The sentence weights influence MT performance by being applied to the phrase and lexical counts during translation rule extraction and probability estimation.</S>
+        <S ID="S-6361">In order to ensure robust training of the weights, we expressed them as a function of sentence-level features.</S>
+        <S ID="S-6362">Then, we defined the process for optimizing the parameters of that function based on the expected TER of a translation hypothesis N- best on a designated tuning set.</S>
+        <S ID="S-6363">The proposed technique was evaluated in the context of Arabic-English translation, on multiple conditions.</S>
+        <S ID="S-6364">It was shown that encouraging results were obtained by just using collection and genre ids as features.</S>
+        <S ID="S-6365">Interestingly, the discriminative corpus weights were found to be generally applicable and provided gains in a state-of-the-art hierarchical string-to-dependency-tree MT system, even though they were trained using the phrasebased MT system.</S>
+        <S ID="S-6366">Next step is to include other sentence-level features, as described in Section 3.1.</S>
+        <S ID="S-6367">Finally, the technique described in this paper can be extended to address the estimation of weights at the alignment link level, based on link-level features.</S>
+        <S ID="S-6368">We believe that this will have a larger impact on the lexical and phrase translation probabilities, since there is a large number of parallel training sentences that are partially correct, i.e., they contain parts that are aligned and translated correctly, and parts that are wrong.</S>
+        <S ID="S-6369">The current procedure tries to assign a single weight to such sentences, so there is no way to distinguish between the &#8220;good&#8221; and &#8220;bad&#8221; portions of each sentence.</S>
+        <S ID="S-6370">Pushing the weight estimation at the alignment link level will alleviate this problem and will make the discriminative training more targeted.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-6371">This work was supported by DARPA/IPTO Contract No.</S>
+      <S ID="S-6372">HR0011-06-C-0022 under the GALE program.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Richard P Brent</RAUTHOR>
+      <REFTITLE>Algorithms for Minimization Without Derivatives.</REFTITLE>
+      <DATE>1973</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

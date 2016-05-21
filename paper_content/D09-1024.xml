@@ -1,0 +1,2199 @@
+<document>
+  <filename>D09-1024</filename>
+  <authors/>
+  <title>Improved Word Alignment with Statistics and Linguistic Heuristics</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>We present a method to align words in a bitext that combines elements of a traditional statistical approach with linguistic knowledge. We demonstrate this approach for Arabic-English, using an alignment lexicon produced by a statistical word aligner, as well as linguistic resources ranging from an English parser to heuristic alignment rules for function words. These linguistic heuristics have been generalized from a development corpus of 100 parallel sentences. Our aligner,
+UALIGN, outperforms both the commonly
+used GIZA++ aligner and the state-of-theart LEAF aligner on F-measure and produces superior scores in end-to-end statistical machine translation, +1.3 BLEU points over GIZA++, and +0.7 over LEAF.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We present a method to align words in a bitext that combines elements of a traditional statistical approach with linguistic knowledge.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We demonstrate this approach for Arabic-English, using an alignment lexicon produced by a statistical word aligner, as well as linguistic resources ranging from an English parser to heuristic alignment rules for function words.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>These linguistic heuristics have been generalized from a development corpus of 100 parallel sentences.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our aligner,</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>UALIGN, outperforms both the commonly</text>
+              <doc_id>4</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>used GIZA++ aligner and the state-of-theart LEAF aligner on F-measure and produces superior scores in end-to-end statistical machine translation, +1.3 BLEU points over GIZA++, and +0.7 over LEAF.</text>
+              <doc_id>5</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>Word alignment is a critical component in training statistical machine translation systems and has received a significant amount of research, for example, (Brown et al., 1993; Ittycheriah and Roukos, 2005; Fraser and Marcu, 2007), including work leveraging syntactic parse trees, e.g., (Cherry and Lin, 2006; DeNero and Klein, 2007; Fossum et al., 2008). Word alignment is also a required first step in other algorithms such as for learning sub-sentential phrase pairs (Lavie et al., 2008) or the generation of parallel treebanks (Zhechev and Way, 2002).
+Yet word alignment precision remains surprisingly low, under 80% for state-of-the-art aligners on not closely related language pairs.
+Consider the following Arabic/English sentence pair with alignments built by the statistical word aligner LEAF:
+Bitext Arabic: &#224;A &#175;A &#8218;KQ &#402; &#224;P&#240;X@PA&#7730; &#248;Y KA&#202; KA  J&#203;@ PA &#175;&#240;
+&#249;&#186;J &#8218;   J&#203;@&#240; ,6-4&#240; 6-4&#168;QJ.J  J&#203;&#241;  J&#402; &#224;&#241;&#8218;KA&#7731; &#249;&#203;@Q  J&#402;A&#203;@ &#249;&#202;&#171;
+6-4&#240; 6-4
+Q&#203;&#241;&#210;&#8218; &#171;P&#241;&#7730; &#8364;PA&#203;  &#249; KA&#210;&#203;A&#203;@ &#249;&#202;&#171; &#189;JKA &#175;&#248;QJK
+Gloss: Won(1) Thai Paradorn Srichaphan(1) on/to(2) Australian Jason(2) Stoltenberg(3) 6(4) -
+4(5) and(3) 6(4) -4(5), and Czech Ji&#345;&#237;(7) Van&#283;k(7)
+on/to German(6) Lars Burgsm&#252;ller 6(4) -4and(3)
+6(4) -4
+Bitext English: Thailand &#8217;s(1) Baradorn Srichfan(1) beat(2) Australian Gayson(1) Stultenberg(3)
+6(4) - 6(4) 6(4) - 4(5) , Czech player(1) Pierre(1)
+Vanic(7) beat(6) Germany(6) &#8217;s Lars Burgsmuller 6 -46-4
+In the example above, words with the same index in the gloss for Arabic and the English are aligned to each other, alignment errors are underlined, translation errors are in italics. For example, the Arabic words for won and Srichaphan are aligned with the English words &#8217;s, Srichfan, Gayson, player and Pierre.
+As reflected in the example above, typical alignment problems include
+words that change sentence position between
+languages, such as verbs, which in Arabic are often sentence-initial (e.g. won/beat in the example above)
+function words without a clear and explicit
+equivalent in the other language (e.g. the Arabic &#240;/and in the example above)
+lack of robustness with respect to poor translations (e.g. Gayson Stultenberg instead of Jason Stoltenberg) or bad sentence alignment.
+We believe we can overcome such problems with the increased use of linguistically based
+heuristics. We can model typical word order differences between English and Arabic using English parse trees and a few Arabic-specific phrase reordering heuristics. We can narrow the space of possible alignment candidates for function words using English parse trees and a few heuristics for each type of function word. These heuristics have been developed using a development corpus of 100 parallel sentences. The heuristics are generalizations based on patterns of misaligned words, misaligned with respect to a Gold Standard alignment for that development corpus.
+The following sections describe how our word aligner works, first how relatively reliable content words are aligned, and then how function words and any remaining content words are aligned, with a brief discussion of an interesting issue relating to the Gold Standard we used. Finally we present evaluations on word alignment accuracy as well as the impact on end-to-end machine translation quality.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Word alignment is a critical component in training statistical machine translation systems and has received a significant amount of research, for example, (Brown et al., 1993; Ittycheriah and Roukos, 2005; Fraser and Marcu, 2007), including work leveraging syntactic parse trees, e.g., (Cherry and Lin, 2006; DeNero and Klein, 2007; Fossum et al., 2008).</text>
+              <doc_id>6</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Word alignment is also a required first step in other algorithms such as for learning sub-sentential phrase pairs (Lavie et al., 2008) or the generation of parallel treebanks (Zhechev and Way, 2002).</text>
+              <doc_id>7</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Yet word alignment precision remains surprisingly low, under 80% for state-of-the-art aligners on not closely related language pairs.</text>
+              <doc_id>8</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Consider the following Arabic/English sentence pair with alignments built by the statistical word aligner LEAF:</text>
+              <doc_id>9</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Bitext Arabic: &#224;A &#175;A &#8218;KQ &#402; &#224;P&#240;X@PA&#7730; &#248;Y KA&#202; KA  J&#203;@ PA &#175;&#240;</text>
+              <doc_id>10</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#249;&#186;J &#8218;   J&#203;@&#240; ,6-4&#240; 6-4&#168;QJ.J  J&#203;&#241;  J&#402; &#224;&#241;&#8218;KA&#7731; &#249;&#203;@Q  J&#402;A&#203;@ &#249;&#202;&#171;</text>
+              <doc_id>11</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>6-4&#240; 6-4</text>
+              <doc_id>12</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Q&#203;&#241;&#210;&#8218; &#171;P&#241;&#7730; &#8364;PA&#203;  &#249; KA&#210;&#203;A&#203;@ &#249;&#202;&#171; &#189;JKA &#175;&#248;QJK</text>
+              <doc_id>13</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Gloss: Won(1) Thai Paradorn Srichaphan(1) on/to(2) Australian Jason(2) Stoltenberg(3) 6(4) -</text>
+              <doc_id>14</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>4(5) and(3) 6(4) -4(5), and Czech Ji&#345;&#237;(7) Van&#283;k(7)</text>
+              <doc_id>15</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>on/to German(6) Lars Burgsm&#252;ller 6(4) -4and(3)</text>
+              <doc_id>16</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>6(4) -4</text>
+              <doc_id>17</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Bitext English: Thailand &#8217;s(1) Baradorn Srichfan(1) beat(2) Australian Gayson(1) Stultenberg(3)</text>
+              <doc_id>18</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>6(4) - 6(4) 6(4) - 4(5) , Czech player(1) Pierre(1)</text>
+              <doc_id>19</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Vanic(7) beat(6) Germany(6) &#8217;s Lars Burgsmuller 6 -46-4</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In the example above, words with the same index in the gloss for Arabic and the English are aligned to each other, alignment errors are underlined, translation errors are in italics.</text>
+              <doc_id>21</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, the Arabic words for won and Srichaphan are aligned with the English words &#8217;s, Srichfan, Gayson, player and Pierre.</text>
+              <doc_id>22</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>As reflected in the example above, typical alignment problems include</text>
+              <doc_id>23</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>words that change sentence position between</text>
+              <doc_id>24</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>languages, such as verbs, which in Arabic are often sentence-initial (e.g. won/beat in the example above)</text>
+              <doc_id>25</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>function words without a clear and explicit</text>
+              <doc_id>26</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>equivalent in the other language (e.g. the Arabic &#240;/and in the example above)</text>
+              <doc_id>27</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>lack of robustness with respect to poor translations (e.g. Gayson Stultenberg instead of Jason Stoltenberg) or bad sentence alignment.</text>
+              <doc_id>28</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We believe we can overcome such problems with the increased use of linguistically based</text>
+              <doc_id>29</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>heuristics.</text>
+              <doc_id>30</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We can model typical word order differences between English and Arabic using English parse trees and a few Arabic-specific phrase reordering heuristics.</text>
+              <doc_id>31</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We can narrow the space of possible alignment candidates for function words using English parse trees and a few heuristics for each type of function word.</text>
+              <doc_id>32</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>These heuristics have been developed using a development corpus of 100 parallel sentences.</text>
+              <doc_id>33</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The heuristics are generalizations based on patterns of misaligned words, misaligned with respect to a Gold Standard alignment for that development corpus.</text>
+              <doc_id>34</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The following sections describe how our word aligner works, first how relatively reliable content words are aligned, and then how function words and any remaining content words are aligned, with a brief discussion of an interesting issue relating to the Gold Standard we used.</text>
+              <doc_id>35</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally we present evaluations on word alignment accuracy as well as the impact on end-to-end machine translation quality.</text>
+              <doc_id>36</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Phase I: Content Words</title>
+        <text>We divide the alignment process into two phases: first, we align relatively reliable content words, which in phase II we then use as a skeleton to align function words and remaining content words.
+Function words such as English a, ah, all, am, an, and, any, are, as, at, ... are common words that often do not have an explicit equivalent word or words in the other side of the bitext. In our system, we use a list of 96 English and 110 Arabic function words with those characteristics. For the purposes of our algorithm, a word is a function word if and only if it is on the function word list for its language. A content word then is defined as a word that is neither a function word nor punctuation.
+The approach for aligning content words in phase I is as follows: First, we score each combination of an Arabic content word and English content word in an aligned sentence and align those pairs that pass a threshold, typically generating too many alignments. Second, we compute a more comprehensive score that also takes into consideration matching alignments in the context around each alignment. Third, we eliminate inferior alignments that are incompatible with higherscoring alignments.
+The score in the first step is pointwise mutual information (PMI). The key resource to compute this PMI is an alignment lexicon generated beforehand by a statistical word alignment system from a large bitext. An alignment lexicon is a list of triples, each consisting of an English word, an Arabic word, and how often they have been aligned for a given bitext. Additional counts on how often each English and Arabic word occurs allow us use this alignment lexicon to compute PMI(e,f) = log p(e;f ) . We align those Arabic
+p(e)p(f )
+and English content words that have a PMI &gt; 0 and a minimum alignment lexicon count ( 10 initially). Using the alignment lexicon generated by a statistical word aligner to compute PMIs is the principal statistical component in our system. We explored alternative metrics such as the dicecoefficient that was used by other researchers in earlier alignment work, but found PMI to work better for our system.
+In a second step, we lay a window of size 5 around each aligned pair of Arabic and English words (counting only content words) and then add to the PMI score of the link itself the PMI scores of other links within that window, with a distance weight of
+distance+1
+. This yields a new score that takes into account whether a link is supported by context.
+In the third step, we check for overgenerated links, comparing links that share an Arabic or an English word. If a word on one side of the bitext is linked to multiple adjacent words on the other, we leave them alone, as one word in one language often corresponds to multiple words in the other. However, if a word on one side is linked to nonadjacent words on the other side, this flags an incompatibility, and we remove those links that have inferior context-sensitive scores. This removal is done one link at a time, with the lowest relative scores first.
+We boost the process we just described in a few ways. In the first alignment step, we also include as alignment candidates any content words that are string-identical on each side, such as ASCII numbers and ASCII words. We finally also include as alignment candidates those word pairs that are transliterations of each other to cover rare proper names (Hermjakob et al., 2008), which is important for language pairs that don&#8217;t share the same alphabet such as Arabic and English.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We divide the alignment process into two phases: first, we align relatively reliable content words, which in phase II we then use as a skeleton to align function words and remaining content words.</text>
+              <doc_id>37</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Function words such as English a, ah, all, am, an, and, any, are, as, at, ... are common words that often do not have an explicit equivalent word or words in the other side of the bitext.</text>
+              <doc_id>38</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In our system, we use a list of 96 English and 110 Arabic function words with those characteristics.</text>
+              <doc_id>39</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For the purposes of our algorithm, a word is a function word if and only if it is on the function word list for its language.</text>
+              <doc_id>40</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>A content word then is defined as a word that is neither a function word nor punctuation.</text>
+              <doc_id>41</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The approach for aligning content words in phase I is as follows: First, we score each combination of an Arabic content word and English content word in an aligned sentence and align those pairs that pass a threshold, typically generating too many alignments.</text>
+              <doc_id>42</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Second, we compute a more comprehensive score that also takes into consideration matching alignments in the context around each alignment.</text>
+              <doc_id>43</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Third, we eliminate inferior alignments that are incompatible with higherscoring alignments.</text>
+              <doc_id>44</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The score in the first step is pointwise mutual information (PMI).</text>
+              <doc_id>45</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The key resource to compute this PMI is an alignment lexicon generated beforehand by a statistical word alignment system from a large bitext.</text>
+              <doc_id>46</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>An alignment lexicon is a list of triples, each consisting of an English word, an Arabic word, and how often they have been aligned for a given bitext.</text>
+              <doc_id>47</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Additional counts on how often each English and Arabic word occurs allow us use this alignment lexicon to compute PMI(e,f) = log p(e;f ) .</text>
+              <doc_id>48</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>We align those Arabic</text>
+              <doc_id>49</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>p(e)p(f )</text>
+              <doc_id>50</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>and English content words that have a PMI &gt; 0 and a minimum alignment lexicon count ( 10 initially).</text>
+              <doc_id>51</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Using the alignment lexicon generated by a statistical word aligner to compute PMIs is the principal statistical component in our system.</text>
+              <doc_id>52</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We explored alternative metrics such as the dicecoefficient that was used by other researchers in earlier alignment work, but found PMI to work better for our system.</text>
+              <doc_id>53</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In a second step, we lay a window of size 5 around each aligned pair of Arabic and English words (counting only content words) and then add to the PMI score of the link itself the PMI scores of other links within that window, with a distance weight of</text>
+              <doc_id>54</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>distance+1</text>
+              <doc_id>55</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>.</text>
+              <doc_id>56</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This yields a new score that takes into account whether a link is supported by context.</text>
+              <doc_id>57</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In the third step, we check for overgenerated links, comparing links that share an Arabic or an English word.</text>
+              <doc_id>58</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>If a word on one side of the bitext is linked to multiple adjacent words on the other, we leave them alone, as one word in one language often corresponds to multiple words in the other.</text>
+              <doc_id>59</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, if a word on one side is linked to nonadjacent words on the other side, this flags an incompatibility, and we remove those links that have inferior context-sensitive scores.</text>
+              <doc_id>60</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>This removal is done one link at a time, with the lowest relative scores first.</text>
+              <doc_id>61</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We boost the process we just described in a few ways.</text>
+              <doc_id>62</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the first alignment step, we also include as alignment candidates any content words that are string-identical on each side, such as ASCII numbers and ASCII words.</text>
+              <doc_id>63</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We finally also include as alignment candidates those word pairs that are transliterations of each other to cover rare proper names (Hermjakob et al., 2008), which is important for language pairs that don&#8217;t share the same alphabet such as Arabic and English.</text>
+              <doc_id>64</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 Reordering Using an English Parser</title>
+            <text>We use a refined notion of context window that models word order differences between Arabic and English. Traversing a parse tree for English, we identify sub-trees for which the order in Arabic can be substantially different. In Arabic, for example, the verb is often sentence-initial. So for trees or subtrees identified by the parser as sentences, we generate an alternative reordering of its subtrees where the verb has been moved to the front. Similarly, in a noun phrase, we generate an alternative order where adjectives are moved to the right of the noun they modify.
+For example, consider the sentence John bought anewcar. We can reorder its parse tree both at the sentence level: (bought) (John) (a new car) (.) as well as at its object NP level: (a) (car) (new). If fully enumerated, this would yield these four reordering alternatives:
+1. John bought a new car . 2. John bought a car new . 3. bought John a new car . 4. bought John a car new . We don&#8217;t actually explicitly enumerate all variants but keep all reordering alternatives in a reordering forest, since the number of fully expanded reorderings grows exponentially with the number of phrases with reordering(s). At the beginning of Phase I, we compute from this reordering forest a minimum distance matrix, which, for specific instances of the words John and car would record a minimum distance of 1 (based on reordering 4, skipping the function word a).
+For the example sentence at the beginning of the paper we would get reorderings including the following: Engl. orig.: thailand &#8217;s baradorn srichfan beat ... A reordering: beat thailand &#8217;s baradorn srichfan ... Arabic (gloss): won thai paradorn srichaphan ...
+In the above reordered English alternative, beat and thailand are next to each other, so their minimum distance is 1, which means that a link between English thailand and Arabic thai now strongly boosts the context-sensitive score between English beat and Arabic won.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We use a refined notion of context window that models word order differences between Arabic and English.</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Traversing a parse tree for English, we identify sub-trees for which the order in Arabic can be substantially different.</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In Arabic, for example, the verb is often sentence-initial.</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>So for trees or subtrees identified by the parser as sentences, we generate an alternative reordering of its subtrees where the verb has been moved to the front.</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Similarly, in a noun phrase, we generate an alternative order where adjectives are moved to the right of the noun they modify.</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For example, consider the sentence John bought anewcar.</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We can reorder its parse tree both at the sentence level: (bought) (John) (a new car) (.</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>) as well as at its object NP level: (a) (car) (new).</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If fully enumerated, this would yield these four reordering alternatives:</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1.</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>John bought a new car .</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>2.</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>John bought a car new .</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>3. bought John a new car .</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>4. bought John a car new .</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We don&#8217;t actually explicitly enumerate all variants but keep all reordering alternatives in a reordering forest, since the number of fully expanded reorderings grows exponentially with the number of phrases with reordering(s).</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At the beginning of Phase I, we compute from this reordering forest a minimum distance matrix, which, for specific instances of the words John and car would record a minimum distance of 1 (based on reordering 4, skipping the function word a).</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For the example sentence at the beginning of the paper we would get reorderings including the following: Engl.</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>orig.</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>: thailand &#8217;s baradorn srichfan beat ... A reordering: beat thailand &#8217;s baradorn srichfan ... Arabic (gloss): won thai paradorn srichaphan ...</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In the above reordered English alternative, beat and thailand are next to each other, so their minimum distance is 1, which means that a link between English thailand and Arabic thai now strongly boosts the context-sensitive score between English beat and Arabic won.</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 Morphological Variation</title>
+            <text>Another challenge to content word alignment is morphological variation which can create data sparsity in the alignment lexicon. For example, in a given bitext sentence, the Arabic word AlAw- DAE might be translated as situational,forwhich there might be no support in the alignment lexicon. However the PMI between AlAwDAE and situation might be sufficiently high. Additionally, there is another Arabic word, AlHAlAt, which often translates as both situation and situational.
+To take advantage of such constellations, we built morphological variation lists for both Arabic and English, lists that for a given head word such as situational lists variants such as situation, and situations.
+We built these lists in a one-time process by identifying superficially similar words, i.e. those that vary only with respect to an ending or a prefix, and then semantically validating such candidates using a pivot word in the other language such as AlHAlAt that has sufficiently strong alignment lexicon co-alignment counts with both situation and situational. The alignment lexicon co-alignment count of an Arabic word w ar andanEnglishword
+w en is considered strong enough, if it is at least
+2.0 and at least 0.001 times as high as the highest co-alignment count of w ar with any English word; words shorter than four letters are excluded from consideration. So because situation and situational are superficially similar and they are both have a strong alignment count with AlHAlAt in the alignment lexicon, situation is added to the English morphological variation list as a variant of situational and vice versa.
+Exploring whether we can align situational and AlAwDAE in the bitext, we find that situational is a morphological variant of situation (based on our morphological variation list for English); next we find that based on the alignment lexicon, there is a positive PMI between situation and AlAw- DAE, which completes the chain between situational and AlAwDAE, so we include them as an alignment candidate after all. The PMI of such a morphological-variation-based candidate is weighted by a &#8216;penalty&#8217; factor of 0.5 when compared with the PMI of any competing alignment candidate without such morphological-variation step.
+Similarly, the English pivot word situations can be used to semantically validate the similarity between Arabic AlAwDAE and AwDAE for our Arabic morphological variation list. The resulting Arabic morphological variation list has entries for 193,263 Arabic words with an average of 4.2 variants each; our English morphological variation list has 57,846 entries with 2.8 variants
+each.
+At the end of phase I, most content words will be aligned with relatively high precision. Since function words often do not have an explicit equivalent word or words in the other side of a bitext, they can not be aligned as reliably as content words based on bilingual PMI. 1 Note that due to data sparsity, some content words will remained unaligned in phase I and will subsequently be aligned in phase II as explained in section 3.3.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Another challenge to content word alignment is morphological variation which can create data sparsity in the alignment lexicon.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, in a given bitext sentence, the Arabic word AlAw- DAE might be translated as situational,forwhich there might be no support in the alignment lexicon.</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However the PMI between AlAwDAE and situation might be sufficiently high.</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Additionally, there is another Arabic word, AlHAlAt, which often translates as both situation and situational.</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>To take advantage of such constellations, we built morphological variation lists for both Arabic and English, lists that for a given head word such as situational lists variants such as situation, and situations.</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We built these lists in a one-time process by identifying superficially similar words, i.e. those that vary only with respect to an ending or a prefix, and then semantically validating such candidates using a pivot word in the other language such as AlHAlAt that has sufficiently strong alignment lexicon co-alignment counts with both situation and situational.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The alignment lexicon co-alignment count of an Arabic word w ar andanEnglishword</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>w en is considered strong enough, if it is at least</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.0 and at least 0.001 times as high as the highest co-alignment count of w ar with any English word; words shorter than four letters are excluded from consideration.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>So because situation and situational are superficially similar and they are both have a strong alignment count with AlHAlAt in the alignment lexicon, situation is added to the English morphological variation list as a variant of situational and vice versa.</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Exploring whether we can align situational and AlAwDAE in the bitext, we find that situational is a morphological variant of situation (based on our morphological variation list for English); next we find that based on the alignment lexicon, there is a positive PMI between situation and AlAw- DAE, which completes the chain between situational and AlAwDAE, so we include them as an alignment candidate after all.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The PMI of such a morphological-variation-based candidate is weighted by a &#8216;penalty&#8217; factor of 0.5 when compared with the PMI of any competing alignment candidate without such morphological-variation step.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Similarly, the English pivot word situations can be used to semantically validate the similarity between Arabic AlAwDAE and AwDAE for our Arabic morphological variation list.</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The resulting Arabic morphological variation list has entries for 193,263 Arabic words with an average of 4.2 variants each; our English morphological variation list has 57,846 entries with 2.8 variants</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>each.</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>At the end of phase I, most content words will be aligned with relatively high precision.</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since function words often do not have an explicit equivalent word or words in the other side of a bitext, they can not be aligned as reliably as content words based on bilingual PMI.</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>1 Note that due to data sparsity, some content words will remained unaligned in phase I and will subsequently be aligned in phase II as explained in section 3.3.</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Phase II: Function Words</title>
+        <text>In Phase II, we align function words, punctuation, and some remaining content words. Function words can be classified into three categories: monovalent, divalent and independent. Monovalent function words modify one head; they include articles (which modify nouns), possessive pronouns, demonstrative adjectives and auxiliary verbs. Divalent function words connect two words or phrases; they include conjunctions and prepositions. Independent function words include nonpossessive pronouns and copula (e.g. is as a main verb). Each of these types of function words is aligned according to its own heuristics.
+In this section we present three representative examples, one for articles (monovalent), one for prepositions (divalent), as well as a structural heuristic.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In Phase II, we align function words, punctuation, and some remaining content words.</text>
+              <doc_id>104</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Function words can be classified into three categories: monovalent, divalent and independent.</text>
+              <doc_id>105</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Monovalent function words modify one head; they include articles (which modify nouns), possessive pronouns, demonstrative adjectives and auxiliary verbs.</text>
+              <doc_id>106</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Divalent function words connect two words or phrases; they include conjunctions and prepositions.</text>
+              <doc_id>107</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Independent function words include nonpossessive pronouns and copula (e.g. is as a main verb).</text>
+              <doc_id>108</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Each of these types of function words is aligned according to its own heuristics.</text>
+              <doc_id>109</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this section we present three representative examples, one for articles (monovalent), one for prepositions (divalent), as well as a structural heuristic.</text>
+              <doc_id>110</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Example: Articles</title>
+            <text>Monovalent function words have the simplest heuristics. Recall that Arabic does not have articles (only a definite prefix Al- added to one or more words in a definite noun phrase), so there is usually no explicit equivalent of the English article on the Arabic side.
+For an English article, our system identifies the English head word that it modifies based on the English parse tree, and then aligns it with the same Arabic word(s) which that head word is aligned with.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Monovalent function words have the simplest heuristics.</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Recall that Arabic does not have articles (only a definite prefix Al- added to one or more words in a definite noun phrase), so there is usually no explicit equivalent of the English article on the Arabic side.</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For an English article, our system identifies the English head word that it modifies based on the English parse tree, and then aligns it with the same Arabic word(s) which that head word is aligned with.</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Example: Prepositions</title>
+            <text>Divalent function words are much more interesting. In many cases, an English preposition corresponds to an explicit Arabic preposition in basi-
+1 It is this lack of reliability that is the defining characteristic of our function words, differentiating them from the concept of marker words used in EBMT chunking (Way and Gough, 2002).
+cally the same position. Alignment in that case is straightforward. However, some Arabic prepositions and even more English prepositions do not have an explicit counterpart on the other side. We call such prepositions orphan prepositions. The English preposition of is almost always orphaned in this way.
+The decision how to align such an orphan preposition is not trivial. Consider the bitext island of Basilan/jzyrp bAsylAn, a typical (NP1 (P NP2)) construction on the English side. Should we co-align the preposition of with the head of NP1 or the head of NP2? In English syntax, the preposition is grouped with NP2, but a preposition is often better &#8220;motivated&#8221; by NP1. We therefore decided to use the English parse tree to identify the heads of both NP1 and NP2, identify the Arabic words aligned to these heads as candidates, and then align the preposition to the Arabic candidate word with which it has the highest bilingual PMI. It turns out that in most cases this will be the candidate on the &#8220;left&#8221;. For the example at the top of this paragraph, of will be aligned with jzyrp (&#8220;island&#8221;), which is actually desirable for MT, as it facilitates subsequent rule extraction of type &#8220;island of X/jzyrp X&#8221;. We refer to this orphan preposition alignment style as MT-style.
+According to the gold standard alignment guidelines used for the LDC Gold Standard however, an orphan preposition should always be aligned to the &#8220;right&#8221;, to bAsylAn in the example above. We therefore implemented an alternative GS-style (for &#8220;Gold Standard&#8221;) to be able to later evaluate the impact of these alternatives alignment styles.
+The question whether GIZA or LEAF alignments will indeed give meaningful scores to support the MT-style attachments will be answered by the MT experiments described in section 4.3.
+Here is a more complex example with Arabic (A), its gloss (G) and English (E):
+Arabic: P@&#241;k.
+&#233; &#174;&#162;  J&#211;&#249;&#202;&#171; &#233;J&#187;QJ&#211;A&#203;@  H@QKA&#162;&#203;@  HPA &#171;@ YkA&#203;@
+Gloss: sunday attacked aircraft american on/to area jiwar Engl.: on sunday american aircraft attacked the area of jiwar
+For the Arabic orphan preposition &#249;&#202;&#171;/ElY (&#8220;on/to&#8221;), our system identifies two candidates based on the English parse tree: attacked and area. Based on a higher mutual information, our system then aligns Arabic ElY (&#8220;on/to&#8221;) with English attacked, which results in the English word attacked nowbeingaligned to bothArabicattacked and the
+Arabic on/to, even though they are not adjacent. In the Gold Standard, Arabic on/to is aligned with English area, and LEAF aligns it with English on (yes, the one preceding Sunday). This is apparently very tempting as Arabic on/to is often translated as English on, but here it is incorrect, and our system avoids this tempting alignment because it is ruled out linguistically.
+Note that in some cases, such as sentence-initial prepositional phrases, there is only one candidate; occasionally, when relevant content words remain unaligned, no candidate can be identified, in which case the orphan preposition remains unaligned as well.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Divalent function words are much more interesting.</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In many cases, an English preposition corresponds to an explicit Arabic preposition in basi-</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 It is this lack of reliability that is the defining characteristic of our function words, differentiating them from the concept of marker words used in EBMT chunking (Way and Gough, 2002).</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>cally the same position.</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Alignment in that case is straightforward.</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, some Arabic prepositions and even more English prepositions do not have an explicit counterpart on the other side.</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We call such prepositions orphan prepositions.</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The English preposition of is almost always orphaned in this way.</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The decision how to align such an orphan preposition is not trivial.</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Consider the bitext island of Basilan/jzyrp bAsylAn, a typical (NP1 (P NP2)) construction on the English side.</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Should we co-align the preposition of with the head of NP1 or the head of NP2?</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In English syntax, the preposition is grouped with NP2, but a preposition is often better &#8220;motivated&#8221; by NP1.</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We therefore decided to use the English parse tree to identify the heads of both NP1 and NP2, identify the Arabic words aligned to these heads as candidates, and then align the preposition to the Arabic candidate word with which it has the highest bilingual PMI.</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It turns out that in most cases this will be the candidate on the &#8220;left&#8221;.</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the example at the top of this paragraph, of will be aligned with jzyrp (&#8220;island&#8221;), which is actually desirable for MT, as it facilitates subsequent rule extraction of type &#8220;island of X/jzyrp X&#8221;.</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We refer to this orphan preposition alignment style as MT-style.</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>According to the gold standard alignment guidelines used for the LDC Gold Standard however, an orphan preposition should always be aligned to the &#8220;right&#8221;, to bAsylAn in the example above.</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We therefore implemented an alternative GS-style (for &#8220;Gold Standard&#8221;) to be able to later evaluate the impact of these alternatives alignment styles.</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The question whether GIZA or LEAF alignments will indeed give meaningful scores to support the MT-style attachments will be answered by the MT experiments described in section 4.3.</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Here is a more complex example with Arabic (A), its gloss (G) and English (E):</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Arabic: P@&#241;k.</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#233; &#174;&#162;  J&#211;&#249;&#202;&#171; &#233;J&#187;QJ&#211;A&#203;@  H@QKA&#162;&#203;@  HPA &#171;@ YkA&#203;@</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Gloss: sunday attacked aircraft american on/to area jiwar Engl.</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>: on sunday american aircraft attacked the area of jiwar</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For the Arabic orphan preposition &#249;&#202;&#171;/ElY (&#8220;on/to&#8221;), our system identifies two candidates based on the English parse tree: attacked and area.</text>
+                  <doc_id>138</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Based on a higher mutual information, our system then aligns Arabic ElY (&#8220;on/to&#8221;) with English attacked, which results in the English word attacked nowbeingaligned to bothArabicattacked and the</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Arabic on/to, even though they are not adjacent.</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the Gold Standard, Arabic on/to is aligned with English area, and LEAF aligns it with English on (yes, the one preceding Sunday).</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This is apparently very tempting as Arabic on/to is often translated as English on, but here it is incorrect, and our system avoids this tempting alignment because it is ruled out linguistically.</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Note that in some cases, such as sentence-initial prepositional phrases, there is only one candidate; occasionally, when relevant content words remain unaligned, no candidate can be identified, in which case the orphan preposition remains unaligned as well.</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>3.3 Example: Adjectives</title>
+            <text>It is not uncommon that content words that we would like to be aligned are not supported by the alignment lexicon, due to general data sparsity or maybe a somewhat unorthodox translation. In those cases we can use structure and word order knowledge to make reasonable alignments anyway.
+Consider an English noun phase ADJ-E NOUN-E and the corresponding Arabic NOUN- A ADJ-A. If the nouns are already aligned, but the adjectives are not yet aligned, we can use the English parse tree to identify ADJ-E as a modifier to NOUN-E, and, aware that adjectives in Arabic post-modify their nouns, identify the corresponding Arabic word based on structure and word order alone. This can be done the other way around as well (link nouns based on already aligned adjectives) and other elements of other phrases as well.
+As more and more function words and remaining content words get aligned, heuristics that weren&#8217;t applicable before may now apply to the remaining unaligned words, so we perform four passes through a sentence pair to align unaligned words using heuristics. We found that an additional fifth pass did not yield any further improvements.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>It is not uncommon that content words that we would like to be aligned are not supported by the alignment lexicon, due to general data sparsity or maybe a somewhat unorthodox translation.</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In those cases we can use structure and word order knowledge to make reasonable alignments anyway.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Consider an English noun phase ADJ-E NOUN-E and the corresponding Arabic NOUN- A ADJ-A.</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If the nouns are already aligned, but the adjectives are not yet aligned, we can use the English parse tree to identify ADJ-E as a modifier to NOUN-E, and, aware that adjectives in Arabic post-modify their nouns, identify the corresponding Arabic word based on structure and word order alone.</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This can be done the other way around as well (link nouns based on already aligned adjectives) and other elements of other phrases as well.</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>As more and more function words and remaining content words get aligned, heuristics that weren&#8217;t applicable before may now apply to the remaining unaligned words, so we perform four passes through a sentence pair to align unaligned words using heuristics.</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We found that an additional fifth pass did not yield any further improvements.</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Experiments</title>
+        <text>We evaluated our word aligner in terms of both alignment accuracy and its impact on an end-toend machine translation system.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We evaluated our word aligner in terms of both alignment accuracy and its impact on an end-toend machine translation system.</text>
+              <doc_id>151</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 Alignment Experiments</title>
+            <text>We evaluated our word aligner against a Gold Standard distributed by LDC. The human alignments of the sentences in this Gold Standard are based on the 2006 GALE Guidelines for Arabic Word Alignment Annotation.
+Both the 100-sentence development set and the separate 837-sentence test set are Arabic newswire sentences from LDC2006E86. The test set includes only sentences for which our English parser (Soricut and Marcu, 2003) could produce a parse tree, which effectively excluded a few very long sentences.
+In the first set of experiments, we compare two settings of our UALIGN system with other aligners, GIZA++ (Union) (Och and Ney, 2003) and LEAF (with 2 iterations) (Fraser and Marcu, 2007). The GIZA++ aligner is based on IBM Model 4 (Brown et al., 1993). We chose GIZA Union for our comparison, because it led to a higher BLEU score for our overall MT system than other GIZA variants such as GIZA Intersect and Grow-Diag. The two settings of our system vary in the style on how to align orphan prepositions. Besides precision, recall and (balanced) F-measure, we also include an F-measure variant strongly biased towards recall (=0.1), which (Fraser and Marcu, 2007) found to be best to tune their LEAF aligner for maximum MT accuracy. GIZA++ and LEAF alignments are based on a parallel training corpus of 6.6 million sentence pairs, incl. the LDC2006E86 set mentioned above.
+Our aligner outperforms both GIZA and LEAF on all metrics. Not surprisingly, the GS-style alignments, which align &#8220;orphan&#8221; prepositions according to Gold Standard guidelines, yield higher scores than MT-style alignments. And interestingly by a remarkably high margin.
+In a second set of experiments, we measure the impact of using different input alignment lexicon used by our aligner on alignment accuracy. In one case UALIGN uses as input the alignment lexicon produced by LEAF, in the other the alignment lexicon produced by GIZA. All experiments in table 2
+are for UALIGN.
+As LEAF clearly outperforms GIZA on F-0.1 (79.0 vs. 69.5, see table 1), the alignment lexicon based on LEAF is better, so it is not surprising that when we use an alignment lexicon based on GIZA, all metrics degrade, and consistently so for both alignment styles. However the drop in F-0.1 of about 1 point (80.2 ! 79.4 and 83.0 ! 81.9) is much smaller than the differences between the underlying aligners themselves. Our aligner therefore degrades quite gracefully for a worse alignment lexicon.
+Table 3 shows how much LEAF and UALIGN differ in the percentage of Arabic and English words aligned (correctly or incorrectly). LEAF is much more aggressive in making alignments, aligning almost every Arabic word. Our aligner still leaves some 8% of all words in a sentence unaligned (an opportunity for further improvements). For comparison, in the Gold Standard, 4-5% of all words in our test corpus are left unaligned.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We evaluated our word aligner against a Gold Standard distributed by LDC.</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The human alignments of the sentences in this Gold Standard are based on the 2006 GALE Guidelines for Arabic Word Alignment Annotation.</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Both the 100-sentence development set and the separate 837-sentence test set are Arabic newswire sentences from LDC2006E86.</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The test set includes only sentences for which our English parser (Soricut and Marcu, 2003) could produce a parse tree, which effectively excluded a few very long sentences.</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In the first set of experiments, we compare two settings of our UALIGN system with other aligners, GIZA++ (Union) (Och and Ney, 2003) and LEAF (with 2 iterations) (Fraser and Marcu, 2007).</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The GIZA++ aligner is based on IBM Model 4 (Brown et al., 1993).</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We chose GIZA Union for our comparison, because it led to a higher BLEU score for our overall MT system than other GIZA variants such as GIZA Intersect and Grow-Diag.</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The two settings of our system vary in the style on how to align orphan prepositions.</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Besides precision, recall and (balanced) F-measure, we also include an F-measure variant strongly biased towards recall (=0.1), which (Fraser and Marcu, 2007) found to be best to tune their LEAF aligner for maximum MT accuracy.</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>GIZA++ and LEAF alignments are based on a parallel training corpus of 6.6 million sentence pairs, incl.</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>the LDC2006E86 set mentioned above.</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Our aligner outperforms both GIZA and LEAF on all metrics.</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Not surprisingly, the GS-style alignments, which align &#8220;orphan&#8221; prepositions according to Gold Standard guidelines, yield higher scores than MT-style alignments.</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>And interestingly by a remarkably high margin.</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In a second set of experiments, we measure the impact of using different input alignment lexicon used by our aligner on alignment accuracy.</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In one case UALIGN uses as input the alignment lexicon produced by LEAF, in the other the alignment lexicon produced by GIZA.</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All experiments in table 2</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>are for UALIGN.</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>As LEAF clearly outperforms GIZA on F-0.1 (79.0 vs. 69.5, see table 1), the alignment lexicon based on LEAF is better, so it is not surprising that when we use an alignment lexicon based on GIZA, all metrics degrade, and consistently so for both alignment styles.</text>
+                  <doc_id>170</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However the drop in F-0.1 of about 1 point (80.2 !</text>
+                  <doc_id>171</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>79.4 and 83.0 !</text>
+                  <doc_id>172</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>81.9) is much smaller than the differences between the underlying aligners themselves.</text>
+                  <doc_id>173</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our aligner therefore degrades quite gracefully for a worse alignment lexicon.</text>
+                  <doc_id>174</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 3 shows how much LEAF and UALIGN differ in the percentage of Arabic and English words aligned (correctly or incorrectly).</text>
+                  <doc_id>175</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>LEAF is much more aggressive in making alignments, aligning almost every Arabic word.</text>
+                  <doc_id>176</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our aligner still leaves some 8% of all words in a sentence unaligned (an opportunity for further improvements).</text>
+                  <doc_id>177</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For comparison, in the Gold Standard, 4-5% of all words in our test corpus are left unaligned.</text>
+                  <doc_id>178</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 Impact of Sub-Components</title>
+            <text>To better understand the impact of several alignment system sub-components, we ran a number of experiments disabling individual sub-components and then comparing the resulting alignment scores with those of the full system. We also measured alignment scores running Phase II with 0 to 5 passes. The test set was the same as in section 4.1.
+Special sub-components of Phase I include adding link candidates for ASCII-string-identical words and transliterated names (see last paragraph before section 2.1), reordering using an English parser (section 2.1) and morphological variation (section 2.2). Each of these sub-components provides a small boost to F-0.1, ranging from +0.1 to +0.5. The second part of the table shows alignment scores before and after each pass of Phase II. Our full system includes 4 passes; an additional 5th pass did not yield any further improvements. Note that during Phase II, precision drops. This is a reflection of (1) our strategy to first align relatively reliable content words in Phase I, followed by less reliable function words and remaining content words, and (2) the challenges of building reliable Gold Standard alignments for function words and non-literal translations.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>To better understand the impact of several alignment system sub-components, we ran a number of experiments disabling individual sub-components and then comparing the resulting alignment scores with those of the full system.</text>
+                  <doc_id>179</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We also measured alignment scores running Phase II with 0 to 5 passes.</text>
+                  <doc_id>180</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The test set was the same as in section 4.1.</text>
+                  <doc_id>181</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Special sub-components of Phase I include adding link candidates for ASCII-string-identical words and transliterated names (see last paragraph before section 2.1), reordering using an English parser (section 2.1) and morphological variation (section 2.2).</text>
+                  <doc_id>182</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Each of these sub-components provides a small boost to F-0.1, ranging from +0.1 to +0.5.</text>
+                  <doc_id>183</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The second part of the table shows alignment scores before and after each pass of Phase II.</text>
+                  <doc_id>184</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our full system includes 4 passes; an additional 5th pass did not yield any further improvements.</text>
+                  <doc_id>185</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that during Phase II, precision drops.</text>
+                  <doc_id>186</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This is a reflection of (1) our strategy to first align relatively reliable content words in Phase I, followed by less reliable function words and remaining content words, and (2) the challenges of building reliable Gold Standard alignments for function words and non-literal translations.</text>
+                  <doc_id>187</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>4.3 MT Experiments</title>
+            <text>The ultimate test for a word aligner is to measure its impact on an end-to-end machine translation system. For this we aligned 170,863 pairs of Arabic/English newswire sentences from LDC, trained a state-of-the-art syntax-based statistical machine translation system (Galley et al., 2006) on these sentences and alignments, and measured
+BLEU scores (Papineni et al., 2002) on a separate set of 1298 newswire test sentences. Besides swapping in a new set of alignments for the same set of training sentences, and automatically retuning the parameters of the translation system for each set of alignments, no other changes or adjustments were made to the existing MT system.
+In the first set of experiments, we compare two settings of our UALIGN system with other aligners, again GIZA++ (Union) and LEAF (with 2 iterations). The two settings vary in the alignment lexicon that the UALIGN aligner uses as input.
+With a BLEU score of 48.7, UALIGN using a LEAF alignment-lexicon is significantly better than both GIZA (+1.3) and LEAF (+0.7). This and other significance assertions in this paper are based on paired bootstrap resampling tests with 95% confidence. UALIGN using a GIZA alignment-lexicon significantly outperforms GIZA itself (+1.0).
+In a second experiment, we measured the impact of the two alignment styles on BLEU. Recall that for GS-style alignments, orphan prepositions are always co-aligned to the right, following Gold Standard annotation guidelines, whereas for MT-style alignments, mutual information is used to decide whether to align orphan prepositions to the left or to the right.
+While the GS-style alignments yielded a 2.8 point higher F-0.1 score (83.0 vs. 80.2), the MTstyle alignments result in a significantly better
+BLEU score (48.7 vs. 48.0). This shows that
+(1) a seemingly small difference in alignment styles can have a remarkably high impact on both
+BLEU scores and alignment accuracy as measured
+against a Gold Standard, and that (2) optimizing alignment accuracy against an alignment Gold Standard does not necessarily optimize BLEU in end-to-end MT. The latter has been observed by other researchers before, but these results additionally suggest that the gold-standard annotation style might itself have to shoulder part of the blame.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The ultimate test for a word aligner is to measure its impact on an end-to-end machine translation system.</text>
+                  <doc_id>188</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For this we aligned 170,863 pairs of Arabic/English newswire sentences from LDC, trained a state-of-the-art syntax-based statistical machine translation system (Galley et al., 2006) on these sentences and alignments, and measured</text>
+                  <doc_id>189</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BLEU scores (Papineni et al., 2002) on a separate set of 1298 newswire test sentences.</text>
+                  <doc_id>190</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Besides swapping in a new set of alignments for the same set of training sentences, and automatically retuning the parameters of the translation system for each set of alignments, no other changes or adjustments were made to the existing MT system.</text>
+                  <doc_id>191</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In the first set of experiments, we compare two settings of our UALIGN system with other aligners, again GIZA++ (Union) and LEAF (with 2 iterations).</text>
+                  <doc_id>192</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The two settings vary in the alignment lexicon that the UALIGN aligner uses as input.</text>
+                  <doc_id>193</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>With a BLEU score of 48.7, UALIGN using a LEAF alignment-lexicon is significantly better than both GIZA (+1.3) and LEAF (+0.7).</text>
+                  <doc_id>194</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This and other significance assertions in this paper are based on paired bootstrap resampling tests with 95% confidence.</text>
+                  <doc_id>195</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>UALIGN using a GIZA alignment-lexicon significantly outperforms GIZA itself (+1.0).</text>
+                  <doc_id>196</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In a second experiment, we measured the impact of the two alignment styles on BLEU.</text>
+                  <doc_id>197</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Recall that for GS-style alignments, orphan prepositions are always co-aligned to the right, following Gold Standard annotation guidelines, whereas for MT-style alignments, mutual information is used to decide whether to align orphan prepositions to the left or to the right.</text>
+                  <doc_id>198</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>While the GS-style alignments yielded a 2.8 point higher F-0.1 score (83.0 vs. 80.2), the MTstyle alignments result in a significantly better</text>
+                  <doc_id>199</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BLEU score (48.7 vs. 48.0).</text>
+                  <doc_id>200</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This shows that</text>
+                  <doc_id>201</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(1) a seemingly small difference in alignment styles can have a remarkably high impact on both</text>
+                  <doc_id>202</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BLEU scores and alignment accuracy as measured</text>
+                  <doc_id>203</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>against a Gold Standard, and that (2) optimizing alignment accuracy against an alignment Gold Standard does not necessarily optimize BLEU in end-to-end MT.</text>
+                  <doc_id>204</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The latter has been observed by other researchers before, but these results additionally suggest that the gold-standard annotation style might itself have to shoulder part of the blame.</text>
+                  <doc_id>205</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>4.4 Corpus Noise Robustness</title>
+            <text>In a small random &#8220;sanity check&#8221; sample from the 170,863 training sentences for the MT experiment, we found cases where the sentence in one language contained much more material than the sentence in the other language. Consider, for example the following sentence pair (with spurious material underlined): Arabic:
+, &#8224;Y J &#174;&#203;@ A &#8218; JK &#209;&#203; @ X@ &#233; K@ &#249;&#202;&#171; &#8216; JK Q k@ Y J&#7730; &#188;A J&#235;A &#8217;K@ &#225;&#186;&#203;
+Gloss: but also there-is clause another stipulates on/to that if not established the-hotel , English: but , also there is another clause that stipulates that if the hotel is not established , then the government shall be compensated .
+Both LEAF and UALIGN correctly align the English &#8220;but , also ... not established ,&#8221; with the Arabic side. LEAF further aligns all words in the spurious English &#8220;then the government shall be compensated .&#8221; with seemingly random material on the Arabic side, whereas UALIGN leaves these spurious words completely unaligned. It would be reasonable to speculate that this behavior, observed in several cases, may be contributing to the good BLEU scores.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In a small random &#8220;sanity check&#8221; sample from the 170,863 training sentences for the MT experiment, we found cases where the sentence in one language contained much more material than the sentence in the other language.</text>
+                  <doc_id>206</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Consider, for example the following sentence pair (with spurious material underlined): Arabic:</text>
+                  <doc_id>207</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>, &#8224;Y J &#174;&#203;@ A &#8218; JK &#209;&#203; @ X@ &#233; K@ &#249;&#202;&#171; &#8216; JK Q k@ Y J&#7730; &#188;A J&#235;A &#8217;K@ &#225;&#186;&#203;</text>
+                  <doc_id>208</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Gloss: but also there-is clause another stipulates on/to that if not established the-hotel , English: but , also there is another clause that stipulates that if the hotel is not established , then the government shall be compensated .</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Both LEAF and UALIGN correctly align the English &#8220;but , also ... not established ,&#8221; with the Arabic side.</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>LEAF further aligns all words in the spurious English &#8220;then the government shall be compensated .&#8221; with seemingly random material on the Arabic side, whereas UALIGN leaves these spurious words completely unaligned.</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It would be reasonable to speculate that this behavior, observed in several cases, may be contributing to the good BLEU scores.</text>
+                  <doc_id>212</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Discussion</title>
+        <text>Building on existing statistical aligners, our new word aligner significantly outperforms the best word aligner to date in both alignment error rate and BLEU score. We have developed an approach to word alignment that combines a statistical component with linguistic heuristics. It is novel in that it goes beyond generic resources such as parsers, adding heuristics to explicitly model word order differences and function word alignment. The approach has numerous benefits. Our system produces superior results both on alignment accuracy and end-to-end machine translation quality. Alignments have a high precision. The system is fast (about 0.7 seconds per sentence), and sentences are aligned individually so that a large corpus can easily be aligned on several computers in 235 parallel. All alignment links are tagged with additional information, such as which phase and/or heuristic created them, yielding extensive explanatory power to the developer for easy understanding on how the system arrived at a given alignment. Our approach needs and uses a parser for only one side (English) and not for the other (Arabic). On the other hand, some of the components of this aligner are language-specific, such as word order heuristics, the list of specific function words, and morphological variation lists. While these parts of the system need to be adapted for new languages, the overall architecture and types of heuristics and function words are languageindependent. Chinese for example has different specific types of function words such as aspect markers and measure words. But these fall into the existing category of monovalent function words and will be treated according the same principles as other monovalent function words (section 3.1). Similarly, Japanese postpositions would be treated like other divalent function words (such as Arabic or English prepositions). The author and developer has a basic knowledge of Arabic in general, and an intermediate knowledge of Arabic grammar, which means that no intimate knowledge of Arabic was required to develop the languagespecific components. This same author and developer recently started to adapt UALIGN to Chinese- English word alignment. The alignment rate is still somewhat low. We plan to increase it by enlarging our development set beyond 100 sentences and adding further heuristics, as well as generalizing the output word alignment structure to allow alignments of words to larger constituents in a tree, and to explicitly assert that some words are not covered by the other side of a bitext to model poor translations and poor sentence alignments.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Building on existing statistical aligners, our new word aligner significantly outperforms the best word aligner to date in both alignment error rate and BLEU score.</text>
+              <doc_id>213</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We have developed an approach to word alignment that combines a statistical component with linguistic heuristics.</text>
+              <doc_id>214</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is novel in that it goes beyond generic resources such as parsers, adding heuristics to explicitly model word order differences and function word alignment.</text>
+              <doc_id>215</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The approach has numerous benefits.</text>
+              <doc_id>216</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our system produces superior results both on alignment accuracy and end-to-end machine translation quality.</text>
+              <doc_id>217</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Alignments have a high precision.</text>
+              <doc_id>218</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>The system is fast (about 0.7 seconds per sentence), and sentences are aligned individually so that a large corpus can easily be aligned on several computers in 235 parallel.</text>
+              <doc_id>219</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>All alignment links are tagged with additional information, such as which phase and/or heuristic created them, yielding extensive explanatory power to the developer for easy understanding on how the system arrived at a given alignment.</text>
+              <doc_id>220</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our approach needs and uses a parser for only one side (English) and not for the other (Arabic).</text>
+              <doc_id>221</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>On the other hand, some of the components of this aligner are language-specific, such as word order heuristics, the list of specific function words, and morphological variation lists.</text>
+              <doc_id>222</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+            <sentence>
+              <text>While these parts of the system need to be adapted for new languages, the overall architecture and types of heuristics and function words are languageindependent.</text>
+              <doc_id>223</doc_id>
+              <sec_id>10</sec_id>
+            </sentence>
+            <sentence>
+              <text>Chinese for example has different specific types of function words such as aspect markers and measure words.</text>
+              <doc_id>224</doc_id>
+              <sec_id>11</sec_id>
+            </sentence>
+            <sentence>
+              <text>But these fall into the existing category of monovalent function words and will be treated according the same principles as other monovalent function words (section 3.1).</text>
+              <doc_id>225</doc_id>
+              <sec_id>12</sec_id>
+            </sentence>
+            <sentence>
+              <text>Similarly, Japanese postpositions would be treated like other divalent function words (such as Arabic or English prepositions).</text>
+              <doc_id>226</doc_id>
+              <sec_id>13</sec_id>
+            </sentence>
+            <sentence>
+              <text>The author and developer has a basic knowledge of Arabic in general, and an intermediate knowledge of Arabic grammar, which means that no intimate knowledge of Arabic was required to develop the languagespecific components.</text>
+              <doc_id>227</doc_id>
+              <sec_id>14</sec_id>
+            </sentence>
+            <sentence>
+              <text>This same author and developer recently started to adapt UALIGN to Chinese- English word alignment.</text>
+              <doc_id>228</doc_id>
+              <sec_id>15</sec_id>
+            </sentence>
+            <sentence>
+              <text>The alignment rate is still somewhat low.</text>
+              <doc_id>229</doc_id>
+              <sec_id>16</sec_id>
+            </sentence>
+            <sentence>
+              <text>We plan to increase it by enlarging our development set beyond 100 sentences and adding further heuristics, as well as generalizing the output word alignment structure to allow alignments of words to larger constituents in a tree, and to explicitly assert that some words are not covered by the other side of a bitext to model poor translations and poor sentence alignments.</text>
+              <doc_id>230</doc_id>
+              <sec_id>17</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>6</index>
+        <title>Acknowledgment</title>
+        <text>This research was supported under DARPA Contract No. HR0011-06-C-0022. The author would like to thank Kevin Knight and the anonymous reviewers for their helpful suggestions, and Steve DeNeefe for running the end-to-end MT evaluations.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>This research was supported under DARPA Contract No.</text>
+              <doc_id>231</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>HR0011-06-C-0022.</text>
+              <doc_id>232</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The author would like to thank Kevin Knight and the anonymous reviewers for their helpful suggestions, and Steve DeNeefe for running the end-to-end MT evaluations.</text>
+              <doc_id>233</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 1: Alignment precision, recall, F-measure (=0.5), F-measure(=0.1) for different aligners; with UALIGN using LEAF alignment lexicon.</caption>
+        <reference_text>None</reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Aligner</cell>
+              <cell>Prec.</cell>
+              <cell>Recall</cell>
+              <cell>F-0.5</cell>
+              <cell>F-0.1</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>GIZA</cell>
+              <cell>26.9</cell>
+              <cell>84.3</cell>
+              <cell>40.8</cell>
+              <cell>69.5</cell>
+            </row>
+            <row>
+              <cell>LEAF</cell>
+              <cell>73.3</cell>
+              <cell>79.7</cell>
+              <cell>76.4</cell>
+              <cell>79.0</cell>
+            </row>
+            <row>
+              <cell>UALIGNMT-style#@#@UALIGN MT-style</cell>
+              <cell>82.5</cell>
+              <cell>80.0</cell>
+              <cell>81.2</cell>
+              <cell>80.2</cell>
+            </row>
+            <row>
+              <cell>UALIGNGS-style#@#@UALIGN GS-style</cell>
+              <cell>84.0</cell>
+              <cell>82.9</cell>
+              <cell>83.5</cell>
+              <cell>83.0</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TET</source>
+        <caption>Table 2: Alignment precision, recall, F-measure (=0.5), F-measure(=0.1), all of UALIGN, for different alignment styles, different input alignment lexicons.</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Style</cell>
+              <cell>A-Lexicon</cell>
+              <cell>Prec.</cell>
+              <cell>Recall</cell>
+              <cell>F-0.5</cell>
+              <cell>F-0.1</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>MT</cell>
+              <cell>from LEAF</cell>
+              <cell>82.5</cell>
+              <cell>80.0</cell>
+              <cell>81.2</cell>
+              <cell>80.2</cell>
+            </row>
+            <row>
+              <cell>MT</cell>
+              <cell>from GIZA</cell>
+              <cell>80.8</cell>
+              <cell>79.2</cell>
+              <cell>80.0</cell>
+              <cell>79.4</cell>
+            </row>
+            <row>
+              <cell>GS</cell>
+              <cell>from LEAF</cell>
+              <cell>84.0</cell>
+              <cell>82.9</cell>
+              <cell>83.5</cell>
+              <cell>83.0</cell>
+            </row>
+            <row>
+              <cell>GS</cell>
+              <cell>from GIZA</cell>
+              <cell>82.1</cell>
+              <cell>81.8</cell>
+              <cell>82.0</cell>
+              <cell>81.9</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TableSeer</source>
+        <caption>Table 3: Percentages of Arabic and English words aligned</caption>
+        <reference_text>In PAGE 6: ...Table 3: Percentages of Arabic and English words aligned  Table3  shows how much LEAF and UALIGN differ in the percentage of Arabic and English words aligned (correctly or incorrectly). LEAF is much more aggressive in making alignments, aligning almost every Arabic word....</reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>ment lexicon.</cell>
+              <cell>None</cell>
+              <cell></cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Aligner</cell>
+              <cell>Arabic aligned</cell>
+              <cell>Engl. aligned</cell>
+            </row>
+            <row>
+              <cell>GIZA Union</cell>
+              <cell>100%</cell>
+              <cell>100%</cell>
+            </row>
+            <row>
+              <cell>LEAF</cell>
+              <cell>99.99%</cell>
+              <cell>97.25%</cell>
+            </row>
+            <row>
+              <cell>UALIGN</cell>
+              <cell>92.10%</cell>
+              <cell>91.55%</cell>
+            </row>
+            <row>
+              <cell>Gold Standard</cell>
+              <cell>95.37%</cell>
+              <cell>95.86%</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TableSeer</source>
+        <caption>Table 4: Impact of sub-components on alignment precision, recall, F-measure, with GS-style attachments, based on the LEAF alignment lexicon.</caption>
+        <reference_text>None</reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>System</cell>
+              <cell>Prec.</cell>
+              <cell>Recall</cell>
+              <cell>F-0.1</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Full system (FS)</cell>
+              <cell>84.0</cell>
+              <cell>82.9</cell>
+              <cell>83.0</cell>
+            </row>
+            <row>
+              <cell>FS w/o morph.variation</cell>
+              <cell>84.0</cell>
+              <cell>82.4</cell>
+              <cell>82.5</cell>
+            </row>
+            <row>
+              <cell>FS w/o Engl. tree reord.</cell>
+              <cell>83.8</cell>
+              <cell>82.7</cell>
+              <cell>82.8</cell>
+            </row>
+            <row>
+              <cell>FS w/o string identity</cell>
+              <cell>84.0</cell>
+              <cell>82.8</cell>
+              <cell>82.9</cell>
+            </row>
+            <row>
+              <cell>FS w/o name translit.</cell>
+              <cell>84.0</cell>
+              <cell>82.8</cell>
+              <cell>82.9</cell>
+            </row>
+            <row>
+              <cell>System after Phase I</cell>
+              <cell>90.6</cell>
+              <cell>44.5</cell>
+              <cell>46.8</cell>
+            </row>
+            <row>
+              <cell>+PhaseIIw/1pass</cell>
+              <cell>87.6</cell>
+              <cell>77.1</cell>
+              <cell>78.0</cell>
+            </row>
+            <row>
+              <cell>+ Phase II w/ 2 passes</cell>
+              <cell>85.8</cell>
+              <cell>80.3</cell>
+              <cell>80.8</cell>
+            </row>
+            <row>
+              <cell>+ Phase II w/ 3 passes</cell>
+              <cell>84.2</cell>
+              <cell>82.7</cell>
+              <cell>82.8</cell>
+            </row>
+            <row>
+              <cell>+ Phase II w/ 4 passes</cell>
+              <cell>84.0</cell>
+              <cell>82.9</cell>
+              <cell>83.0</cell>
+            </row>
+            <row>
+              <cell>+ Phase II w/ 5 passes</cell>
+              <cell>84.0</cell>
+              <cell>82.9</cell>
+              <cell>83.0</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>5</id>
+        <source>TableSeer</source>
+        <caption>Table 5: BLEU scores in end-to-end statistical MT system based on different aligners. Both UALIGN variants use MT-style alignments.</caption>
+        <reference_text>None</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Aligner</cell>
+              <cell>BLEU</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>GIZA</cell>
+              <cell>47.4</cell>
+            </row>
+            <row>
+              <cell>LEAF</cell>
+              <cell>48.0</cell>
+            </row>
+            <row>
+              <cell>UALIGN using GIZA alignment-lexicon</cell>
+              <cell>48.4</cell>
+            </row>
+            <row>
+              <cell>UALIGN using LEAF alignment-lexicon</cell>
+              <cell>48.7</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>6</id>
+        <source>TableSeer</source>
+        <caption>Table 6: BLEU scores in end-to-end statistical MT system based on different alignment styles for orphan prepositions. Both UALIGN variants use a LEAF alignment lexicon.</caption>
+        <reference_text>None</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>the left or to the right.</cell>
+              <cell></cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Aligner</cell>
+              <cell>BLEU</cell>
+            </row>
+            <row>
+              <cell>LEAF</cell>
+              <cell>48.0</cell>
+            </row>
+            <row>
+              <cell>UALIGN with GS-style alignments</cell>
+              <cell>48.0</cell>
+            </row>
+            <row>
+              <cell>UALIGN with MT-style alignments</cell>
+              <cell>48.7</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Peter E Brown</author>
+          <author>Vincent J Della Pietra</author>
+          <author>Stephen A Della Pietra</author>
+          <author>Robert L Mercer</author>
+        </authors>
+        <title>The Mathematics of Statistical Machine Translation: Parameter Estimation.</title>
+        <publication>None</publication>
+        <pages>263--311</pages>
+        <date>1993</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Colin Cherry</author>
+          <author>Dekang Lin</author>
+        </authors>
+        <title>Soft Syntactic Constraints for Word Alignment Through Discriminative Training.</title>
+        <publication>In Proceedings of the 44th Annual Meeting on Association for Computational Linguistics,</publication>
+        <pages>105--112</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>John DeNero</author>
+          <author>Dan Klein</author>
+        </authors>
+        <title>Tailoring Word Alignments to Syntactic Machine Translation.</title>
+        <publication>In Proceedings of the 45th Annual Meeting on Association for Computational Linguistics,</publication>
+        <pages>17--24</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Victoria Fossum</author>
+          <author>Kevin Knight</author>
+          <author>Steven Abney</author>
+        </authors>
+        <title>Using Syntax to Improve Word Alignment Precision for Syntax-Based Machine Translation.</title>
+        <publication>In Proceedings of the ACL Workshop on Statistical Machine Translation,</publication>
+        <pages>44--52</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>Alexander Fraser</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>Getting the Structure Right for Word Alignment: LEAF.</title>
+        <publication>In Proceedings of Conference for Empirical Methods in Natural Language Processing (EMNLP),</publication>
+        <pages>51--60</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Alexander Fraser</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>Measuring Word Alignment Quality for Statistical Machine Translation.</title>
+        <publication>None</publication>
+        <pages>293--303</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Michel Galley</author>
+          <author>Jonathan Graehl</author>
+          <author>Kevin Knight</author>
+          <author>Daniel Marcu</author>
+          <author>Steve DeNeefe</author>
+          <author>Wei Wang</author>
+          <author>Ignacio Thayer</author>
+        </authors>
+        <title>Scalable Inference and Training of Context-Rich Syntactic Translation Models.</title>
+        <publication>In Proceedings of the 44th Annual Meeting on Association for Computational Linguistics,</publication>
+        <pages>961--968</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Ulf Hermjakob</author>
+          <author>Kevin Knight</author>
+          <author>Hal Daum&#233;</author>
+        </authors>
+        <title>Name Translation in Statistical Machine Translation: Learning When to Transliterate.</title>
+        <publication>In Proceedings of the 46th Annual Meeting on Association for Computational Linguistics,</publication>
+        <pages>389--397</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Abraham Ittycheriah</author>
+          <author>Salim Roukos</author>
+        </authors>
+        <title>A Maximum Entropy Word Aligner for ArabicEnglish Machine Translation.</title>
+        <publication>In Proceedings of Joint Conference of Human Language Technology and Empirical Methods in Natural Language Processing (HLT/EMNLP),</publication>
+        <pages>89--96</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Alon Lavie</author>
+        </authors>
+        <title>Alok Parlikar and Vamshi Ambati.</title>
+        <publication>In Proceedings of the ACL/HLT Second Workshop on Syntax and Structure in Statistical Translation (SSST-2),</publication>
+        <pages>87--95</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Melamed</author>
+        </authors>
+        <title>Models of translational equivalence among words.</title>
+        <publication>None</publication>
+        <pages>221--249</pages>
+        <date>2000</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>A Systematic Comparison of Various Statistical Alignment Models.</title>
+        <publication>None</publication>
+        <pages>pages</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>The Alignment Template Approach to Statistical Machine Translation.</title>
+        <publication>None</publication>
+        <pages>417--449</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>K Papineni</author>
+          <author>S Roukos</author>
+          <author>T Ward</author>
+          <author>W J Zhu</author>
+        </authors>
+        <title>BLEU: a Method for Automatic Evaluation of Machine Translation.</title>
+        <publication>In Proceedings of the 40th Annual Meeting on Association for Computational Linguistics,</publication>
+        <pages>311--318</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Radu Soricut</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>Sentence Level Discourse Parsing Using Syntactic and Lexical Information.</title>
+        <publication>In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology,</publication>
+        <pages>149--156</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>Andy Way</author>
+          <author>Nano Gough</author>
+        </authors>
+        <title>wEBMT: developing and validating an example-based machine translation system using the world wide web In</title>
+        <publication>None</publication>
+        <pages>421--457</pages>
+        <date>2003</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Brown et al., 1993</string>
+        <sentence_id>5225</sentence_id>
+        <char_offset>156</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>0</reference_id>
+        <string>Brown et al., 1993</string>
+        <sentence_id>5375</sentence_id>
+        <char_offset>44</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>1</reference_id>
+        <string>Cherry and Lin, 2006</string>
+        <sentence_id>5225</sentence_id>
+        <char_offset>287</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>2</reference_id>
+        <string>DeNero and Klein, 2007</string>
+        <sentence_id>5225</sentence_id>
+        <char_offset>309</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>3</reference_id>
+        <string>Fossum et al., 2008</string>
+        <sentence_id>5225</sentence_id>
+        <char_offset>333</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>4</reference_id>
+        <string>Fraser and Marcu, 2007</string>
+        <sentence_id>5225</sentence_id>
+        <char_offset>206</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>4</reference_id>
+        <string>Fraser and Marcu, 2007</string>
+        <sentence_id>5374</sentence_id>
+        <char_offset>164</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>4</reference_id>
+        <string>Fraser and Marcu, 2007</string>
+        <sentence_id>5378</sentence_id>
+        <char_offset>135</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>5</reference_id>
+        <string>Fraser and Marcu, 2007</string>
+        <sentence_id>5225</sentence_id>
+        <char_offset>206</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>5</reference_id>
+        <string>Fraser and Marcu, 2007</string>
+        <sentence_id>5374</sentence_id>
+        <char_offset>164</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>5</reference_id>
+        <string>Fraser and Marcu, 2007</string>
+        <sentence_id>5378</sentence_id>
+        <char_offset>135</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>6</reference_id>
+        <string>Galley et al., 2006</string>
+        <sentence_id>5407</sentence_id>
+        <char_offset>161</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>7</reference_id>
+        <string>Hermjakob et al., 2008</string>
+        <sentence_id>5322</sentence_id>
+        <char_offset>133</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>8</reference_id>
+        <string>Ittycheriah and Roukos, 2005</string>
+        <sentence_id>5225</sentence_id>
+        <char_offset>176</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>11</reference_id>
+        <string>Och and Ney, 2003</string>
+        <sentence_id>5374</sentence_id>
+        <char_offset>115</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>13</reference_id>
+        <string>Papineni et al., 2002</string>
+        <sentence_id>5408</sentence_id>
+        <char_offset>13</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>14</reference_id>
+        <string>Soricut and Marcu, 2003</string>
+        <sentence_id>5373</sentence_id>
+        <char_offset>67</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

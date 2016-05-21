@@ -1,0 +1,701 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Discriminative Substring Decoding for Transliteration</TITLE>
+  <AUTHORS>
+    <AUTHOR>Colin Cherry</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-0">We present a discriminative substring decoder for transliteration.</A-S>
+    <A-S ID="S-1">This decoder extends recent approaches for discriminative character transduction by allowing for a list of known target-language words, an important resource for transliteration.</A-S>
+    <A-S ID="S-2">Our approach improves upon Sherif and Kondrak&#8217;s (2007b) state-of-theart decoder, creating a 28.5% relative improvement in transliteration accuracy on a Japanese katakana-to-English task.</A-S>
+    <A-S ID="S-3">We also conduct a controlled comparison of two feature paradigms for discriminative training: indicators and hybrid generative features.</A-S>
+    <A-S ID="S-4">Surprisingly, the generative hybrid outperforms its purely discriminative counterpart, despite losing access to rich source-context features.</A-S>
+    <A-S ID="S-5">Finally, we show that machine transliterations have a positive impact on machine translation quality, improving human judgments by 0.5 on a 4-point scale.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-6">Transliteration occurs when a word is borrowed into a language with a different character set.</S>
+        <S ID="S-7">The word is transcribed into the new character set in such a way as to maintain rough phonetic correspondence; for example, the English word hip-hop becomes &#65533;&#65533;&#65533;&#65533;&#65533;&#65533; [hippuhoppu], when transliterated into Japanese.</S>
+        <S ID="S-8">A task frequently of interest to the NLP community is backtransliteration, where one seeks the original word, given the borrowed form.</S>
+      </P>
+      <P>
+        <S ID="S-9">We investigate machine transliteration as a method to handle out-of-vocabulary items in a Japanese-to-English translation system.</S>
+        <S ID="S-10">More often than not, this will correspond to backtransliteration.</S>
+        <S ID="S-11">Our goal is to prevent the copying or deletion of Japanese words when they are missing from our statistical machine translation (SMT) system&#8217;s translation tables.</S>
+        <S ID="S-12">This can have a substantial impact on the quality of SMT output, transforming translations of questionable usefulness, such as:</S>
+      </P>
+      <P>
+        <S ID="S-13">Avoid using a &#65533;&#65533;&#65533;&#65533;&#65533;&#65533; account.</S>
+        <S ID="S-14">1</S>
+      </P>
+      <P>
+        <S ID="S-15">into the far more informative:</S>
+      </P>
+      <P>
+        <S ID="S-16">Avoid using a Freemail account.</S>
+      </P>
+      <P>
+        <S ID="S-17">Though the techniques we present here are language-independent, we focus this study on the task of Japanese katakana-to-English backtransliteration.</S>
+        <S ID="S-18">Katakana is one of the four character types used in the Japanese writing system (along with hiragana, kanji and Roman alphabet), consisting of about 50 syllabic characters.</S>
+        <S ID="S-19">It is used primarily to spell foreign loanwords (e.g., &#65533;&#65533;&#65533;&#65533;&#65533;&#65533; [chokoreeto] &#8212; chocolate), and names (e.g., &#65533;&#65533;&#65533;&#65533;&#65533; [kurinton] &#8212; Clinton).</S>
+        <S ID="S-20">Therefore, katakana is a strong indicator that a Japanese word can be back-transliterated.</S>
+        <S ID="S-21">However, katakana can also be used to spell scientific names of animals and plants (e.g., &#65533;&#65533; [kamo] &#8212; duck), onomatopoeic expressions (e.g., &#65533;&#65533;&#65533;&#65533;&#65533;&#65533; [bashabasha] &#8212; splash) and foreign origin words that are not transliterations (e.g., &#65533;&#65533;&#65533;&#65533; [hochikisu] &#8212; stapler).</S>
+        <S ID="S-22">These untransliterable cases constitute about 10% of the katakana words in our data.</S>
+        <S ID="S-23">We employ a discriminative substring decoder for machine transliteration.</S>
+        <S ID="S-24">Following <REF ID="R-28" RPTR="37">Sherif and Kondrak (2007</REF>b), the decoder operates on short source substrings, with each operation producing one or more target characters, as shown in Figure 1.</S>
+        <S ID="S-25">However, where previous approaches employ generative modeling, we use structured perceptron training to discriminatively tune parameters according to 0-1 transliteration accuracy.</S>
+        <S ID="S-26">This</S>
+      </P>
+      <P>
+        <S ID="S-27">1 &#65533;&#65533;&#65533;&#65533;&#65533;&#65533; is romanized as [furiimeeru]</S>
+      </P>
+      <P>
+        <S ID="S-28">&#12488; &#12512; &#12477;&#12531;</S>
+      </P>
+      <P>
+        <S ID="S-29">tho m son</S>
+      </P>
+      <P>
+        <S ID="S-30">allows us to test novel methods for the use of target lexicons in discriminative character transduction, allowing our decoder to benefit from a list of known target words.</S>
+        <S ID="S-31">Perhaps more significantly, our framework allows us to test two competing styles of features:</S>
+      </P>
+      <P>
+        <S ID="S-32">&#8226; sparse indicators, designed to capture the same channel and language modeling data collected by previous generative models, and</S>
+      </P>
+      <P>
+        <S ID="S-33">&#8226; components of existing generative models, used as real-valued features in a discriminatively weighted, generative hybrid.</S>
+      </P>
+      <P>
+        <S ID="S-34">Note that generative hybrids are the norm in SMT, where translation scores are provided by a discriminative combination of generative models (<REF ID="R-23" RPTR="30">Och, 2003</REF>).</S>
+        <S ID="S-35">Substring-based transliteration with a generative hybrid model is very similar to existing solutions for phrasal SMT (<REF ID="R-19" RPTR="26">Koehn et al., 2003</REF>), operating on characters rather than words.</S>
+        <S ID="S-36">Unlike out-of-the-box phrasal SMT solutions, our generative hybrid benefits from a target a lexicon.</S>
+        <S ID="S-37">As we will show, this is the difference between a weak baseline and a strong competitor.</S>
+      </P>
+      <P>
+        <S ID="S-38">We demonstrate that despite recent successes in discriminative character transduction using indicator features (Jiampojamarn et al., 2008; <REF ID="R-08" RPTR="10">Dreyer et al., 2008</REF>), our generative hybrid performs surprisingly well, producing our highest transliteration accuracies.</S>
+        <S ID="S-39">Researchers frequently compare against a phrasal SMT baseline when evaluating a new transduction technique (<REF ID="R-09" RPTR="13">Freitag and Khadivi, 2007</REF>; <REF ID="R-08" RPTR="11">Dreyer et al., 2008</REF>); however, we are careful to vary only the features in our comparison.</S>
+        <S ID="S-40">Confounding variables, such as alignment, decoder and training method, are held constant.</S>
+      </P>
+      <P>
+        <S ID="S-41">We also include a human evaluation of transliteration-augmented SMT output.</S>
+        <S ID="S-42">Though human evaluations are too expensive to allow a comparison between transliteration systems, we are able to show that adding our transliterations to a production-level SMT engine results in a substantial improvement in translation quality.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Background</HEADER>
+      <P>
+        <S ID="S-81">This work draws inspiration from previous work in transliteration, which we divide into similarity and transduction-based approaches.</S>
+        <S ID="S-82">We also discuss recent successes in discriminative character transduction that have influenced this work.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Similarity-based transliteration</HEADER>
+        <P>
+          <S ID="S-43">In similarity-based transliteration, a characterbased, cross-lingual similarity metric is calculated (or bootstrapped) from known transliteration pairs.</S>
+          <S ID="S-44">Given a source word s, its transliteration is the target word t most similar to s, where t is drawn from some pool of candidates.</S>
+          <S ID="S-45">This approach may also be referred to as transliteration discovery.</S>
+        </P>
+        <P>
+          <S ID="S-46"><REF ID="R-05" RPTR="5">Brill et al. (2001)</REF> describe a katakana-to- English approach with an EM-learned edit distance, which bootstraps from a small number of examples to learn transliteration pairs from query logs.</S>
+          <S ID="S-47"><REF ID="R-03" RPTR="3">Bilac and Tanaka (2005)</REF> harvest transliteration candidates from comparable bilingual corpora (conference abstracts in English and Japanese), and use distributional as well as phonetic similarity to choose among them.</S>
+          <S ID="S-48"><REF ID="R-28" RPTR="38">Sherif and Kondrak (2007</REF>a) also bootstrap a learned edit distance for Arabic named entities, with candidate pairs drawn from sentence or document-aligned parallel text.</S>
+          <S ID="S-49"><REF ID="R-12" RPTR="17">Klementiev and Roth (2006)</REF> bootstrap an SVM classifier trained to detect true transliteration-pairs.</S>
+          <S ID="S-50">They draw candidates from comparable news text, using date information to provide further clues as to aligned named entities.</S>
+          <S ID="S-51"><REF ID="R-01" RPTR="0">Bergsma and Kondrak (2007)</REF> extend the classification approach with features derived from a character alignment.</S>
+          <S ID="S-52">They train from bilingual dictionaries and word-aligned parallel text, selecting negative examples to target false-friends.</S>
+        </P>
+        <P>
+          <S ID="S-53">The work of <REF ID="R-10" RPTR="15">Hermjakob et al. (2008)</REF> is particularly relevant to this paper, as they incorporate a similarity-based transliteration system into an Arabic-to-English SMT engine.</S>
+          <S ID="S-54">They employ a hand-crafted cross-lingual similarity metric, and use capitalized n-grams from the Google n-gram corpus as candidates.</S>
+          <S ID="S-55">With such a huge candidate list, a cross-lingual indexing scheme is designed for fast candidate look-up.</S>
+          <S ID="S-56">Their work also addresses the question of when to transliterate (as opposed to translate), a realistic concern when deploying a transliteration component in SMT.</S>
+          <S ID="S-57">This, however, is not of so much concern for katakana, as it is used primarily for loanwords.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Transduction-based transliteration</HEADER>
+        <P>
+          <S ID="S-58">The approach presented in this paper is an instance of transduction-based transliteration, where the source word is transformed into a target word using a sequence of character-level operations.</S>
+          <S ID="S-59">The parameters of the transduction process are learned from a collection of transliteration pairs.</S>
+          <S ID="S-60">These systems do not require a list of candidates, but many incorporate a target lexicon, favoring target words that occur in the lexicon.</S>
+          <S ID="S-61">This approach is also known as transliteration generation.</S>
+          <S ID="S-62">The majority of transliteration generation approaches are based on the noisy channel model, where a target t is generated according to P (t|s) &#8733; P (s|t)P (t).</S>
+          <S ID="S-63">This approach is typified by finite-state transliteration, where the various stages of the channel model are represented by finite state transducers and automata.</S>
+          <S ID="S-64">Early systems employed a complex channel, passing through multiple phonetic representations (<REF ID="R-14" RPTR="21">Knight and Graehl, 1998</REF>; <REF ID="R-02" RPTR="2">Bilac and Tanaka, 2004</REF>), but later versions replaced characters directly (Al- Onaizan and Knight, 2002).</S>
+          <S ID="S-65"><REF ID="R-28" RPTR="39">Sherif and Kondrak (2007</REF>b) extend this approach with substring operations in the style of phrasal SMT, and show that doing so improves both accuracy as well as space and time efficiency.</S>
+          <S ID="S-66">Note that it is possible to incorporate a target lexicon by making P (t) a word unigram model with a character-based back-off.</S>
+        </P>
+        <P>
+          <S ID="S-67"><REF ID="R-20" RPTR="27">Li et al. (2004)</REF> present an alternative to the noisy channel with their joint n-gram model, which calculates P (s, t).</S>
+          <S ID="S-68">This formulation allows operations to be conditioned on both source and target context.</S>
+          <S ID="S-69">However, the inclusion of a candidate list is more difficult in this setting, as P (t) is not given its own model.</S>
+          <S ID="S-70"><REF ID="R-16" RPTR="23">Zelenko and Aone (2006)</REF> investigate a purely discriminative, alignment-free approach to transliteration generation.</S>
+          <S ID="S-71">The target word is constructed one character at a time, with each new character triggering a suite of features, including indicators for near-by source and target characters, as well a generative target language model.</S>
+          <S ID="S-72"><REF ID="R-09" RPTR="14">Freitag and Khadivi (2007)</REF> propose a discriminative, latent edit distance for transliteration.</S>
+          <S ID="S-73">In this case, training data need not be aligned in advance, but a latent alignment is produced during decoding.</S>
+          <S ID="S-74">Again, the target word is constructed one character at a time, using edit operations that are scored according to source and target context features.</S>
+          <S ID="S-75">Both approaches train using a structured perceptron, as we do here.</S>
+          <S ID="S-76">However, these models represent a dramatic departure from the existing literature, while ours has clear analogs to the well-known noisy-channel paradigm, which allows for useful comparisons and insights into the advantages of discriminative training.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Discriminative character transduction</HEADER>
+        <P>
+          <S ID="S-77">While our chosen application is transliteration, our decoder is influenced by recent successes in general-purpose discriminative transduction.</S>
+          <S ID="S-78">Jiampojamarn et al. (2008) describe a discriminative letter-to-phoneme substring transducer, while <REF ID="R-08" RPTR="9">Dreyer et al. (2008)</REF> describe a discriminative character transducer with a latent derivation structure for morphological transformations.</S>
+          <S ID="S-79">Both models are extremely effective, but both rely exclusively on indicator features; they do not explore the use of knowledge-rich generative models.</S>
+          <S ID="S-80">Our indicator system uses an extended version of the Jiampojamarn et al. (2008) feature set.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Methods</HEADER>
+      <P>
+        <S ID="S-186">We adopt a discriminative substring decoder for our transliteration task.</S>
+        <S ID="S-187">A structured perceptron (<REF ID="R-07" RPTR="7">Collins, 2002</REF>) learns weights for our transliteration features, which are drawn from two broad classes: indicator and hybrid generative features.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Structured perceptron</HEADER>
+        <P>
+          <S ID="S-83">The decoder&#8217;s discriminative parameters are learned with structured perceptron training.</S>
+          <S ID="S-84">Let a derivation d describe a substring operation sequence that transliterates a source word into a target word.</S>
+          <S ID="S-85">Given an input training corpus of such derivations D = d 1 .</S>
+          <S ID="S-86">.</S>
+          <S ID="S-87">.</S>
+          <S ID="S-88">d n , a vector feature function on derivations F &#8407; (d), and an initial weight vector &#8407;w, the perceptron performs two steps for each training example d i &#8712; D:</S>
+        </P>
+        <P>
+          <S ID="S-89">&#8226; Decode: &#175;d ( = argmax d&#8712;D(src(di )) &#8407;w &#183; &#8407;F</S>
+        </P>
+        <P>
+          <S ID="S-90">) (d)</S>
+        </P>
+        <P>
+          <S ID="S-91">&#8226; Update: &#8407;w = &#8407;w + &#8407; F (d i ) &#8722; &#8407; F ( &#175;d)</S>
+        </P>
+        <P>
+          <S ID="S-92">where D(src(d)) enumerates all possible derivations with the same source side as d.</S>
+          <S ID="S-93">To improve generalization, the final feature vector is the average of all vectors found during learning (<REF ID="R-07" RPTR="8">Collins, 2002</REF>).</S>
+          <S ID="S-94">Accuracy on the development set is used to select the number of times we pass through all d i &#8712; D.</S>
+        </P>
+        <P>
+          <S ID="S-95">Given the above framework, we require training derivations D, feature vectors &#8407; F , and a decoder to</S>
+        </P>
+        <P>
+          <S ID="S-96">carry out the argmax over all d reachable from a particular source word.</S>
+          <S ID="S-97">We describe each of these components in turn below.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Training derivations</HEADER>
+        <P>
+          <S ID="S-98">Note that the above framework describes a maxderivation decoder trained on a corpus of goldstandard derivations, as opposed to a maxtransliteration decoder trained directly on sourcetarget pairs.</S>
+          <S ID="S-99">By building the entire system on the derivation level, we side-step issues that can occur when perceptron training with hidden derivations (<REF ID="R-21" RPTR="28">Liang et al., 2006</REF>), but we also introduce the need to transform our training source-target pairs into training derivations.</S>
+        </P>
+        <P>
+          <S ID="S-100">Training derivations can be learned unsupervised from source-target pairs using character alignment techniques.</S>
+          <S ID="S-101">Previously, this has been done using an EM-learned edit distance (<REF ID="R-26" RPTR="35">Ristad and Yianilos, 1998</REF>), or generalizations thereof (<REF ID="R-04" RPTR="4">Brill and Moore, 2000</REF>; <REF ID="R-11" RPTR="16">Jiampojamarn et al., 2007</REF>).</S>
+          <S ID="S-102">We opt for an alternative alignment technique, similar to the word-aligner described by <REF ID="R-18" RPTR="25">Zhang et al. (2008)</REF>.</S>
+          <S ID="S-103">This approach employs variational EM with sparse priors, along with hard length limits, to reduce the length of substrings operated upon.</S>
+          <S ID="S-104">By doing so, we hope to learn only non-compositional transliteration units.</S>
+        </P>
+        <P>
+          <S ID="S-105">Our aligner produces only monotonic alignments, and does not allow either the source or target side of an operation to be empty.</S>
+          <S ID="S-106">The same restrictions are imposed during decoding.</S>
+          <S ID="S-107">In this way, each alignment found by variational EM is also an unambiguous derivation.</S>
+          <S ID="S-108">We align our training corpus with a maximum substring length of three characters.</S>
+          <S ID="S-109">The same derivations are used to train all of the transliteration systems tested in this paper.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Features</HEADER>
+        <P>
+          <S ID="S-110">We employ two main types of features: indicators and hybrid generative models.</S>
+          <S ID="S-111">Indicators detect binary events in a derivation, such as the presence of a particular operation.</S>
+          <S ID="S-112">Hybrid generative features assign a real-valued probability to a derivation, based on statistics collected from training derivations.</S>
+          <S ID="S-113">There are few generative features and each carries a substantial amount of information, while indicators are sparse and knowledge-poor.</S>
+        </P>
+        <P>
+          <S ID="S-114">We treat these two classes of features as distinct.</S>
+          <S ID="S-115">We do so because researchers often use either one approach or the other.</S>
+          <S ID="S-116">2 Furthermore, it is not clear how to optimally employ training derivations when combining generative models and sparse indicators: generative models need large amounts of data to collect statistics and relatively little for perceptron training, 3 while sparse indicators require only a large perceptron training set.</S>
+          <S ID="S-117">We can further divide feature space according to the information required to calculate each feature.</S>
+          <S ID="S-118">Both feature sets can be partitioned into the following subtypes:</S>
+        </P>
+        <P>
+          <S ID="S-119">&#8226; Emission: How accurate are the operations used by this derivation?</S>
+        </P>
+        <P>
+          <S ID="S-120">&#8226; Transition: Does the target string produced by this derivation look like a well-formed target character sequence?</S>
+        </P>
+        <P>
+          <S ID="S-121">&#8226; Lexicon: Does the target string contain known words from a target lexicon?</S>
+        </P>
+        <P>
+          <S ID="S-122">Indicator Features Previous approaches to discriminative character transduction tend to employ only sparse indicators (Jiampojamarn et al., 2008; <REF ID="R-08" RPTR="12">Dreyer et al., 2008</REF>).</S>
+          <S ID="S-123">This is because sparsity is not a major concern in character-based domains, and sparse indicators are extremely flexible.</S>
+          <S ID="S-124">Our emission and transition indicator features follow Jiampojamarn et al. (2008).</S>
+          <S ID="S-125">Emission indicators are centered around an operation, such as [&#65533; &#8594; tho].</S>
+          <S ID="S-126">Minimally, an indicator exists for each operation.</S>
+          <S ID="S-127">Many more source context features can be generated by conjoining an operation with source n-grams found within a fixed window of C characters to either side of the operation.</S>
+          <S ID="S-128">These source context features have minimal computational cost, and they allow each operator to account for large, overlapping portions of the source, even when the substrings being operated upon are small.</S>
+          <S ID="S-129">Meanwhile, transition indicators stand in for a character-based target language model.</S>
+          <S ID="S-130">Indicators are built for each possible target n-gram, for n = 1 .</S>
+          <S ID="S-131">.</S>
+          <S ID="S-132">.</S>
+          <S ID="S-133">K, allowing the perceptron to construct a discriminative back-off model.</S>
+          <S ID="S-134">Development experiments lead us to select C = 3 and K = 5.</S>
+        </P>
+        <P>
+          <S ID="S-135">2 Generative hybrids are often accompanied by a small</S>
+        </P>
+        <P>
+          <S ID="S-136">number of unsparse indicators, such as operation count.</S>
+          <S ID="S-137">3 Perceptron training on the same data used for model</S>
+        </P>
+        <P>
+          <S ID="S-138">construction can lead to overconfidence in model quality.</S>
+          <S ID="S-139">One can address this problem by using a large number of modeling-training folds (<REF ID="R-06" RPTR="6">Collins et al., 2005</REF>), but we do not do so here.</S>
+        </P>
+        <P>
+          <S ID="S-140">Indicator lexicon features are novel to this work.</S>
+          <S ID="S-141">Given access to a target lexicon with type frequencies, we opt to create features that indicate the frequencies of generated target words according to coarse bins.</S>
+          <S ID="S-142">Experiments on our development set lead to the selection of 5 frequency bins: [&lt; 2,000], [&lt; 200], [&lt; 20], [&lt; 2], [&lt; 1].</S>
+          <S ID="S-143">To keep the model linear, these features are cumulative; thus, generating a word with frequency 126 will result in both the [&lt; 2, 000] and [&lt; 200] features firing.</S>
+          <S ID="S-144">Note that a single transliteration can potentially generate multiple target words, and doing so can have a major impact on how often the lexicon features fire.</S>
+          <S ID="S-145">Thus, we employ another feature that indicates the introduction of a new word.</S>
+          <S ID="S-146">We expect these frequency indicators to be superior to a word-level unigram model, as they allow the designer to select notable frequencies.</S>
+          <S ID="S-147">In particular, the bins we have selected do not give any advantage to extremely common words, as these are generally less likely to be transliterated.</S>
+        </P>
+        <P>
+          <S ID="S-148">Hybrid Generative Features We begin with the three components of the generative noisy channel employed by <REF ID="R-28" RPTR="40">Sherif and Kondrak (2007</REF>b).</S>
+          <S ID="S-149">Their transliteration probability is:</S>
+        </P>
+        <P>
+          <S ID="S-150">P (t|s) &#8733; P E (s|t) &#183; max [P T (t), P L (t)] (1)</S>
+        </P>
+        <P>
+          <S ID="S-151">Inspired by the linear models used in SMT (<REF ID="R-23" RPTR="31">Och, 2003</REF>), we can discriminatively weight the components of this generative model, producing:</S>
+        </P>
+        <P>
+          <S ID="S-152">w E log P E (s|t) + w T log P T (t) + w L log P L (t)</S>
+        </P>
+        <P>
+          <S ID="S-153">with weights w learned by perceptron training.</S>
+        </P>
+        <P>
+          <S ID="S-154">These three models conveniently align with our three feature subtypes.</S>
+          <S ID="S-155">Emission information is provided by P E (s|t), which is estimated by maximum likelihood on the operations observed in our training derivations.</S>
+          <S ID="S-156">Including source context is difficult in such a model.</S>
+          <S ID="S-157">To compensate for this, all systems using P E (s|t) also use composed operations, which are constructed from operation sequences observed in the training set.</S>
+          <S ID="S-158">This removes the length limit on substring operations.</S>
+          <S ID="S-159">4 P T (t) provides transition information through a character language model, estimated on the target side</S>
+        </P>
+        <P>
+          <S ID="S-160">4 Derivations built by our character aligner use operations on substrings of maximum length 3.</S>
+          <S ID="S-161">To enable perceptron training with composed operations, once P E (s|t) has been estimated by counting composed operations in the initial alignments, we re-align our training examples with those composed operations to maximize P E (s|t), creating new training derivations.</S>
+        </P>
+        <P>
+          <S ID="S-162">of the training derivations.</S>
+          <S ID="S-163">In our implementation, we employ a KN-smoothed 7-gram model (<REF ID="R-13" RPTR="18">Kneser and Ney, 1995</REF>).</S>
+          <S ID="S-164">Finally, P L (t) is a unigram target word model, estimated from the same type frequencies used to build our lexicon indicators.</S>
+        </P>
+        <P>
+          <S ID="S-165">Since we have adopted a linear model, we are no longer constrained by the original generative story.</S>
+          <S ID="S-166">Therefore, we are free to incorporate other SMT-inspired features: P E &#8242;(t|s), target character count, and operation count.</S>
+          <S ID="S-167">5</S>
+        </P>
+        <P>
+          <S ID="S-168">Feature summary The indicator and hybrid-generative feature sets each provide a discriminative version of the noisy channel model.</S>
+          <S ID="S-169">In the case of transition and lexicon features, both systems have access to the exact same information, but encode that information differently.</S>
+          <S ID="S-170">The lexicon encoding is the most dramatic difference, with the indicators using a small number of frequency bins, and the generative unigram model providing a single, real-valued feature that is proportional to frequency.</S>
+        </P>
+        <P>
+          <S ID="S-171">In the case of their emission features, the two systems actually encode different information.</S>
+          <S ID="S-172">Both have access to the same training derivations, but the indicator system provides source context through n-gram indicators, while the generative system does so using composed operations.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.4 Decoder</HEADER>
+        <P>
+          <S ID="S-173">Our decoder builds upon machine translation&#8217;s monotone phrasal decoding (<REF ID="R-17" RPTR="24">Zens and Ney, 2004</REF>), or equivalently, the sequence tagging algorithm used in semi-Markov CRFs (<REF ID="R-27" RPTR="36">Sarawagi and Cohen, 2004</REF>).</S>
+          <S ID="S-174">This dynamic programming (DP) decoder extends the Viterbi algorithm for HMMs by operating on one or more source characters (a substring) at each step.</S>
+          <S ID="S-175">A DP block stores the best scoring solution for a particular prefix.</S>
+          <S ID="S-176">Each block is subdivided into cells, which maintain the context necessary to calculate target-side features.</S>
+          <S ID="S-177">We employ a beam, keeping only the 40 highestscoring cells for each block, which speeds up inference at the expense of optimality.</S>
+          <S ID="S-178">We found that the beam had no major effect on perceptron training, nor on the system&#8217;s final accuracy.</S>
+        </P>
+        <P>
+          <S ID="S-179">Previously, target lexicons have been used primarily in finite-state transliteration, as they are easily encoded as finite-state-acceptors (Al- Onaizan and Knight, 2002; Sherif and Kondrak,</S>
+        </P>
+        <P>
+          <S ID="S-180">5 Character and operation counts also fit in the indicator</S>
+        </P>
+        <P>
+          <S ID="S-181">system, but did not improve performance in development.</S>
+        </P>
+        <P>
+          <S ID="S-182">2007b).</S>
+          <S ID="S-183">It is possible to extend the DP decoder to also use a target lexicon.</S>
+          <S ID="S-184">By encoding the lexicon as a trie, and adding the trie index to the context tracked by the DP cells, we can provide access to frequency estimates for words and word prefixes.</S>
+          <S ID="S-185">This has the side-effect of creating a new cell for each target prefix; however, in the character domain, this remains computationally tractable.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Data</HEADER>
+      <P>
+        <S ID="S-211"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Wikipedia training and test data</HEADER>
+        <P>
+          <S ID="S-188">Our katakana-to-English training data is derived from bilingually-linked Wikipedia titles.</S>
+          <S ID="S-189">Any Japanese Wikipedia article with an entirely katakana title and a linked English article results in training pair.</S>
+          <S ID="S-190">This results in 60K transliteration pairs; we removed 2K pairs for development, and 2K for held-out testing.</S>
+        </P>
+        <P>
+          <S ID="S-191">The remaining 56K training pairs are quite noisy.</S>
+          <S ID="S-192">As mentioned earlier, roughly 10% of our examples are simply not transliterable, but approximate Wikipedia title translations are an even more substantial source of noise.</S>
+          <S ID="S-193">For example, &#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533; [konpyuutageemu] &#8212; computer game is aligned with the English article Computer and video games.</S>
+          <S ID="S-194">We found it beneficial, in terms of both speed and accuracy, to do some coarse alignment-based pruning.</S>
+          <S ID="S-195">After alignment, the operations used by all derivations are counted.</S>
+          <S ID="S-196">Any operation that is used fewer than three times is eliminated, along with any derivation using that operation.</S>
+          <S ID="S-197">The goal is to eliminate loose transliteration pairs from our data, where a word or initial is included in one language but not the other.</S>
+          <S ID="S-198">This results in 40K training pairs.</S>
+          <S ID="S-199">Despite the noise in the Wikipedia data, there are clear advantages in using it for training transliteration models: it is available for any language pair, it reflects recent trends and events, and the amount of data increases daily.</S>
+          <S ID="S-200">As we will see below, the model trained on this data performs well on a test set from a very different domain.</S>
+          <S ID="S-201">All systems use development set accuracy to select their meta-parameters, such as the number of perceptron iterations, the size of the sourcecontext window, and the n-gram length used in character language modeling.</S>
+          <S ID="S-202">The hybrid generative system further splits the training set, using 38K derivations for the calculation of its emission and transition models, and 2K derivations for perceptron training its model weights.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Machine translation test data</HEADER>
+        <P>
+          <S ID="S-203">In order to see how effective our transliterator is on out-of-domain test data, we also created test data from a log of translation requests to a web-based, Japanese-to-English translation service.</S>
+          <S ID="S-204">6 Out of 5,000 randomly selected translation requests, there are 312 cases where katakana source words are out-of-vocabulary for the MT system, and therefore remain untranslated.</S>
+          <S ID="S-205">We created a reference translation (not necessarily a transliteration) for these katakana words by manually selecting the corresponding English word(s) in the sentence-level reference translation, which was produced independently from this experiment.</S>
+          <S ID="S-206">This test set is quite divergent from the Wikipedia titles: only 17 (5.5%) of its katakana words are found in the Wikipedia training data, and six of these did not agree on the English translation.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 English lexicon</HEADER>
+        <P>
+          <S ID="S-207">Our English lexicon is derived from two overlapping data sources: the English gigaword corpus (LDC2003T05; GW) and the language model training data for our SMT system, which contains selections from Europarl, gigaword, and webharvested text.</S>
+          <S ID="S-208">Both are lowercased.</S>
+          <S ID="S-209">We combine the unigram frequency counts from the two sources by taking the max when they overlap.</S>
+          <S ID="S-210">The resulting lexicon has 5M types, 2.5M of which have frequency 1.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiments</HEADER>
+      <P>
+        <S ID="S-261">In this section, we summarize development experiments, and then conduct a comparison on our two transliteration test sets.</S>
+        <S ID="S-262">We report 0-1 accuracy: a transliteration is only correct if it exactly matches the reference.</S>
+        <S ID="S-263">For the comparison experiments, we also report 10-best accuracy, where a system is correct if it includes the correct transliteration somewhere in its 10-best list.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Baselines</HEADER>
+        <P>
+          <S ID="S-212">We compare our systems against a reimplementation of Sherif and Kondrak&#8217;s (2007b) noisy-channel substring decoder.</S>
+          <S ID="S-213">This uses the same P E , P T and P L models as our hybrid generative system, but employs a two-pass decoding scheme to find the max transliteration according to Equation 1.</S>
+          <S ID="S-214">It represents a purely generative solution using otherwise identical architecture.</S>
+        </P>
+        <P>
+          <S ID="S-215">6 http://www.microsofttranslator.com</S>
+        </P>
+        <P>
+          <S ID="S-216">Since our hybrid generative system implements a model that is very similar to those used in phrasal SMT, we also compare against a state-of-the-art phrasal SMT system (<REF ID="R-22" RPTR="29">Moore and Quirk, 2007</REF>).</S>
+          <S ID="S-217">This system is trained by applying the standard SMT pipeline to our Wikipedia title pairs, treating characters as words, using a 7-gram characterlevel language model, and disabling re-ordering.</S>
+          <S ID="S-218">Unfortunately, the decoder&#8217;s architecture does not allow the use of a word-level unigram model, reducing the usefulness of this baseline.</S>
+          <S ID="S-219">Instead, we include the target lexicon as a second characterlevel language model.</S>
+          <S ID="S-220">This baseline indicates the level of performance one can expect by applying phrasal SMT straight out of the box.</S>
+        </P>
+        <P>
+          <S ID="S-221">Comparing the two baselines qualitatively, both use a combination of generative models inspired by the noisy channel.</S>
+          <S ID="S-222">Sherif and Kondrak employ a word-level unigram model without discriminatively weighting the models, while the Phrasal SMT approach uses weights derived from max- BLEU training without word-level unigrams.</S>
+          <S ID="S-223">The obvious question of what happens when one does both will be answered by our hybrid generative system.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Development experiments</HEADER>
+        <P>
+          <S ID="S-224">Table 1 shows development set accuracy for a number of systems and feature types, along with the model size of the corresponding systems, where size is measured in terms of the number of non-zero discriminatively-trained parameters.</S>
+          <S ID="S-225">The accuracy of the Sherif and Kondrak baseline is shown as SK07.</S>
+          <S ID="S-226">Despite its lack of discriminative training, word-level unigrams allow the SK07 baseline to outperform Phrasal SMT.</S>
+          <S ID="S-227">In future experiments, we compare only against SK07.</S>
+        </P>
+        <P>
+          <S ID="S-228">The indicator system was tested using only operation indicators, with source context, transition and lexicon indicators added incrementally.</S>
+          <S ID="S-229">All feature types have a substantial impact, with the lexicon providing the boost needed to surpass the baseline.</S>
+          <S ID="S-230">Note that the inclusion of the five frequency bins is sufficient to decrease the overall feature count of the system by 600K, as much fewer mistakes are made during training.</S>
+          <S ID="S-231">Development of the hybrid generative system used the SK07 baseline as a starting point.</S>
+          <S ID="S-232">The result of combining its three components into a flat linear model, with all weights set to 1, is shown in Table 1 as Linear SK07.</S>
+          <S ID="S-233">This violation of Table 1: Development accuracy and model size</S>
+        </P>
+        <P>
+          <S ID="S-234">conditional independence assumptions results in a drop in accuracy.</S>
+          <S ID="S-235">However, the + perceptron line shows that setting the three weights with perceptron training results in a huge boost in accuracy, nearly matching our indicator system.</S>
+          <S ID="S-236">Adding features inspired by SMT, such as P E &#8242;(t|s), eliminates the gap between the two.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Development discussion</HEADER>
+        <P>
+          <S ID="S-237">Considering their differences, the two systems&#8217; proximity in score is quite surprising.</S>
+          <S ID="S-238">Given the character domain&#8217;s lack of sparsity, and the large amount of available training data, we had expected the hybrid generative system to behave only as a strong baseline; instead, it matched the performance of the indicator system.</S>
+          <S ID="S-239">However, this is not unprecedented: discriminatively weighted generative models have been shown to outperform purely discriminative competitors in various NLP classification tasks (<REF ID="R-25" RPTR="34">Raina et al., 2004</REF>; <REF ID="R-15" RPTR="22">Toutanova, 2006</REF>), and remain the standard approach in statistical translation modeling (<REF ID="R-23" RPTR="32">Och, 2003</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-240">Examining the development results on an example-by-example basis, we see that the two systems make mostly the same mistakes: for 87% of examples, either both systems are right, or both are wrong.</S>
+          <S ID="S-241">The remainder represents a (relatively small) opportunity to improve through system or feature combination: an oracle that perfectly selects between the two scores 50.6.</S>
+        </P>
+        <P>
+          <S ID="S-242">One opportunity for straight-forward combination is the target lexicon.</S>
+          <S ID="S-243">Because lexicon frequencies are drawn from an independent word list, and not the transliteration training derivations, there is no reason why both systems cannot use both lexicon representations.</S>
+          <S ID="S-244">Unfortunately, doing so has</S>
+        </P>
+        <P>
+          <S ID="S-245">little impact, as is shown in each system&#8217;s final row in Table 1.</S>
+          <S ID="S-246">Adding the word unigram model to the indicator system results in slightly lower performance, and a much larger model.</S>
+          <S ID="S-247">Adding the frequency bins to the generative system does improve performance slightly, but attempts to completely replace the generative system&#8217;s word unigram model with frequency bins resulted in a substantial drop in accuracy.</S>
+          <S ID="S-248">7</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Test set comparisons</HEADER>
+        <P>
+          <S ID="S-249">Table 2 shows the accuracies of the systems selected during development on our testing data.</S>
+          <S ID="S-250">On the held-out Wikipedia examples, the trends observed during development remain the same, with the generative system expanding its lead.</S>
+          <S ID="S-251">Moving to 10-best accuracies changes little, except for slightly narrowing the gap between SK07 and the discriminative systems.</S>
+        </P>
+        <P>
+          <S ID="S-252">The second column of Table 2 compares the systems on our MT test set.</S>
+          <S ID="S-253">As discussed earlier, this data is quite different from the Wikipedia training set, and as a result, the systems&#8217; differences are less pronounced.</S>
+          <S ID="S-254">1-best accuracy still shows the discriminative systems having a definite advantage, but at the 10-best level, those distinctions are muted.</S>
+        </P>
+        <P>
+          <S ID="S-255">Compared with the previous work on katakanato-English transliteration, these accuracies do not look particularly high: both <REF ID="R-14" RPTR="19">Knight and Graehl (1998)</REF> and <REF ID="R-02" RPTR="1">Bilac and Tanaka (2004)</REF> report accuracies above 60% for 1-best transliteration.</S>
+          <S ID="S-256">We should emphasize that this is due to the difficulty of our test data, and that we have tested against a baseline that has been shown to outperform <REF ID="R-14" RPTR="20">Knight and Graehl (1998)</REF>.</S>
+          <S ID="S-257">The test data was not filtered for noise, leaving untransliterable cases and loose translations intact.</S>
+          <S ID="S-258">The accuracies reported above are under-estimates of real performance: many transliterations not matching the reference may still be useful to a human reader, such as differ-</S>
+        </P>
+        <P>
+          <S ID="S-259">7 Lexicon replacement experiment is not shown in Table 1.</S>
+        </P>
+        <P>
+          <S ID="S-260">ences in inflection (e.g., &#65533;&#65533;&#65533;&#65533;&#65533; [rechinoido] &#8212; retinoids, transliterated as retinoid), and spacing (e.g. &#65533;&#65533;&#65533;&#65533;&#65533;&#65533; [shierareone]&#8212; Sierra Leone, transliterated as sierraleone).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Integration with machine translation</HEADER>
+      <P>
+        <S ID="S-284">We used the transliterations from our indicator system to augment a Japanese-to-English MT system.</S>
+        <S ID="S-285">8 This treelet-based SMT system (<REF ID="R-24" RPTR="33">Quirk et al., 2005</REF>) is trained on about 4.6M parallel sentence pairs from diverse sources including bilingual books, dictionaries and web publications.</S>
+        <S ID="S-286">Our goal is to measure the impact of machine transliterations on end-to-end translation quality.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Evaluation method</HEADER>
+        <P>
+          <S ID="S-264">We use the MT-log translation pairs described in Section 4.2 as a sentence-level translation test set.</S>
+          <S ID="S-265">For each katakana word left untranslated by the baseline SMT engine, we generated 10-best transliteration candidates and added the katakana- English pairs to the SMT system&#8217;s translation table.</S>
+          <S ID="S-266">Perceptron scores were exponentiated, then normalized, to create probabilities, which were given to the SMT system as P (source|target); 9 all other translation features were set to log 1.</S>
+        </P>
+        <P>
+          <S ID="S-267">We translated the test set with and without the augmented translation table.</S>
+          <S ID="S-268">120 sentences were randomly selected from the cases where the translations output by the two SMT systems differed, and were submitted for two types of human evaluation.</S>
+          <S ID="S-269">In the absolute evaluation, each SMT output was assigned a score between 1 and 4 (1 = completely useless; 4 = perfect translation); in the relative evaluation, the evaluators were presented with a pair of SMT outputs, with and without the transliteration table, and were asked to judge if they preferred one translation over the other.</S>
+          <S ID="S-270">In both evaluation settings, the machine-translated sentences were evaluated by two native speakers of English who have no knowledge of Japanese, with access to a reference translation.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Results</HEADER>
+        <P>
+          <S ID="S-271">The evaluation results show that our transliterator does improve the quality of SMT.</S>
+          <S ID="S-272">The BLEU</S>
+        </P>
+        <P>
+          <S ID="S-273">8 The human evaluation was carried out before we discovered the effectiveness of the hybrid generative system, but recall that the performance of the two is similar.</S>
+          <S ID="S-274">9 The perceptron scores are more naturally interpreted as</S>
+        </P>
+        <P>
+          <S ID="S-275">P (target|source), but the opposite direction is generally the highest-weighted feature in the SMT system&#8217;s linear model.</S>
+        </P>
+        <P>
+          <S ID="S-276">score on the entire test set improved only slightly, from 21.8 to 22.0.</S>
+          <S ID="S-277">However, in the absolute human evaluation, the transliteration table increased the average human judgement from 1.5 to 2 out of a maximum score of 4.</S>
+          <S ID="S-278">Table 3 shows the results of the relative evaluation along with the judges&#8217; sentence-level agreement.</S>
+          <S ID="S-279">In 95 out of 120 cases, both annotators agreed that the augmented table produced a better translation than the baseline.</S>
+        </P>
+        <P>
+          <S ID="S-280">One might expect that any replacement of katakana would improve the perception of MT quality.</S>
+          <S ID="S-281">This is not necessarily the case: it can be more confusing to have a drastically incorrect transliteration, such as transliterating &#65533;&#65533;&#65533;&#65533;&#65533;&#65533; [appurooda] &#8212; uploader incorrectly as applaud.</S>
+          <S ID="S-282">Fortunately, Table 3 shows that we make very few of these sorts of mistakes: the baseline is preferred only rarely.</S>
+          <S ID="S-283">Also note that, according the MT 10-best accuracies in Table 2, we would have expected to improve at most 60% of cases, however, the human judgements indicate that our actual rate of improvement is closer to 80%, which demonstrates that even an imperfect transliteration is often useful.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion</HEADER>
+      <P>
+        <S ID="S-287">We have presented a discriminative substring decoder for transliteration.</S>
+        <S ID="S-288">Our decoder is based on recent approaches for discriminative character transduction, extended to provide access to a target lexicon.</S>
+        <S ID="S-289">We have presented a comparison of indicator and hybrid generative features in a controlled setting, demonstrating that generative models perform surprisingly well when discriminatively weighted.</S>
+        <S ID="S-290">We have also shown our discriminative models to be superior to a state-of-theart generative system.</S>
+        <S ID="S-291">Finally, we have demonstrated that machine transliteration is immediately useful to end-to-end SMT.</S>
+        <S ID="S-292">As mentioned earlier, by focusing on katakana, we bypass the problem of deciding when to transliterate rather than translate; next, we plan to combine our models with a classifier that makes such a decision, allowing us to integrate transliteration into SMT for other language pairs.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Yaser Al-Onaizan</RAUTHOR>
+      <REFTITLE>Machine transliteration of names in Arabic text.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Shane Bergsma</RAUTHOR>
+      <REFTITLE>Alignment-based discriminative string similarity.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Slaven Bilac</RAUTHOR>
+      <REFTITLE>A hybrid back-transliteration system for Japanese. In</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Slaven Bilac</RAUTHOR>
+      <REFTITLE>Extracting transliteration pairs from comparable corpora.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Eric Brill</RAUTHOR>
+      <REFTITLE>An improved error model for noisy channel spelling correction.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Eric Brill</RAUTHOR>
+      <REFTITLE>Automatically harvesting katakana-english term pairs from search engine query logs.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Michael Collins</RAUTHOR>
+      <REFTITLE>Discriminative syntactic language modeling for speech recognition.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Michael Collins</RAUTHOR>
+      <REFTITLE>Discriminative training methods for hidden markov models: Theory and experiments with perceptron algorithms.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Markus Dreyer</RAUTHOR>
+      <REFTITLE>Latent-variable modeling of string transductions with finite-state methods.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Dayne Freitag</RAUTHOR>
+      <REFTITLE>A sequence alignment model based on the averaged perceptron.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Ulf Hermjakob</RAUTHOR>
+      <REFTITLE>Name translation in statistical machine translation - learning when to transliterate.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Sittichai Jiampojamarn</RAUTHOR>
+      <REFTITLE>Applying many-to-many alignments and hidden markov models to letter-tophoneme conversion.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Alexandre Klementiev</RAUTHOR>
+      <REFTITLE>Named entity transliteration and discovery from multilingual comparable corpora.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Reinhard Kneser</RAUTHOR>
+      <REFTITLE>Improved backing-off for m-gram language modeling.</REFTITLE>
+      <DATE>1995</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Kevin Knight</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Kristina Toutanova</RAUTHOR>
+      <REFTITLE>Competitive generative models with structure learning for nlp classification tasks.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Dmitry Zelenko</RAUTHOR>
+      <REFTITLE>Discriminative methods for transliteration.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Richard Zens</RAUTHOR>
+      <REFTITLE>Improvements in phrase-based statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Hao Zhang</RAUTHOR>
+      <REFTITLE>Bayesian learning of noncompositional phrases with synchronous parsing.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Haizhou Li</RAUTHOR>
+      <REFTITLE>A joint source-channel model for machine transliteration. In</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Percy Liang</RAUTHOR>
+      <REFTITLE>An end-to-end discriminative approach to machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Robert Moore</RAUTHOR>
+      <REFTITLE>Faster beam-search decoding for phrasal statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training for statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Chris Quirk</RAUTHOR>
+      <REFTITLE>Dependency treelet translation: Syntactically informed phrasal SMT.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Rajat Raina</RAUTHOR>
+      <REFTITLE>Classification with hybrid generative/discriminative models.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Eric Sven Ristad</RAUTHOR>
+      <REFTITLE>Learning string-edit distance.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Sunita Sarawagi</RAUTHOR>
+      <REFTITLE>Semimarkov conditional random fields for information extraction.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Tarek Sherif</RAUTHOR>
+      <REFTITLE>Bootstrapping a stochastic transducer for Arabic-English transliteration extraction.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

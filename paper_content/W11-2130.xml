@@ -1,0 +1,2783 @@
+<document>
+  <filename>W11-2130</filename>
+  <authors>
+    <author>Barry Haddow</author>
+    <author>Abhishek Arun</author>
+  </authors>
+  <title>SampleRank Training for Phrase-Based Machine Translation</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>Statistical machine translation systems are normally optimised for a chosen gain function (metric) by using MERT to find the best model weights. This algorithm suffers from stability problems and cannot scale beyond 20-30 features. We present an alternative algorithm for discriminative training of phrasebased MT systems, SampleRank, which scales to hundreds of features, equals or beats MERT on both small and medium sized systems, and permits the use of sentence or document level features. SampleRank proceeds by repeatedly updating the model weights to ensure that the ranking of output sentences induced by the model is the same as that induced by the gain function.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Statistical machine translation systems are normally optimised for a chosen gain function (metric) by using MERT to find the best model weights.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This algorithm suffers from stability problems and cannot scale beyond 20-30 features.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We present an alternative algorithm for discriminative training of phrasebased MT systems, SampleRank, which scales to hundreds of features, equals or beats MERT on both small and medium sized systems, and permits the use of sentence or document level features.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>SampleRank proceeds by repeatedly updating the model weights to ensure that the ranking of output sentences induced by the model is the same as that induced by the gain function.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>In phrase-based machine translation (PBMT), the standard approach is to express the probability distribution p(a, e|f) (where f is the source sentence and (a, e) is the aligned target sentence) in terms of a linear model based on a small set of feature functions ( n&#8721; )
+p(a, e|f) &#8733; exp w i h i (a, e, f) (1)
+i=1
+The feature functions {h i } typically include log probabilities of generative models such as translation, language and reordering, as well as nonprobabilistic features such as word, phrase and distortion penalties. The feature weights w = {w i } are normally trained using MERT (minimum error rate training) (Och, 2003), to maximise performance as measured by an automated metric such as BLEU (Papineni et al., 2002). MERT training uses a parallel data set (known as the tuning set) consisting of about 1000-2000 sentences, distinct from the data set used to build the generative models. Optimising the weights in Equation (1) is often referred to as tuning the MT system, to differentiate it from the process of training the generative models.
+MERT&#8217;s inability to scale beyond 20-30 features, as well as its instability (Foster and Kuhn, 2009) have led to investigation into alternative ways of tuning MT systems. The development of tuning methods is complicated, however by, the use of
+BLEU as an objective function. This objective in
+its usual form is not differentiable, and has a highly non-convex error surface (Och, 2003). Furthermore
+BLEU is evaluated at the corpus level rather than at
+the sentence level, so tuning methods either have to consider the entire corpus, or resort to a sentencelevel approximation of BLEU. It is unlikely, however, that the difficulties in discriminative MT tuning are due solely to the use of BLEU as a metric &#8211; because evaluation of translation is so difficult, any reasonable gain function is likely to have a complex relationship with the model parameters.
+Gradient-based tuning methods, such as minimum risk training, have been investigated as possible alternatives to MERT. Expected BLEU is normally adopted as the objective since it is differentiable and so can be optimised by a form of stochastic gradient ascent. The feature expectations required for the gradient calculation can be obtained from n-best lists or lattices (Smith and Eisner, 2006; Li and Eisner, 2009), or using sampling (Arun et al., 2010), both of which can be computationally expensive.
+Margin-based techniques such as perceptron training (Liang et al., 2006) and MIRA (Chiang et al., 2008; Watanabe et al., 2007) have also been shown to be able to tune MT systems and scale to large numbers of features, but these generally involve repeatedly decoding the tuning set (and so are expensive) and require sentence-level approximations to the BLEU objective.
+In this paper we present an alternative method of tuning MT systems known as SampleRank, which has certain advantages over other methods in use today. SampleRank operates by repeatedly sampling pairs of translation hypotheses (for a given source sentence) and updating the feature weights if the ranking induced by the MT model (1) is different from the ranking induced by the gain function (i.e.
+BLEU). By considering the translation hypotheses
+in batches, it is possible to directly optimise corpus level metrics like BLEU without resorting to sentence level approximations.
+Tuning using SampleRank does not limit the size of the feature set in the same way as MERT does, and indeed it will be shown that SampleRank can successfully train a model with several hundred features. Using just the core PBMT features and training using SampleRank will be shown to achieve
+BLEU scores which equal or exceed those produced
+by MERT trained models.
+Since SampleRank does not require repeated decoding of the tuning set, and is easily parallelisable, it can run at an acceptable speed, and since it always maintains a complete translation hypothesis, it opens up the possibility of sentence or document level features 1 .</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In phrase-based machine translation (PBMT), the standard approach is to express the probability distribution p(a, e|f) (where f is the source sentence and (a, e) is the aligned target sentence) in terms of a linear model based on a small set of feature functions ( n&#8721; )</text>
+              <doc_id>4</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>p(a, e|f) &#8733; exp w i h i (a, e, f) (1)</text>
+              <doc_id>5</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i=1</text>
+              <doc_id>6</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The feature functions {h i } typically include log probabilities of generative models such as translation, language and reordering, as well as nonprobabilistic features such as word, phrase and distortion penalties.</text>
+              <doc_id>7</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The feature weights w = {w i } are normally trained using MERT (minimum error rate training) (Och, 2003), to maximise performance as measured by an automated metric such as BLEU (Papineni et al., 2002).</text>
+              <doc_id>8</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>MERT training uses a parallel data set (known as the tuning set) consisting of about 1000-2000 sentences, distinct from the data set used to build the generative models.</text>
+              <doc_id>9</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Optimising the weights in Equation (1) is often referred to as tuning the MT system, to differentiate it from the process of training the generative models.</text>
+              <doc_id>10</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>MERT&#8217;s inability to scale beyond 20-30 features, as well as its instability (Foster and Kuhn, 2009) have led to investigation into alternative ways of tuning MT systems.</text>
+              <doc_id>11</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The development of tuning methods is complicated, however by, the use of</text>
+              <doc_id>12</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>BLEU as an objective function.</text>
+              <doc_id>13</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This objective in</text>
+              <doc_id>14</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>its usual form is not differentiable, and has a highly non-convex error surface (Och, 2003).</text>
+              <doc_id>15</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Furthermore</text>
+              <doc_id>16</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>BLEU is evaluated at the corpus level rather than at</text>
+              <doc_id>17</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>the sentence level, so tuning methods either have to consider the entire corpus, or resort to a sentencelevel approximation of BLEU.</text>
+              <doc_id>18</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is unlikely, however, that the difficulties in discriminative MT tuning are due solely to the use of BLEU as a metric &#8211; because evaluation of translation is so difficult, any reasonable gain function is likely to have a complex relationship with the model parameters.</text>
+              <doc_id>19</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Gradient-based tuning methods, such as minimum risk training, have been investigated as possible alternatives to MERT.</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Expected BLEU is normally adopted as the objective since it is differentiable and so can be optimised by a form of stochastic gradient ascent.</text>
+              <doc_id>21</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The feature expectations required for the gradient calculation can be obtained from n-best lists or lattices (Smith and Eisner, 2006; Li and Eisner, 2009), or using sampling (Arun et al., 2010), both of which can be computationally expensive.</text>
+              <doc_id>22</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Margin-based techniques such as perceptron training (Liang et al., 2006) and MIRA (Chiang et al., 2008; Watanabe et al., 2007) have also been shown to be able to tune MT systems and scale to large numbers of features, but these generally involve repeatedly decoding the tuning set (and so are expensive) and require sentence-level approximations to the BLEU objective.</text>
+              <doc_id>23</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper we present an alternative method of tuning MT systems known as SampleRank, which has certain advantages over other methods in use today.</text>
+              <doc_id>24</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>SampleRank operates by repeatedly sampling pairs of translation hypotheses (for a given source sentence) and updating the feature weights if the ranking induced by the MT model (1) is different from the ranking induced by the gain function (i.e.</text>
+              <doc_id>25</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>BLEU).</text>
+              <doc_id>26</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>By considering the translation hypotheses</text>
+              <doc_id>27</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>in batches, it is possible to directly optimise corpus level metrics like BLEU without resorting to sentence level approximations.</text>
+              <doc_id>28</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Tuning using SampleRank does not limit the size of the feature set in the same way as MERT does, and indeed it will be shown that SampleRank can successfully train a model with several hundred features.</text>
+              <doc_id>29</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Using just the core PBMT features and training using SampleRank will be shown to achieve</text>
+              <doc_id>30</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>BLEU scores which equal or exceed those produced</text>
+              <doc_id>31</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>by MERT trained models.</text>
+              <doc_id>32</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Since SampleRank does not require repeated decoding of the tuning set, and is easily parallelisable, it can run at an acceptable speed, and since it always maintains a complete translation hypothesis, it opens up the possibility of sentence or document level features 1 .</text>
+              <doc_id>33</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Method</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>34</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 SampleRank Training</title>
+            <text>SampleRank (Culotta, 2008; Wick et al., 2009) is an online training algorithm that was introduced for parameter learning in weighted logics, and has been applied to complex graphical models (Wick et al., 2011). Assume a probabilistic model p(y|x) admitting a log-linear parametrisation
+p(y|x) &#8733; exp &#8721; i (w i &#966; i (x, y)) (2)
+1 As long as the batches described in Section 2.2.1 respect
+document boundaries.
+where {&#966; i } are a set of feature functions and {w i } are corresponding feature weights. SampleRank can be used to optimise the feature weights to maximise a given gain function. SampleRank is a supervised training algorithm, requiring a set of labelled training data D = {(x 1 , y 1 }, . . . , (x n , y n )}, where the x i are the inputs and the y i the outputs. The algorithm works by considering each training example (x i , y i ) in turn, and repeatedly sampling pairs of outputs from a neighbourhood defined in the space of all possible outputs, updating the weights when the ranking of the pair due to the model scores is different from the ranking due to the gain function. So if the sampled pair of outputs for x i is (y, y &#8242; ), where p(y &#8242; |x i ) &gt; p(y|x i ), the weights are updated iff gain(y &#8242; , y i ) &lt; gain(y, y i ).
+The sampled pairs are drawn from a chain which can be constructed in a similar way to an MCMC (Markov Chain Monte Carlo) chain.
+In (Culotta, 2008) different strategies are explored for building the chain, choosing the neighbourhood and updating the weights.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>SampleRank (Culotta, 2008; Wick et al., 2009) is an online training algorithm that was introduced for parameter learning in weighted logics, and has been applied to complex graphical models (Wick et al., 2011).</text>
+                  <doc_id>35</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Assume a probabilistic model p(y|x) admitting a log-linear parametrisation</text>
+                  <doc_id>36</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>p(y|x) &#8733; exp &#8721; i (w i &#966; i (x, y)) (2)</text>
+                  <doc_id>37</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 As long as the batches described in Section 2.2.1 respect</text>
+                  <doc_id>38</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>document boundaries.</text>
+                  <doc_id>39</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where {&#966; i } are a set of feature functions and {w i } are corresponding feature weights.</text>
+                  <doc_id>40</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>SampleRank can be used to optimise the feature weights to maximise a given gain function.</text>
+                  <doc_id>41</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>SampleRank is a supervised training algorithm, requiring a set of labelled training data D = {(x 1 , y 1 }, .</text>
+                  <doc_id>42</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>43</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>44</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>, (x n , y n )}, where the x i are the inputs and the y i the outputs.</text>
+                  <doc_id>45</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The algorithm works by considering each training example (x i , y i ) in turn, and repeatedly sampling pairs of outputs from a neighbourhood defined in the space of all possible outputs, updating the weights when the ranking of the pair due to the model scores is different from the ranking due to the gain function.</text>
+                  <doc_id>46</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>So if the sampled pair of outputs for x i is (y, y &#8242; ), where p(y &#8242; |x i ) &gt; p(y|x i ), the weights are updated iff gain(y &#8242; , y i ) &lt; gain(y, y i ).</text>
+                  <doc_id>47</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The sampled pairs are drawn from a chain which can be constructed in a similar way to an MCMC (Markov Chain Monte Carlo) chain.</text>
+                  <doc_id>48</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In (Culotta, 2008) different strategies are explored for building the chain, choosing the neighbourhood and updating the weights.</text>
+                  <doc_id>49</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 SampleRank Training for Machine Translation</title>
+            <text>We adapted SampleRank for the tuning of PBMT systems, as summarised in Algorithm 1. The definitions of the functions in the algorithm (described in the following subsections) draw inspiration from work on MIRA training for MT (Watanabe et al., 2007; Chiang et al., 2008). SampleRank is used to optimise the parameter weights in (1) using the tuning set.
+2.2.1 Gain Function
+The first thing that needs to be defined in Algorithm 1 is the gain function. For this we use BLEU, the most popular gain function for automated MT evaluation, although the procedure described here will work with any gain function that can be evaluated quickly. Using BLEU, however, creates a problem, as BLEU is defined at the corpus level rather than the sentence level, and in previous work on SampleRank, the training data is processed one example at a time. In other work on online training for SMT, (Liang et al., 2006; Chiang et al., 2008), sentence-level approximations to BLEU were
+Algorithm 1 The SampleRank algorithm for tuning phrase-based MT systems. Require: Tuning data:
+D = {(f 1 , e 1 ), . . . , (f n , e n )} Require: gain(y, y &#8242; ): A function which scores a
+set of hypotheses (y &#8242; ) against a set of references (y). Require: score(x, y): A function which computes
+a model score for a set of hypotheses y and source sentences x.
+1: for epoch = 1 to number of epochs do
+2: A &#8592; D
+3: while A is non-empty do
+4: Pick (x, y), a batch of sentence pairs, randomly from A, and remove.
+5: Initialise y 0 , a set of translation hypotheses
+for x.
+6: for s = 1 to number of samples do
+7: N &#8592; ChooseNeighbourhood(y s&#8722;1 )
+8: y &#8242; &#8592; ChooseSample(N)
+9: y + &#8592; ChooseOracle(N)
+10: if gain(y,y&#8242; )&#8722;gain(y,y + ) score(x,y &#8242; )&#8722;score(x,y + ) &lt; 0 then 11: U pdateW eights()
+12: end if
+13: y s &#8592; y &#8242;
+14: end for
+15: end while
+16: end for
+employed, however in this work we directly optimise corpus BLEU by processing the data in small batches. Using batches was found to work better than processing the data sentence by sentence.
+So the while loop in Algorithm 1 iterates through the tuning data in batches of parallel sentences, rather than single sentences. One complete pass through the tuning data is known as an epoch, and normally SampleRank training is run for several epochs. The gain on a particular batch is calculated by scoring the current set of hypotheses for the whole batch against the references for that batch. When calculating BLEU, a smoothing constant of 0.01 is added to all counts in order to avoid zero counts.
+2.2.2 Sample Generation
+For each iteration of the while loop in Algorithm 1, a new batch of parallel sentences is chosen from the tuning set, and a corresponding new set of translation hypotheses must be generated (the y 0 in line 5 of Algorithm 1). These initial hypotheses are generated by glossing. For each word in the source, the most likely translation option (according to the weighted phrase-internal score) is selected, and these translations are joined together monotonically. This method of initialisation was chosen because it was simple and fast, and experiments with an alternative method of initialisation (where the decoder was run with random scores assigned to hypotheses) showed very little difference in performance.
+Once the initial set of hypotheses for the new batch is created, the SampleRank innermost loop (lines 6-14 in Algorithm 1) proceeds by repeatedly choosing a sample hypothesis set (y &#8242; ) and an oracle hypothesis set (y + ), corresponding to the source side of the batch (x).
+Given the current hypothesis set y s&#8722;1 = (e 1 , . . . , e k ), the sample and oracle are chosen as follows. Firstly, a hypothesis e j is selected randomly from y s&#8722;1 , and a neighbourhood of alternate hypotheses N &#8715; e j generated using operators from Arun et al. (2009) (explained shortly). Model scores are calculated for all the hypotheses in N, converted to probabilities using Equation (1), and a sample e &#8242; j taken from N using these probabilities. The sample hypothesis set (y &#8242; ) is then the current hypothesis set (y s&#8722;1 ) with e j replaced by e &#8242; j . The oracle is created, analogously Chiang et al. (2008), by choosing e + j
+&#8712; N to maximise the sum of gain (calculated on the batch) and model score. The oracle hypothesis set (y + ) is then y s&#8722;1 with e j replaced by e + j .
+We now describe how the neighbourhood is chosen. Given a single hypothesis e j , a neighbourhood is generated by first randomly choosing one of the two operators MERGE-SPLIT or REORDER, then randomly choosing a point of application for the operator, then applying it to generate the neighbourhood. The MERGE-SPLIT operator can be applied at any inter-word position, and generates its neighbourhood by listing all hypotheses obtained by optionally merging or splitting the phrases(s) touching
+that position, and retranslating them. The REORDER operator applies at a pair of target phrases (subject to distortion limits) and generates a neighbourhood containing two hypotheses, one with the original order and one with the chosen phrases swapped. The distortion limits and translation option pruning used by the operators matches those used in decoding, so together they are able to explore the same hypothesis space as the decoder. A fuller explanation of the two operators is give in Arun et al. (2009).
+2.2.3 Weight Updates After choosing the sample and oracle hypothesis set (y &#8242; and y + ), the weight update may be performed. The weights of the model are updated if the relative ranking of the sample hypothesis set and the oracle hypothesis set provided by the model score is different from that provided by the gain. The model score function score(x, y) is defined for a hypothesis set y = e 1 , . . . e k as follows:
+score(x, y) =
+( k&#8721; n&#8721; )
+w i h i (a j , e j , f j )
+j=1 i=1
+(3)
+where x = f 1 , . . . f k are the corresponding source sentences. The weight update is performed iff score(x, y &#8242; ) &#8800; score(x, y + ) and the following condition is satisfied:
+gain(y, y &#8242; ) &#8722; gain(y, y + ) score(x, y &#8242; ) &#8722; score(x, y + ) &lt; 0 (4)
+where the gain() function is just the BLEU score.
+The weight update used in this work is a MIRAlike update from w s&#8722;1 to w s defined as follows:
+subject to w s = arg min
+w (&#8214;w &#8722; w s&#8722;1&#8214; + C&#958;) (5)
+score w (x, y + ) &#8722; score w (x, y &#8242; ) + &#958;
+&#8805; M &#183; (gain(y, y + ) &#8722; gain(y, y &#8242; )) (6)
+The margin scaling M is set to be gain(y, y + ), so that ranking violations of low BLEU solutions are assigned a lower importance than ranking violations of high BLEU solutions. The &#958; in (5) is a slack variable, whose influence is controlled by C (set to 0.01), and which has the effect of &#8220;clipping&#8221; the magnitude of the weight updates. Since there is only one constraint, there is no need to use an iterative method such as Hildreth&#8217;s, because it is straightforward to solve the optimisation in (5) and (6) exactly using its Lagrangian dual, following (Crammer et al., 2006). The weight update is then given by
+( ) b w s = w s&#8722;1 + min &#8214;a&#8214; 2 , C a where a = h(a + j , e+ j , f j) &#8722; h(a &#8242; j, e &#8242; j, f j )
+and b = M ( gain(y, y + ) &#8722; gain(y, y &#8242; ) )
+&#8722; ( score(x, y + ) &#8722; gain(y, y &#8242; ) )
+After updating the weights, the current hypothesis set (y s ) is updated to be the sample hypothesis set (y &#8242; ), as in line 13 of Algorithm 1, and then the next sample is generated.
+2.2.4 Implementation Considerations
+After each iteration of the inner loop of Algorithm 1, the weights are collected, and the overall weights output by the tuning algorithm are the average of all these collected weights. When each new batch is loaded at the start of the inner loop, a period of burnin is run, analogous to the burn-in used in MCMC sampling, where no weight updates are performed and weights are not collected.
+In order to help the stability of the tuning algorithm, and to enable it to process the tuning data more quickly, several chains are run in parallel, each with their own set of current weights, and each processing a distinct subset of the tuning data. The weights are mixed (averaged) after each epoch. The same technique is frequently adopted for the averaged perceptron (McDonald et al., 2010).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We adapted SampleRank for the tuning of PBMT systems, as summarised in Algorithm 1.</text>
+                  <doc_id>50</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The definitions of the functions in the algorithm (described in the following subsections) draw inspiration from work on MIRA training for MT (Watanabe et al., 2007; Chiang et al., 2008).</text>
+                  <doc_id>51</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>SampleRank is used to optimise the parameter weights in (1) using the tuning set.</text>
+                  <doc_id>52</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.2.1 Gain Function</text>
+                  <doc_id>53</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The first thing that needs to be defined in Algorithm 1 is the gain function.</text>
+                  <doc_id>54</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For this we use BLEU, the most popular gain function for automated MT evaluation, although the procedure described here will work with any gain function that can be evaluated quickly.</text>
+                  <doc_id>55</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Using BLEU, however, creates a problem, as BLEU is defined at the corpus level rather than the sentence level, and in previous work on SampleRank, the training data is processed one example at a time.</text>
+                  <doc_id>56</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In other work on online training for SMT, (Liang et al., 2006; Chiang et al., 2008), sentence-level approximations to BLEU were</text>
+                  <doc_id>57</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Algorithm 1 The SampleRank algorithm for tuning phrase-based MT systems.</text>
+                  <doc_id>58</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Require: Tuning data:</text>
+                  <doc_id>59</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>D = {(f 1 , e 1 ), .</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>, (f n , e n )} Require: gain(y, y &#8242; ): A function which scores a</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>set of hypotheses (y &#8242; ) against a set of references (y).</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Require: score(x, y): A function which computes</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>a model score for a set of hypotheses y and source sentences x.</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1: for epoch = 1 to number of epochs do</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2: A &#8592; D</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3: while A is non-empty do</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4: Pick (x, y), a batch of sentence pairs, randomly from A, and remove.</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5: Initialise y 0 , a set of translation hypotheses</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>for x.</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6: for s = 1 to number of samples do</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>7: N &#8592; ChooseNeighbourhood(y s&#8722;1 )</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>8: y &#8242; &#8592; ChooseSample(N)</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>9: y + &#8592; ChooseOracle(N)</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>10: if gain(y,y&#8242; )&#8722;gain(y,y + ) score(x,y &#8242; )&#8722;score(x,y + ) &lt; 0 then 11: U pdateW eights()</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>12: end if</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>13: y s &#8592; y &#8242;</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>14: end for</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>15: end while</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>16: end for</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>employed, however in this work we directly optimise corpus BLEU by processing the data in small batches.</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Using batches was found to work better than processing the data sentence by sentence.</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>So the while loop in Algorithm 1 iterates through the tuning data in batches of parallel sentences, rather than single sentences.</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>One complete pass through the tuning data is known as an epoch, and normally SampleRank training is run for several epochs.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The gain on a particular batch is calculated by scoring the current set of hypotheses for the whole batch against the references for that batch.</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When calculating BLEU, a smoothing constant of 0.01 is added to all counts in order to avoid zero counts.</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.2.2 Sample Generation</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For each iteration of the while loop in Algorithm 1, a new batch of parallel sentences is chosen from the tuning set, and a corresponding new set of translation hypotheses must be generated (the y 0 in line 5 of Algorithm 1).</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These initial hypotheses are generated by glossing.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each word in the source, the most likely translation option (according to the weighted phrase-internal score) is selected, and these translations are joined together monotonically.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This method of initialisation was chosen because it was simple and fast, and experiments with an alternative method of initialisation (where the decoder was run with random scores assigned to hypotheses) showed very little difference in performance.</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Once the initial set of hypotheses for the new batch is created, the SampleRank innermost loop (lines 6-14 in Algorithm 1) proceeds by repeatedly choosing a sample hypothesis set (y &#8242; ) and an oracle hypothesis set (y + ), corresponding to the source side of the batch (x).</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Given the current hypothesis set y s&#8722;1 = (e 1 , .</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>, e k ), the sample and oracle are chosen as follows.</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Firstly, a hypothesis e j is selected randomly from y s&#8722;1 , and a neighbourhood of alternate hypotheses N &#8715; e j generated using operators from Arun et al. (2009) (explained shortly).</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Model scores are calculated for all the hypotheses in N, converted to probabilities using Equation (1), and a sample e &#8242; j taken from N using these probabilities.</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The sample hypothesis set (y &#8242; ) is then the current hypothesis set (y s&#8722;1 ) with e j replaced by e &#8242; j .</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The oracle is created, analogously Chiang et al. (2008), by choosing e + j</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8712; N to maximise the sum of gain (calculated on the batch) and model score.</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The oracle hypothesis set (y + ) is then y s&#8722;1 with e j replaced by e + j .</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We now describe how the neighbourhood is chosen.</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given a single hypothesis e j , a neighbourhood is generated by first randomly choosing one of the two operators MERGE-SPLIT or REORDER, then randomly choosing a point of application for the operator, then applying it to generate the neighbourhood.</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The MERGE-SPLIT operator can be applied at any inter-word position, and generates its neighbourhood by listing all hypotheses obtained by optionally merging or splitting the phrases(s) touching</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>that position, and retranslating them.</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The REORDER operator applies at a pair of target phrases (subject to distortion limits) and generates a neighbourhood containing two hypotheses, one with the original order and one with the chosen phrases swapped.</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The distortion limits and translation option pruning used by the operators matches those used in decoding, so together they are able to explore the same hypothesis space as the decoder.</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>A fuller explanation of the two operators is give in Arun et al. (2009).</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.2.3 Weight Updates After choosing the sample and oracle hypothesis set (y &#8242; and y + ), the weight update may be performed.</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The weights of the model are updated if the relative ranking of the sample hypothesis set and the oracle hypothesis set provided by the model score is different from that provided by the gain.</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The model score function score(x, y) is defined for a hypothesis set y = e 1 , .</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>e k as follows:</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>score(x, y) =</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>( k&#8721; n&#8721; )</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>w i h i (a j , e j , f j )</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>j=1 i=1</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(3)</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where x = f 1 , .</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>f k are the corresponding source sentences.</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The weight update is performed iff score(x, y &#8242; ) &#8800; score(x, y + ) and the following condition is satisfied:</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>gain(y, y &#8242; ) &#8722; gain(y, y + ) score(x, y &#8242; ) &#8722; score(x, y + ) &lt; 0 (4)</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where the gain() function is just the BLEU score.</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The weight update used in this work is a MIRAlike update from w s&#8722;1 to w s defined as follows:</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>subject to w s = arg min</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>w (&#8214;w &#8722; w s&#8722;1&#8214; + C&#958;) (5)</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>score w (x, y + ) &#8722; score w (x, y &#8242; ) + &#958;</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8805; M &#183; (gain(y, y + ) &#8722; gain(y, y &#8242; )) (6)</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The margin scaling M is set to be gain(y, y + ), so that ranking violations of low BLEU solutions are assigned a lower importance than ranking violations of high BLEU solutions.</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The &#958; in (5) is a slack variable, whose influence is controlled by C (set to 0.01), and which has the effect of &#8220;clipping&#8221; the magnitude of the weight updates.</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since there is only one constraint, there is no need to use an iterative method such as Hildreth&#8217;s, because it is straightforward to solve the optimisation in (5) and (6) exactly using its Lagrangian dual, following (Crammer et al., 2006).</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The weight update is then given by</text>
+                  <doc_id>138</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>( ) b w s = w s&#8722;1 + min &#8214;a&#8214; 2 , C a where a = h(a + j , e+ j , f j) &#8722; h(a &#8242; j, e &#8242; j, f j )</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>and b = M ( gain(y, y + ) &#8722; gain(y, y &#8242; ) )</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8722; ( score(x, y + ) &#8722; gain(y, y &#8242; ) )</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>After updating the weights, the current hypothesis set (y s ) is updated to be the sample hypothesis set (y &#8242; ), as in line 13 of Algorithm 1, and then the next sample is generated.</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.2.4 Implementation Considerations</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>After each iteration of the inner loop of Algorithm 1, the weights are collected, and the overall weights output by the tuning algorithm are the average of all these collected weights.</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When each new batch is loaded at the start of the inner loop, a period of burnin is run, analogous to the burn-in used in MCMC sampling, where no weight updates are performed and weights are not collected.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In order to help the stability of the tuning algorithm, and to enable it to process the tuning data more quickly, several chains are run in parallel, each with their own set of current weights, and each processing a distinct subset of the tuning data.</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The weights are mixed (averaged) after each epoch.</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The same technique is frequently adopted for the averaged perceptron (McDonald et al., 2010).</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Experiments</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>149</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Corpora and Baselines</title>
+            <text>The experiments in this section were conducted with French-English and German-English sections of the WMT2011 2 shared task data. In particular, we used News-Commentary data (nc11), and Europarl data (ep11) for training the generative models. Phrase tables were built from lowercased versions of the
+2 http://www.statmt.org/wmt11/
+parallel texts using the standard Moses 3 training pipeline, with the target side of the texts used to build Kneser-Ney smoothed language models using the SRILM toolkit 4 . These data sets were used to build two phrase-based translation systems: WMT-
+SMALL and WMT-LARGE.
+The WMT-SMALL translation system uses a translation model built from just the nc11 data (about 115,000 sentences), and a 3-gram language model built from the target side of this data set. The features used in the WMT-SMALL translation system were the five Moses translation features, a language model feature, a word penalty feature and a distortion distance feature.
+To build the WMT-LARGE translation system, both the ep11 data set and the nc11 data set were concatenated together before building the translation model out of the resulting corpus of about 2 million sentences. Separate 5-gram language models were built from the target side of the two data sets and then they were interpolated using weights chosen to minimise the perplexity on the tuning set (Koehn and Schroeder, 2007). In the WMT-LARGE system, the eight core features were supplemented with the six features of the lexicalised reordering model, which was trained on the same data as was used to build the translation model. Whilst a training set size of 2 million sentences would not normally be sufficient to build a competitive system for an MT shared task, it is sufficient to show that how SampleRank training performs on a realistic sized system, whilst still allowing for plenty of experimenation with the algorithm&#8217;s parameters. For tuning, the nc-devtest2007 was used, with the first half of nc-test2007 corpus used for heldout testing and nc-test2008 and newstest2010 reserved for final testing. The tuning and heldout sets are about 1000 sentences in size, whereas the final test sets are approximately 2000 sentences each.
+In Table 1, the performance (in BLEU 5 ) of untrained and MERT-tuned models on the heldout set is shown 6 . The untuned models
+3 http://www.statmt.org/moses/ 4 http://www-speech.sri.com/projects/
+srilm/ 5 Calculated with multi-bleu.perl 6 All BLEU scores and standard deviations are rounded to one
+use the default weights output by the Moses train-model.perl script, whereas the performance of the tuned models is the mean across five different MERT runs.
+All decoding in this paper is with Moses, using default settings.
+Pair System untuned MERT-tuned</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The experiments in this section were conducted with French-English and German-English sections of the WMT2011 2 shared task data.</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In particular, we used News-Commentary data (nc11), and Europarl data (ep11) for training the generative models.</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Phrase tables were built from lowercased versions of the</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 http://www.statmt.org/wmt11/</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>parallel texts using the standard Moses 3 training pipeline, with the target side of the texts used to build Kneser-Ney smoothed language models using the SRILM toolkit 4 .</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These data sets were used to build two phrase-based translation systems: WMT-</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>SMALL and WMT-LARGE.</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The WMT-SMALL translation system uses a translation model built from just the nc11 data (about 115,000 sentences), and a 3-gram language model built from the target side of this data set.</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The features used in the WMT-SMALL translation system were the five Moses translation features, a language model feature, a word penalty feature and a distortion distance feature.</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>To build the WMT-LARGE translation system, both the ep11 data set and the nc11 data set were concatenated together before building the translation model out of the resulting corpus of about 2 million sentences.</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Separate 5-gram language models were built from the target side of the two data sets and then they were interpolated using weights chosen to minimise the perplexity on the tuning set (Koehn and Schroeder, 2007).</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the WMT-LARGE system, the eight core features were supplemented with the six features of the lexicalised reordering model, which was trained on the same data as was used to build the translation model.</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Whilst a training set size of 2 million sentences would not normally be sufficient to build a competitive system for an MT shared task, it is sufficient to show that how SampleRank training performs on a realistic sized system, whilst still allowing for plenty of experimenation with the algorithm&#8217;s parameters.</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For tuning, the nc-devtest2007 was used, with the first half of nc-test2007 corpus used for heldout testing and nc-test2008 and newstest2010 reserved for final testing.</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The tuning and heldout sets are about 1000 sentences in size, whereas the final test sets are approximately 2000 sentences each.</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In Table 1, the performance (in BLEU 5 ) of untrained and MERT-tuned models on the heldout set is shown 6 .</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The untuned models</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 http://www.statmt.org/moses/ 4 http://www-speech.sri.com/projects/</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>srilm/ 5 Calculated with multi-bleu.perl 6 All BLEU scores and standard deviations are rounded to one</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>use the default weights output by the Moses train-model.perl script, whereas the performance of the tuned models is the mean across five different MERT runs.</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>All decoding in this paper is with Moses, using default settings.</text>
+                  <doc_id>170</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Pair System untuned MERT-tuned</text>
+                  <doc_id>171</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 SampleRank Training For Small Models</title>
+            <text>First we look at how SampleRank training compares to MERT training using the WMT-SMALL models. Using the smaller models allows reasonably quick experimentation with a large range of different parameter settings.
+For these experiments, the epoch size is set at 1024, and we vary both the number of cores and the number of samples used in training. The number of cores n is set to either 1,2,4,8 or 16, meaning that each epoch we split the tuning data into n different, non-overlapping shards, passing a different shard to each process, so the shard size k is set to 1024/n. In each process, a burn of 100 &#8727; k samples is run (without updating the weights), followed by either 100&#8727;k or 500&#8727;k samples with weight updates, using the algorithm described in Section 2.2. After an epoch is completed, the current weights are averaged across all processes to give the new current weights in each process. At intervals of 50000 samples in each core, weights are averaged across all samples so far, and across all cores, and used to decode the heldout set to measure performance.
+In Figure 1, learning curves are shown for the 100 sample-per-sentence case, for 1, 4 and 16 cores, for French-English. The training is repeated five times and the error bars in the graph indicate the
+decimal place.
+&#9679;
+spread across the different training runs. Increasing the number of cores makes a clear difference to the training, with the single core training run failing to reach the the level of MERT, and the 16 core training run exceeding the mean MERT performance by more than 0.5 BLEU. Using a single core also results in a much bigger training variance, which makes sense as using more cores and averaging weights reduces the adverse effect of a single chain going astray. The higher BLEU score achieved when using the larger number of cores is probably because a larger portion of the parameter space is being explored.
+In one sense, the x axes of the graphs in Figure 1 are not comparable, since increasing the number of cores and keeping the number of samples per core increases the total computing time. However even if the single core training was run for much longer, it did not reach the level of performance obtained by multi-core training. Limited experimentation with increasing the core count to 32 did not show any appreciable gain, despite greatly increasing the computing resources required.
+The training runs shown in Figure 1 take between 21 hours (for 16 cores) and 35 hours (for a single core) 7 . In the 16 core runs each core is doing the same amount of work as in the single core runs, so the difference in time is due to the extra effort involved in dealing with larger batches. These times are for the 100 samples-per-sentence condition, and
+7 The processors are Intel Xeon 5450 (3GHz)
+increasing to 500 samples-per-sentence provides a speed-up of about 25%, since proportionally less time is spent on burn-in. Most of the time is spent in BLEU evaluation, so improved memoisation and incremental evaluation would reduce training time.
+In Table 2 the mean maximum BLEU achieved on the heldout set at each parameter setting is shown. By this it is meant that for each of the five training runs at each (samples,cores) setting, the maximum
+BLEU on heldout data is observed, and these maxima are averaged across the five runs. It can be seen that changing the samples-per-sentence makes little difference, but there is a definite effect of increasing the core count.
+Cores 100 Samples 500 Samples
+SMALL model. Standard deviations are shown in
+brackets.
+The learning curves for the equivalent German- English model are shown in Figure 2 and show a fairly different behaviour to their French-English counterparts. Again, using more cores helps to im-
+prove and stabilise the performance, but there is little if any improvement throughout training. As with MERT training, SampleRank training of the model weights makes little difference to the BLEU score, suggesting a fairly flat error surface. Table 3 shows the mean maximum BLEU score on heldout data, the equivalent of Table 2, but for German-English. The results show very little variation as the samples-per-sentence and core counts are changed.
+Cores 100 Samples 500 Samples
+SMALL model. Standard deviations are shown in
+brackets</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>First we look at how SampleRank training compares to MERT training using the WMT-SMALL models.</text>
+                  <doc_id>172</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Using the smaller models allows reasonably quick experimentation with a large range of different parameter settings.</text>
+                  <doc_id>173</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For these experiments, the epoch size is set at 1024, and we vary both the number of cores and the number of samples used in training.</text>
+                  <doc_id>174</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The number of cores n is set to either 1,2,4,8 or 16, meaning that each epoch we split the tuning data into n different, non-overlapping shards, passing a different shard to each process, so the shard size k is set to 1024/n.</text>
+                  <doc_id>175</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In each process, a burn of 100 &#8727; k samples is run (without updating the weights), followed by either 100&#8727;k or 500&#8727;k samples with weight updates, using the algorithm described in Section 2.2.</text>
+                  <doc_id>176</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>After an epoch is completed, the current weights are averaged across all processes to give the new current weights in each process.</text>
+                  <doc_id>177</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At intervals of 50000 samples in each core, weights are averaged across all samples so far, and across all cores, and used to decode the heldout set to measure performance.</text>
+                  <doc_id>178</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In Figure 1, learning curves are shown for the 100 sample-per-sentence case, for 1, 4 and 16 cores, for French-English.</text>
+                  <doc_id>179</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The training is repeated five times and the error bars in the graph indicate the</text>
+                  <doc_id>180</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>decimal place.</text>
+                  <doc_id>181</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#9679;</text>
+                  <doc_id>182</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>spread across the different training runs.</text>
+                  <doc_id>183</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Increasing the number of cores makes a clear difference to the training, with the single core training run failing to reach the the level of MERT, and the 16 core training run exceeding the mean MERT performance by more than 0.5 BLEU.</text>
+                  <doc_id>184</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Using a single core also results in a much bigger training variance, which makes sense as using more cores and averaging weights reduces the adverse effect of a single chain going astray.</text>
+                  <doc_id>185</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The higher BLEU score achieved when using the larger number of cores is probably because a larger portion of the parameter space is being explored.</text>
+                  <doc_id>186</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In one sense, the x axes of the graphs in Figure 1 are not comparable, since increasing the number of cores and keeping the number of samples per core increases the total computing time.</text>
+                  <doc_id>187</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However even if the single core training was run for much longer, it did not reach the level of performance obtained by multi-core training.</text>
+                  <doc_id>188</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Limited experimentation with increasing the core count to 32 did not show any appreciable gain, despite greatly increasing the computing resources required.</text>
+                  <doc_id>189</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The training runs shown in Figure 1 take between 21 hours (for 16 cores) and 35 hours (for a single core) 7 .</text>
+                  <doc_id>190</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the 16 core runs each core is doing the same amount of work as in the single core runs, so the difference in time is due to the extra effort involved in dealing with larger batches.</text>
+                  <doc_id>191</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These times are for the 100 samples-per-sentence condition, and</text>
+                  <doc_id>192</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>7 The processors are Intel Xeon 5450 (3GHz)</text>
+                  <doc_id>193</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>increasing to 500 samples-per-sentence provides a speed-up of about 25%, since proportionally less time is spent on burn-in.</text>
+                  <doc_id>194</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Most of the time is spent in BLEU evaluation, so improved memoisation and incremental evaluation would reduce training time.</text>
+                  <doc_id>195</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In Table 2 the mean maximum BLEU achieved on the heldout set at each parameter setting is shown.</text>
+                  <doc_id>196</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>By this it is meant that for each of the five training runs at each (samples,cores) setting, the maximum</text>
+                  <doc_id>197</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BLEU on heldout data is observed, and these maxima are averaged across the five runs.</text>
+                  <doc_id>198</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It can be seen that changing the samples-per-sentence makes little difference, but there is a definite effect of increasing the core count.</text>
+                  <doc_id>199</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Cores 100 Samples 500 Samples</text>
+                  <doc_id>200</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>SMALL model.</text>
+                  <doc_id>201</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Standard deviations are shown in</text>
+                  <doc_id>202</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>brackets.</text>
+                  <doc_id>203</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The learning curves for the equivalent German- English model are shown in Figure 2 and show a fairly different behaviour to their French-English counterparts.</text>
+                  <doc_id>204</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Again, using more cores helps to im-</text>
+                  <doc_id>205</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>prove and stabilise the performance, but there is little if any improvement throughout training.</text>
+                  <doc_id>206</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As with MERT training, SampleRank training of the model weights makes little difference to the BLEU score, suggesting a fairly flat error surface.</text>
+                  <doc_id>207</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 3 shows the mean maximum BLEU score on heldout data, the equivalent of Table 2, but for German-English.</text>
+                  <doc_id>208</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The results show very little variation as the samples-per-sentence and core counts are changed.</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Cores 100 Samples 500 Samples</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>SMALL model.</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Standard deviations are shown in</text>
+                  <doc_id>212</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>brackets</text>
+                  <doc_id>213</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>3.3 SampleRank Training for Larger Models</title>
+            <text>For the training of the WMT-LARGE systems with SampleRank, similar experiments to those in Section 3.2 were run, although only for 8 and 16 cores. The learning curves for the two language pairs (Figure 3) show roughly similar patterns to those in the previous section, in that the French-English system gradually increases performance through training to reach a maximum, as opposed to the German- English system with its fairly flat learning curve. Training times are around 27 hours for the 500 sample curve shown in Figure 3, increasing to 64 hours for 100 samples-per-sentence.
+In Table 4, the mean maximum BLEU scores are shown for each configuration. of each language pair, calculated in the manner described in the previous section. For the larger system, SampleRank shows a smaller advantage over MERT for French-English, and little if any gain for German-English. For both large and small German-English models, neither of the parameter tuning algorithms are able to lift BLEU scores very far above the scores obtained from the untuned weights set by the Moses training script.
+Pair Cores 100 Samples 500 Samples
+WMT-LARGE model.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>For the training of the WMT-LARGE systems with SampleRank, similar experiments to those in Section 3.2 were run, although only for 8 and 16 cores.</text>
+                  <doc_id>214</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The learning curves for the two language pairs (Figure 3) show roughly similar patterns to those in the previous section, in that the French-English system gradually increases performance through training to reach a maximum, as opposed to the German- English system with its fairly flat learning curve.</text>
+                  <doc_id>215</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Training times are around 27 hours for the 500 sample curve shown in Figure 3, increasing to 64 hours for 100 samples-per-sentence.</text>
+                  <doc_id>216</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In Table 4, the mean maximum BLEU scores are shown for each configuration.</text>
+                  <doc_id>217</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>of each language pair, calculated in the manner described in the previous section.</text>
+                  <doc_id>218</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the larger system, SampleRank shows a smaller advantage over MERT for French-English, and little if any gain for German-English.</text>
+                  <doc_id>219</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For both large and small German-English models, neither of the parameter tuning algorithms are able to lift BLEU scores very far above the scores obtained from the untuned weights set by the Moses training script.</text>
+                  <doc_id>220</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Pair Cores 100 Samples 500 Samples</text>
+                  <doc_id>221</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>WMT-LARGE model.</text>
+                  <doc_id>222</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>3.4 SampleRank Training for Larger Feature Sets</title>
+            <text>The final set of experiments are concerned with using SampleRank training for larger feature sets than the 10-20 typically used in MERT-trained models. The models considered in this section are based on the WMT-SMALL systems, but also include a family of part-of-speech tag based phrase boundary features.
+The phrase boundary features are defined by considering the target-side part-of-speech tag bigrams spanning each phrase boundary in the hypothesis, and allowing a separate feature to fire for each bigram. Dummy phrases with parts-of-speech &lt;S&gt; and &lt;/S&gt; are inserted at the start and end of the sentence, and also used to construct phrase boundary features. The example in Figure 4 shows the phrase-boundary features from a typical hypothesis. The idea is similar to a part-of-speech language model, but discriminatively trained, and targeted at how phrases are joined together in the hypothesis.
+The target-side part-of-speech tags are added using the Brill tagger, and incorporated into the phrase table using the factored translation modelling capabilities of Moses (Koehn and Hoang, 2007).
+Adding the phrase boundary features to the WMT-
+SMALL system increased the feature count from 8
+to around 800. Training experiments were run for both the French-English and German-English models, using the same configuration as in Section 3.2, varying the number of cores (8 or 16) and the number of samples per sentence (100 or 500). Training times were similar to those for the WMT-SMALL system. The mean maximum scores on heldout are shown in Table 5. We suspect that these features are fixing some short range reordering problems which
+occur in the former language pair, but since the reordering problems in the latter language pair tend to be longer range, adding these extra features just tend to add extra noise to the model.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The final set of experiments are concerned with using SampleRank training for larger feature sets than the 10-20 typically used in MERT-trained models.</text>
+                  <doc_id>223</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The models considered in this section are based on the WMT-SMALL systems, but also include a family of part-of-speech tag based phrase boundary features.</text>
+                  <doc_id>224</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The phrase boundary features are defined by considering the target-side part-of-speech tag bigrams spanning each phrase boundary in the hypothesis, and allowing a separate feature to fire for each bigram.</text>
+                  <doc_id>225</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Dummy phrases with parts-of-speech &lt;S&gt; and &lt;/S&gt; are inserted at the start and end of the sentence, and also used to construct phrase boundary features.</text>
+                  <doc_id>226</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The example in Figure 4 shows the phrase-boundary features from a typical hypothesis.</text>
+                  <doc_id>227</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The idea is similar to a part-of-speech language model, but discriminatively trained, and targeted at how phrases are joined together in the hypothesis.</text>
+                  <doc_id>228</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The target-side part-of-speech tags are added using the Brill tagger, and incorporated into the phrase table using the factored translation modelling capabilities of Moses (Koehn and Hoang, 2007).</text>
+                  <doc_id>229</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Adding the phrase boundary features to the WMT-</text>
+                  <doc_id>230</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>SMALL system increased the feature count from 8</text>
+                  <doc_id>231</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>to around 800.</text>
+                  <doc_id>232</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Training experiments were run for both the French-English and German-English models, using the same configuration as in Section 3.2, varying the number of cores (8 or 16) and the number of samples per sentence (100 or 500).</text>
+                  <doc_id>233</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Training times were similar to those for the WMT-SMALL system.</text>
+                  <doc_id>234</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The mean maximum scores on heldout are shown in Table 5.</text>
+                  <doc_id>235</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We suspect that these features are fixing some short range reordering problems which</text>
+                  <doc_id>236</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>occur in the former language pair, but since the reordering problems in the latter language pair tend to be longer range, adding these extra features just tend to add extra noise to the model.</text>
+                  <doc_id>237</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>4</index>
+            <title>3.5 Comparison of MERT and SampleRank on Test Data</title>
+            <text>Final testing was performed on the nc-test2008 and newstest2010 data sets. The former is quite similar to the tuning and heldout data, whilst the latter can be considered to be &#8220;out-of-domain&#8221;, so provides a check to see whether the model weights are being tuned too heavily towards the domain.
+For the SampleRank experiments on the test set, the best training configurations were chosen from the results in Tables 2, 3, 4 and 5, and the best performing weight sets for each of the five runs for this configuration. For the MERT trained models, the same five models from Table 1 were used. The test set results are shown in Table 6.
+The patterns observed on the heldout data carry over, to a large extent, to the test data. This is especially true for the WMT-SMALL system, where similar improvements (for French-English) over the MERT trained system are observed on the SampleRank trained system. For the WMT-LARGE system, the slightly improved performance that SampleRank offered on the in-domain data is no longer there, al-
+This produces five phrase boundary features: &lt;S&gt;:NNP, POS:IN, IN:JJ, JJ:NN and PRP:&lt;/S&gt;.
+fr-en de-en Training System nc-test2008 newstest2010 nc-test2008 newstest2010
+SMALL+pb model is the model with phrase boundary features, as described in Section 3.4
+The WMT-
+Pair Cores 100 Samples 500 Samples
+WMT-SMALL model, with the phrase boundary feature.
+though interestingly there is a reasonable improvement on out-of-domain, over the MERT trained model, similar to the effect observed in (Arun et al., 2010). Finally, the improvements offered by the phrase boundary feature are reduced, perhaps an indication of some over-fitting.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Final testing was performed on the nc-test2008 and newstest2010 data sets.</text>
+                  <doc_id>238</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The former is quite similar to the tuning and heldout data, whilst the latter can be considered to be &#8220;out-of-domain&#8221;, so provides a check to see whether the model weights are being tuned too heavily towards the domain.</text>
+                  <doc_id>239</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For the SampleRank experiments on the test set, the best training configurations were chosen from the results in Tables 2, 3, 4 and 5, and the best performing weight sets for each of the five runs for this configuration.</text>
+                  <doc_id>240</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the MERT trained models, the same five models from Table 1 were used.</text>
+                  <doc_id>241</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The test set results are shown in Table 6.</text>
+                  <doc_id>242</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The patterns observed on the heldout data carry over, to a large extent, to the test data.</text>
+                  <doc_id>243</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This is especially true for the WMT-SMALL system, where similar improvements (for French-English) over the MERT trained system are observed on the SampleRank trained system.</text>
+                  <doc_id>244</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the WMT-LARGE system, the slightly improved performance that SampleRank offered on the in-domain data is no longer there, al-</text>
+                  <doc_id>245</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>This produces five phrase boundary features: &lt;S&gt;:NNP, POS:IN, IN:JJ, JJ:NN and PRP:&lt;/S&gt;.</text>
+                  <doc_id>246</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>fr-en de-en Training System nc-test2008 newstest2010 nc-test2008 newstest2010</text>
+                  <doc_id>247</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>SMALL+pb model is the model with phrase boundary features, as described in Section 3.4</text>
+                  <doc_id>248</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The WMT-</text>
+                  <doc_id>249</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Pair Cores 100 Samples 500 Samples</text>
+                  <doc_id>250</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>WMT-SMALL model, with the phrase boundary feature.</text>
+                  <doc_id>251</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>though interestingly there is a reasonable improvement on out-of-domain, over the MERT trained model, similar to the effect observed in (Arun et al., 2010).</text>
+                  <doc_id>252</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Finally, the improvements offered by the phrase boundary feature are reduced, perhaps an indication of some over-fitting.</text>
+                  <doc_id>253</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Related Work</title>
+        <text>Whilst MERT (Och, 2003) is still the dominant algorithm used for discriminative training (tuning) of SMT systems, research into improving on MERT&#8217;s line search has tended to focus either on gradientbased or margin-based techniques.
+Gradient-based techniques require a differentiable objective, and expected sentence BLEU is the most popular choice, beginning with Smith and Eisner (2006). They used n-best lists to calculate the feature expectations required for the gradient, optimising a second order Taylor approximation of expected sentence BLEU. They also introduced the idea of deterministic annealing to the SMT community, where an entropy term is added to the objective in training, and has its temperature progressively lowered in order to sharpen the model probability distribution. The work of Smith and Eisner was extended by Li and Eisner (2009) who were able to obtain much better estimates of feature expectations by using a packed chart instead of an n-best list. They also demonstrated that their method could extend to large feature sets, although their experiments were only run on small data sets.
+An alternative method of calculating the feature expectations for expected BLEU training is Monte- Carlo Markov Chain (MCMC) approximation, and this was explored in (Arun et al., 2009) and (Arun et al., 2010). The sampling methods introduced in this earlier work form the basis of the current work, although in using the sampler for expected BLEU training, many samples must be collected before making a parameter weight update, as opposed to the current work where weights may be updated after every sample. One novel feature of Arun et al. (2010) is that they were able to train to directly maximise corpus BLEU, instead of its sentence-based approximation, although this only made a small difference to the results. The training methods in (Arun et al.,
+2010) are very resource intensive, with the experiments running for 48 hours on around 40 cores, on a pruned phrase table derived from Europarl, and a 3-gram language model.
+Instead of using expected BLEU as a training objective, Blunsom et al. (2008) trained their model to directly maximise the log-likelihood of the discriminative model, estimating feature expectations from a packed chart. Their model treats derivations as a latent variable, directly modelling the translation probability.
+Margin-based techniques have the advantage that they do not have to employ expensive and complex algorithms to calculate the feature expectations. Typically, either perceptron ((Liang et al., 2006), (Arun and Koehn, 2007)) or MIRA ((Watanabe et al., 2007), (Chiang et al., 2008)) is employed, but in both cases the idea is to repeatedly decode sentences from the tuning set, and update the parameter weights if the best hypothesis according to the model differs from some &#8220;oracle&#8221; sentence. The approaches differ in the way they compute the oracle sentence, as well as the way the weights are updated. Normally sentences are processed one-by-one, with a weight update after considering each sentence, and sentence BLEU is used as the objective. However Chiang et al. (2008) introduced an approximation to corpus BLEU by using a rolling history. Both papers on MIRA demonstrated its ability to extend to large numbers of features.
+In the only known application of SampleRank to SMT, Roth et al. (2010) deploys quite a different translation model to the usual phrase-based model, allowing overlapping phrases and implemented as a factor graph. Decoding is with a rather slow stochastic search and performance is quite poor, but this model, in common with the training algorithm presented in the current work, permits features which depend on the whole sentence.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Whilst MERT (Och, 2003) is still the dominant algorithm used for discriminative training (tuning) of SMT systems, research into improving on MERT&#8217;s line search has tended to focus either on gradientbased or margin-based techniques.</text>
+              <doc_id>254</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Gradient-based techniques require a differentiable objective, and expected sentence BLEU is the most popular choice, beginning with Smith and Eisner (2006).</text>
+              <doc_id>255</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>They used n-best lists to calculate the feature expectations required for the gradient, optimising a second order Taylor approximation of expected sentence BLEU.</text>
+              <doc_id>256</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>They also introduced the idea of deterministic annealing to the SMT community, where an entropy term is added to the objective in training, and has its temperature progressively lowered in order to sharpen the model probability distribution.</text>
+              <doc_id>257</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The work of Smith and Eisner was extended by Li and Eisner (2009) who were able to obtain much better estimates of feature expectations by using a packed chart instead of an n-best list.</text>
+              <doc_id>258</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>They also demonstrated that their method could extend to large feature sets, although their experiments were only run on small data sets.</text>
+              <doc_id>259</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>An alternative method of calculating the feature expectations for expected BLEU training is Monte- Carlo Markov Chain (MCMC) approximation, and this was explored in (Arun et al., 2009) and (Arun et al., 2010).</text>
+              <doc_id>260</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The sampling methods introduced in this earlier work form the basis of the current work, although in using the sampler for expected BLEU training, many samples must be collected before making a parameter weight update, as opposed to the current work where weights may be updated after every sample.</text>
+              <doc_id>261</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>One novel feature of Arun et al. (2010) is that they were able to train to directly maximise corpus BLEU, instead of its sentence-based approximation, although this only made a small difference to the results.</text>
+              <doc_id>262</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The training methods in (Arun et al.,</text>
+              <doc_id>263</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2010) are very resource intensive, with the experiments running for 48 hours on around 40 cores, on a pruned phrase table derived from Europarl, and a 3-gram language model.</text>
+              <doc_id>264</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Instead of using expected BLEU as a training objective, Blunsom et al. (2008) trained their model to directly maximise the log-likelihood of the discriminative model, estimating feature expectations from a packed chart.</text>
+              <doc_id>265</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Their model treats derivations as a latent variable, directly modelling the translation probability.</text>
+              <doc_id>266</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Margin-based techniques have the advantage that they do not have to employ expensive and complex algorithms to calculate the feature expectations.</text>
+              <doc_id>267</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Typically, either perceptron ((Liang et al., 2006), (Arun and Koehn, 2007)) or MIRA ((Watanabe et al., 2007), (Chiang et al., 2008)) is employed, but in both cases the idea is to repeatedly decode sentences from the tuning set, and update the parameter weights if the best hypothesis according to the model differs from some &#8220;oracle&#8221; sentence.</text>
+              <doc_id>268</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The approaches differ in the way they compute the oracle sentence, as well as the way the weights are updated.</text>
+              <doc_id>269</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Normally sentences are processed one-by-one, with a weight update after considering each sentence, and sentence BLEU is used as the objective.</text>
+              <doc_id>270</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>However Chiang et al. (2008) introduced an approximation to corpus BLEU by using a rolling history.</text>
+              <doc_id>271</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Both papers on MIRA demonstrated its ability to extend to large numbers of features.</text>
+              <doc_id>272</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In the only known application of SampleRank to SMT, Roth et al. (2010) deploys quite a different translation model to the usual phrase-based model, allowing overlapping phrases and implemented as a factor graph.</text>
+              <doc_id>273</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Decoding is with a rather slow stochastic search and performance is quite poor, but this model, in common with the training algorithm presented in the current work, permits features which depend on the whole sentence.</text>
+              <doc_id>274</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Discussion and Conclusions</title>
+        <text>The results presented in Table 6 show that SampleRank is a viable method of parameter tuning for phrase-based MT systems, beating MERT in many cases, and equalling it in others. It is also able to do what MERT cannot do, and scale to a large number of features, with the phrase boundary feature of Section 3.4 providing a &#8220;proof-of-concept&#8221;. A further potential advantage of SampleRank is that it allows training with features which depend on the whole sentence, or even the whole document, since a full set of hypotheses is retained throughout training. Of course adding these features precludes decoding with the usual dynamic programming based decoders, and would require an alternative method, such as MCMC (Arun et al., 2009). As with the other alternatives to MERT mentioned in this paper, SampleRank training presents the problem of determining convergence. With MERT this is straightforward, since training (normally) comes to a halt when the estimated tuning BLEU stops increasing and the weights stop changing. With methods such as minimum risk training, MIRA and SampleRank, some kind of early stopping criterion is usually employed, which lengthens training unnecessarily, and adds costly decodes to the training process. Building up sufficient practical experience with each of these methods will offset these problems somewhat. Another important item for future work is to compare SampleRank training with MIRA training, in terms of performance, speed and ability to handle large feature sets. The code used for the experiments in this paper is available under an open source license 8 .</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The results presented in Table 6 show that SampleRank is a viable method of parameter tuning for phrase-based MT systems, beating MERT in many cases, and equalling it in others.</text>
+              <doc_id>275</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is also able to do what MERT cannot do, and scale to a large number of features, with the phrase boundary feature of Section 3.4 providing a &#8220;proof-of-concept&#8221;.</text>
+              <doc_id>276</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>A further potential advantage of SampleRank is that it allows training with features which depend on the whole sentence, or even the whole document, since a full set of hypotheses is retained throughout training.</text>
+              <doc_id>277</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Of course adding these features precludes decoding with the usual dynamic programming based decoders, and would require an alternative method, such as MCMC (Arun et al., 2009).</text>
+              <doc_id>278</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>As with the other alternatives to MERT mentioned in this paper, SampleRank training presents the problem of determining convergence.</text>
+              <doc_id>279</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>With MERT this is straightforward, since training (normally) comes to a halt when the estimated tuning BLEU stops increasing and the weights stop changing.</text>
+              <doc_id>280</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>With methods such as minimum risk training, MIRA and SampleRank, some kind of early stopping criterion is usually employed, which lengthens training unnecessarily, and adds costly decodes to the training process.</text>
+              <doc_id>281</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>Building up sufficient practical experience with each of these methods will offset these problems somewhat.</text>
+              <doc_id>282</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>Another important item for future work is to compare SampleRank training with MIRA training, in terms of performance, speed and ability to handle large feature sets.</text>
+              <doc_id>283</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>The code used for the experiments in this paper is available under an open source license 8 .</text>
+              <doc_id>284</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>6</index>
+        <title>Acknowledgements</title>
+        <text>This research was supported by the EuroMatrixPlus project funded by the European Commission (7th Framework Programme) and by the GALE program of the Defense Advanced Research Projects Agency, Contract No. HR0011-06-2-001. The project made use of the resources provided by the Edinburgh Compute and Data Facility (http://www.ecdf.ed.ac.uk/). The ECDF is partially supported by the eDIKT initiative (http://www.edikt.org.uk/). The authors would like to thank Sebastian Riedel for helpful discussions related to this work.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>This research was supported by the EuroMatrixPlus project funded by the European Commission (7th Framework Programme) and by the GALE program of the Defense Advanced Research Projects Agency, Contract No.</text>
+              <doc_id>285</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>HR0011-06-2-001.</text>
+              <doc_id>286</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The project made use of the resources provided by the Edinburgh Compute and Data Facility (http://www.ecdf.ed.ac.uk/).</text>
+              <doc_id>287</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The ECDF is partially supported by the eDIKT initiative (http://www.edikt.org.uk/).</text>
+              <doc_id>288</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The authors would like to thank Sebastian Riedel for helpful discussions related to this work.</text>
+              <doc_id>289</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 1: Untrained and MERT-trained performance on heldout. MERT training is repeated five times, with the table showing the mean BLEU, and standard deviation in brackets.</caption>
+        <reference_text>In PAGE 8: ... For the SampleRank experiments on the test set, the best training configurations were chosen from the results in Tables 2, 3, 4 and 5, and the best per- forming weight sets for each of the five runs for this configuration. For the MERT trained models, the same five models from  Table1  were used. The test set results are shown in Table 6....</reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>default settings.</cell>
+              <cell>default settings.</cell>
+              <cell>None</cell>
+              <cell></cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Pair</cell>
+              <cell>System</cell>
+              <cell>untuned</cell>
+              <cell>MERT-tuned</cell>
+            </row>
+            <row>
+              <cell>fr-en</cell>
+              <cell>WMT-SMALL</cell>
+              <cell>28.0</cell>
+              <cell>29.2 (0.2)</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>WMT-LARGE</cell>
+              <cell>29.4</cell>
+              <cell>32.5 (0.1)</cell>
+            </row>
+            <row>
+              <cell>de-en</cell>
+              <cell>WMT-SMALL</cell>
+              <cell>25.0</cell>
+              <cell>25.3 (0.1)</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>WMT-LARGE</cell>
+              <cell>26.6</cell>
+              <cell>26.8 (0.2)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TET</source>
+        <caption>Table 2: Mean maximum heldout performance for SampleRank training of the French-English WMT-</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>1</cell>
+              <cell>29.1 (0.2)</cell>
+              <cell>29.2 (0.1)</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>2</cell>
+              <cell>29.3 (0.1)</cell>
+              <cell>29.3 (0.1)</cell>
+            </row>
+            <row>
+              <cell>4</cell>
+              <cell>29.6 (0.1)</cell>
+              <cell>29.5 (0.1)</cell>
+            </row>
+            <row>
+              <cell>8</cell>
+              <cell>30.0 (0.0)</cell>
+              <cell>29.9 (0.1)</cell>
+            </row>
+            <row>
+              <cell>16</cell>
+              <cell>30.0 (0.1)</cell>
+              <cell>29.8 (0.1)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TET</source>
+        <caption>Table 3: Mean maximum heldout performance for SampleRank training of the German-English WMT-</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>1</cell>
+              <cell>25.2 (0.0)</cell>
+              <cell>25.3 (0.1)</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>2</cell>
+              <cell>25.4 (0.1)</cell>
+              <cell>25.4 (0.1)</cell>
+            </row>
+            <row>
+              <cell>4</cell>
+              <cell>25.4 (0.1)</cell>
+              <cell>25.4 (0.1)</cell>
+            </row>
+            <row>
+              <cell>8</cell>
+              <cell>25.4 (0.1)</cell>
+              <cell>25.4 (0.1)</cell>
+            </row>
+            <row>
+              <cell>16</cell>
+              <cell>25.3 (0.1)</cell>
+              <cell>25.4 (0.1)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TET</source>
+        <caption>Table 4: Mean (and standard deviation) of maximum heldout performance for SampleRank training of the</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>fr-en</cell>
+              <cell>8</cell>
+              <cell>32.6 (0.1)</cell>
+              <cell>32.7 (0.1)</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>16</cell>
+              <cell>32.8 (0.1)</cell>
+              <cell>32.9 (0.1)</cell>
+            </row>
+            <row>
+              <cell>de-en</cell>
+              <cell>8</cell>
+              <cell>26.9 (0.0)</cell>
+              <cell>27.0 (0.1)</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>16</cell>
+              <cell>26.8 (0.1)</cell>
+              <cell>26.9 (0.1)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>5</id>
+        <source>TableSeer</source>
+        <caption>Table 5: Mean (and standard deviation) of maximum heldout performance for SampleRank training of the</caption>
+        <reference_text>In PAGE 7: ... Train- ing times were similar to those for the WMT-SMALL system. The mean maximum scores on heldout are shown in  Table5 . We suspect that these features are fixing some short range reordering problems which...</reference_text>
+        <page_num>9</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Pair</cell>
+              <cell>Cores</cell>
+              <cell>100 Samples</cell>
+              <cell>500 Samples</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>fr-en</cell>
+              <cell>8</cell>
+              <cell>30.2 (0.0)</cell>
+              <cell>30.2 (0.0)</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>16</cell>
+              <cell>30.3 (0.0)</cell>
+              <cell>30.3 (0.00)</cell>
+            </row>
+            <row>
+              <cell>de-en</cell>
+              <cell>8</cell>
+              <cell>25.1 (0.1)</cell>
+              <cell>25.1 (0.0)</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>16</cell>
+              <cell>25.0 (0.1)</cell>
+              <cell>25.0 (0.0)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>6</id>
+        <source>TableSeer</source>
+        <caption>Table 6: Comparison of MERT trained and SampleRank trained models on the test sets.</caption>
+        <reference_text>In PAGE 10: ... Decoding is with a rather slow stochas- tic search and performance is quite poor, but this model, in common with the training algorithm pre- sented in the current work, permits features which depend on the whole sentence. 5 Discussion and Conclusions The results presented in  Table6  show that Sam- pleRank is a viable method of parameter tuning for phrase-based MT systems, beating MERT in many cases, and equalling it in others. It is also able to do what MERT cannot do, and scale to a large num- ber of features, with the phrase boundary feature of Section 3....</reference_text>
+        <page_num>9</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>fr-en</cell>
+              <cell>fr-en</cell>
+              <cell>de-en</cell>
+              <cell>de-en</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Training</cell>
+              <cell>System</cell>
+              <cell>nc-test2008</cell>
+              <cell>newstest2010</cell>
+              <cell>nc-test2008</cell>
+              <cell>newstest2010</cell>
+            </row>
+            <row>
+              <cell>MERT</cell>
+              <cell>WMT-SMALL</cell>
+              <cell>28.1 (0.1)</cell>
+              <cell>19.6 (0.1)</cell>
+              <cell>25.9 (0.1)</cell>
+              <cell>16.4 (0.2)</cell>
+            </row>
+            <row>
+              <cell>SampleRank</cell>
+              <cell>WMT-SMALL</cell>
+              <cell>28.7 (0.0)</cell>
+              <cell>20.1 (0.1)</cell>
+              <cell>25.9 (0.1)</cell>
+              <cell>16.6 (0.1)</cell>
+            </row>
+            <row>
+              <cell>SampleRank</cell>
+              <cell>WMT-SMALL+pb</cell>
+              <cell>28.8 (0.1)</cell>
+              <cell>19.8 (0.1)</cell>
+              <cell>25.9 (0.1)</cell>
+              <cell>16.7 (0.1)</cell>
+            </row>
+            <row>
+              <cell>MERT</cell>
+              <cell>WMT-LARGE</cell>
+              <cell>30.1 (0.1)</cell>
+              <cell>22.9 (0.1)</cell>
+              <cell>28.0 (0.2)</cell>
+              <cell>19.1 (0.2)</cell>
+            </row>
+            <row>
+              <cell>SampleRank</cell>
+              <cell>WMT-LARGE</cell>
+              <cell>30.0 (0.1)</cell>
+              <cell>23.6 (0.3)</cell>
+              <cell>28.1 (0.1)</cell>
+              <cell>19.5 (0.2)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Abhishek Arun</author>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>Online Learning Methods For Discriminative Training of Phrase 8 https://mosesdecoder.svn.sourceforge. net/svnroot/mosesdecoder/branches/ samplerank 270 Statistical Machine Translation.</title>
+        <publication>In Proceedings of MT Summit.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Abhishek Arun</author>
+          <author>Chris Dyer</author>
+          <author>Barry Haddow</author>
+          <author>Phil Blunsom</author>
+          <author>Adam Lopez</author>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>Monte Carlo inference and maximization for phrase-based translation.</title>
+        <publication>In Proceedings of the Thirteenth Conference on Computational Natural Language Learning (CoNLL-2009),</publication>
+        <pages>102--110</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Abhishek Arun</author>
+          <author>Barry Haddow</author>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>A Unified Approach to Minimum Risk Training and Decoding.</title>
+        <publication>In Proceedings of the Joint Fifth Workshop on Statistical Machine Translation and MetricsMATR,</publication>
+        <pages>365--374</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Phil Blunsom</author>
+          <author>Trevor Cohn</author>
+          <author>Miles Osborne</author>
+        </authors>
+        <title>A Discriminative Latent Variable Model for Statistical Machine Translation.</title>
+        <publication>In Proceedings of ACL.</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>David Chiang</author>
+          <author>Yuval Marton</author>
+          <author>Philip Resnik</author>
+        </authors>
+        <title>Online Large-Margin Training of Syntactic and Structural Translation Features.</title>
+        <publication>In Proceedings of EMNLP.</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Koby Crammer</author>
+          <author>Ofer Dekel</author>
+          <author>Joseph Keshet</author>
+          <author>Shai ShalevShwartz</author>
+          <author>Yoram Singer</author>
+        </authors>
+        <title>Online PassiveAggressive Algorithms.</title>
+        <publication>None</publication>
+        <pages>7--551</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Aron Culotta</author>
+        </authors>
+        <title>Learning and inference in weighted logic with application to natural language processing.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>George Foster</author>
+          <author>Roland Kuhn</author>
+        </authors>
+        <title>Stabilizing Minimum Error Rate Training.</title>
+        <publication>In Proceedings of the Fourth Workshop on Statistical Machine Translation,</publication>
+        <pages>242--249</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Hieu Hoang</author>
+        </authors>
+        <title>Factored Translation Models.</title>
+        <publication>In Proceedings of the 2007 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLP-CoNLL),</publication>
+        <pages>868--876</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Josh Schroeder</author>
+        </authors>
+        <title>Experiments in Domain Adaptation for Statistical Machine Translation.</title>
+        <publication>In Proceedings of the Second Workshop on Statistical Machine Translation,</publication>
+        <pages>224--227</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Zhifei Li</author>
+          <author>Jason Eisner</author>
+        </authors>
+        <title>First- and Secondorder Expectation Semirings with Applications to Minimum-Risk Training on Translation Forests.</title>
+        <publication>In Proceedings of EMNLP.</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Percy Liang</author>
+          <author>Alexandre Bouchard-C&#244;t&#233;</author>
+          <author>Dan Klein</author>
+          <author>Ben Taskar</author>
+        </authors>
+        <title>An End-to-End Discriminative Approach to Machine Translation.</title>
+        <publication>In Proceedings of the 21st International Conference on Computational Linguistics and 44th Annual Meeting of the Association for Computational Linguistics,</publication>
+        <pages>761--768</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Ryan McDonald</author>
+          <author>Keith Hall</author>
+          <author>Gideon Mann</author>
+        </authors>
+        <title>Distributed Training Strategies for the Structured Perceptron.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>In Human</author>
+        </authors>
+        <title>Language Technologies: The</title>
+        <publication>Annual Conference of the North American Chapter of the Association for Computational Linguistics,</publication>
+        <pages>456--464</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Franz J Och</author>
+        </authors>
+        <title>Minimum Error Rate Training in Statistical Machine Translation.</title>
+        <publication>In Proceedings of ACL.</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>Kishore Papineni</author>
+          <author>Salim Roukos</author>
+          <author>Todd Ward</author>
+          <author>WeiJing Zhu</author>
+        </authors>
+        <title>Bleu: a Method for Automatic Evaluation of Machine Translation.</title>
+        <publication>In Proceedings of 40th Annual Meeting of the Association for Computational Linguistics,</publication>
+        <pages>311--318</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>16</id>
+        <authors>
+          <author>Benjamin Roth</author>
+          <author>Andrew McCallum</author>
+          <author>Marc Dymetman</author>
+          <author>Nicola Cancedda</author>
+        </authors>
+        <title>Machine Translation Using Overlapping Alignments and SampleRank.</title>
+        <publication>In Proceedings of AMTA.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>17</id>
+        <authors>
+          <author>David A Smith</author>
+          <author>Jason Eisner</author>
+        </authors>
+        <title>Minimum risk annealing for training log-linear models.</title>
+        <publication>In Proceedings of COLING/ACL,</publication>
+        <pages>787--794</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>18</id>
+        <authors>
+          <author>Taro Watanabe</author>
+          <author>Jun Suzuki</author>
+          <author>Hajime Tsukada</author>
+          <author>Hideki Isozaki</author>
+        </authors>
+        <title>Online Large-Margin Training for Statistical Machine Translation.</title>
+        <publication>In Proceedings of the 2007 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLP-CoNLL),</publication>
+        <pages>764--773</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>19</id>
+        <authors>
+          <author>Michael Wick</author>
+          <author>Khashayar Rohanimanesh</author>
+          <author>Aron Culotta</author>
+          <author>Andrew McCallum</author>
+        </authors>
+        <title>SampleRank: Learning Preferences from Atomic Gradients.</title>
+        <publication>In Proceedings of NIPS Workshop on Advances in Ranking.</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Arun and Koehn, 2007</string>
+        <sentence_id>46818</sentence_id>
+        <char_offset>53</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>1</reference_id>
+        <string>Arun et al. (2009)</string>
+        <sentence_id>46648</sentence_id>
+        <char_offset>143</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>1</reference_id>
+        <string>Arun et al. (2009)</string>
+        <sentence_id>46660</sentence_id>
+        <char_offset>53</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>1</reference_id>
+        <string>Arun et al., 2009</string>
+        <sentence_id>46810</sentence_id>
+        <char_offset>166</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>1</reference_id>
+        <string>Arun et al., 2009</string>
+        <sentence_id>46828</sentence_id>
+        <char_offset>157</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>2</reference_id>
+        <string>Arun et al., 2010</string>
+        <sentence_id>46572</sentence_id>
+        <char_offset>175</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>2</reference_id>
+        <string>Arun et al., 2010</string>
+        <sentence_id>46801</sentence_id>
+        <char_offset>137</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>2</reference_id>
+        <string>Arun et al., 2010</string>
+        <sentence_id>46810</sentence_id>
+        <char_offset>190</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>3</reference_id>
+        <string>Blunsom et al. (2008)</string>
+        <sentence_id>46815</sentence_id>
+        <char_offset>56</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>4</reference_id>
+        <string>Chiang et al. (2008)</string>
+        <sentence_id>46651</sentence_id>
+        <char_offset>35</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>4</reference_id>
+        <string>Chiang et al. (2008)</string>
+        <sentence_id>46821</sentence_id>
+        <char_offset>8</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>4</reference_id>
+        <string>Chiang et al., 2008</string>
+        <sentence_id>46573</sentence_id>
+        <char_offset>83</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>4</reference_id>
+        <string>Chiang et al., 2008</string>
+        <sentence_id>46600</sentence_id>
+        <char_offset>166</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>4</reference_id>
+        <string>Chiang et al., 2008</string>
+        <sentence_id>46606</sentence_id>
+        <char_offset>63</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>4</reference_id>
+        <string>Chiang et al., 2008</string>
+        <sentence_id>46818</sentence_id>
+        <char_offset>111</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>5</reference_id>
+        <string>Crammer et al., 2006</string>
+        <sentence_id>46686</sentence_id>
+        <char_offset>217</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>6</reference_id>
+        <string>Culotta, 2008</string>
+        <sentence_id>46584</sentence_id>
+        <char_offset>12</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>6</reference_id>
+        <string>Culotta, 2008</string>
+        <sentence_id>46598</sentence_id>
+        <char_offset>4</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>7</reference_id>
+        <string>Foster and Kuhn, 2009</string>
+        <sentence_id>46561</sentence_id>
+        <char_offset>77</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>8</reference_id>
+        <string>Koehn and Hoang, 2007</string>
+        <sentence_id>46778</sentence_id>
+        <char_offset>173</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>9</reference_id>
+        <string>Koehn and Schroeder, 2007</string>
+        <sentence_id>46709</sentence_id>
+        <char_offset>184</char_offset>
+      </citation>
+      <citation>
+        <id>21</id>
+        <reference_id>10</reference_id>
+        <string>Li and Eisner (2009)</string>
+        <sentence_id>46808</sentence_id>
+        <char_offset>45</char_offset>
+      </citation>
+      <citation>
+        <id>22</id>
+        <reference_id>10</reference_id>
+        <string>Li and Eisner, 2009</string>
+        <sentence_id>46572</sentence_id>
+        <char_offset>134</char_offset>
+      </citation>
+      <citation>
+        <id>23</id>
+        <reference_id>11</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>46573</sentence_id>
+        <char_offset>53</char_offset>
+      </citation>
+      <citation>
+        <id>24</id>
+        <reference_id>11</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>46606</sentence_id>
+        <char_offset>43</char_offset>
+      </citation>
+      <citation>
+        <id>25</id>
+        <reference_id>11</reference_id>
+        <string>Liang et al., 2006</string>
+        <sentence_id>46818</sentence_id>
+        <char_offset>31</char_offset>
+      </citation>
+      <citation>
+        <id>26</id>
+        <reference_id>12</reference_id>
+        <string>McDonald et al., 2010</string>
+        <sentence_id>46697</sentence_id>
+        <char_offset>70</char_offset>
+      </citation>
+      <citation>
+        <id>27</id>
+        <reference_id>14</reference_id>
+        <string>Och, 2003</string>
+        <sentence_id>46558</sentence_id>
+        <char_offset>94</char_offset>
+      </citation>
+      <citation>
+        <id>28</id>
+        <reference_id>14</reference_id>
+        <string>Och, 2003</string>
+        <sentence_id>46565</sentence_id>
+        <char_offset>81</char_offset>
+      </citation>
+      <citation>
+        <id>29</id>
+        <reference_id>14</reference_id>
+        <string>Och, 2003</string>
+        <sentence_id>46804</sentence_id>
+        <char_offset>13</char_offset>
+      </citation>
+      <citation>
+        <id>30</id>
+        <reference_id>15</reference_id>
+        <string>Papineni et al., 2002</string>
+        <sentence_id>46558</sentence_id>
+        <char_offset>179</char_offset>
+      </citation>
+      <citation>
+        <id>31</id>
+        <reference_id>16</reference_id>
+        <string>Roth et al. (2010)</string>
+        <sentence_id>46823</sentence_id>
+        <char_offset>52</char_offset>
+      </citation>
+      <citation>
+        <id>32</id>
+        <reference_id>17</reference_id>
+        <string>Smith and Eisner, 2006</string>
+        <sentence_id>46572</sentence_id>
+        <char_offset>110</char_offset>
+      </citation>
+      <citation>
+        <id>33</id>
+        <reference_id>17</reference_id>
+        <string>Smith and Eisner (2006)</string>
+        <sentence_id>46805</sentence_id>
+        <char_offset>132</char_offset>
+      </citation>
+      <citation>
+        <id>34</id>
+        <reference_id>18</reference_id>
+        <string>Watanabe et al., 2007</string>
+        <sentence_id>46573</sentence_id>
+        <char_offset>104</char_offset>
+      </citation>
+      <citation>
+        <id>35</id>
+        <reference_id>18</reference_id>
+        <string>Watanabe et al., 2007</string>
+        <sentence_id>46600</sentence_id>
+        <char_offset>143</char_offset>
+      </citation>
+      <citation>
+        <id>36</id>
+        <reference_id>18</reference_id>
+        <string>Watanabe et al., 2007</string>
+        <sentence_id>46818</sentence_id>
+        <char_offset>86</char_offset>
+      </citation>
+      <citation>
+        <id>37</id>
+        <reference_id>19</reference_id>
+        <string>Wick et al., 2009</string>
+        <sentence_id>46584</sentence_id>
+        <char_offset>27</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

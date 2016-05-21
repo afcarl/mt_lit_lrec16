@@ -1,0 +1,743 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Incorporating Source-Language Paraphrases into Phrase-Based SMT with Confusion Networks</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-44798">To increase the model coverage, sourcelanguage paraphrases have been utilized to boost SMT system performance.</A-S>
+    <A-S ID="S-44799">Previous work showed that word lattices constructed from paraphrases are able to reduce out-ofvocabulary words and to express inputs in different ways for better translation quality.</A-S>
+    <A-S ID="S-44800">However, such a word-lattice-based method suffers from two problems: 1) path duplications in word lattices decrease the capacities for potential paraphrases; 2) lattice decoding in SMT dramatically increases the search space and results in poor time efficiency.</A-S>
+    <A-S ID="S-44801">Therefore, in this paper, we adopt word confusion networks as the input structure to carry source-language paraphrase information.</A-S>
+    <A-S ID="S-44802">Similar to previous work, we use word lattices to build word confusion networks for merging of duplicated paths and faster decoding.</A-S>
+    <A-S ID="S-44803">Experiments are carried out on small-, medium- and large-scale English&#8211; Chinese translation tasks, and we show that compared with the word-lattice-based method, the decoding time on three tasks is reduced significantly (up to 79%) while comparable translation quality is obtained on the largescale task.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-44804">With the rapid development of large-scale parallel corpus, research on data-driven SMT has made good progress to the real world applications.</S>
+        <S ID="S-44805">Currently, for a typical automatic translation task, the SMT system searches and exactly matches the input sentences with the phrases or rules in the models.</S>
+        <S ID="S-44806">Obvi- 31</S>
+      </P>
+      <P>
+        <S ID="S-44807">ously, if the following two conditions could be satisfied, namely:</S>
+      </P>
+      <P>
+        <S ID="S-44808">&#8226; the words in the parallel corpus are highly aligned so that the phrase alignment can be performed well;</S>
+      </P>
+      <P>
+        <S ID="S-44809">&#8226; the coverage of the input sentence by the parallel corpus is high;</S>
+      </P>
+      <P>
+        <S ID="S-44810">then the &#8220;exact phrase match&#8221; translation method could bring a good translation.</S>
+      </P>
+      <P>
+        <S ID="S-44811">However, for some language pairs, it is not easy to obtain a huge amount of parallel data, so it is not that easy to satisfy these two conditions.</S>
+        <S ID="S-44812">To alleviate this problem, paraphrase-enriched SMT systems have been proposed to show the effectiveness of incorporating paraphrase information.</S>
+        <S ID="S-44813">In terms of the position at which paraphrases are incorporated in the MT-pipeline, previous work can be organized into three different categories:</S>
+      </P>
+      <P>
+        <S ID="S-44814">&#8226; Translation model augmentation with paraphrases (<REF ID="R-03" RPTR="6">Callison-Burch et al., 2006</REF>; <REF ID="R-13" RPTR="24">Marton et al., 2009</REF>).</S>
+        <S ID="S-44815">Here the focus is on the translation of unknown source words or phrases in the input sentences by enriching the translation table with paraphrases.</S>
+      </P>
+      <P>
+        <S ID="S-44816">&#8226; Training corpus augmentation with paraphrases (<REF ID="R-02" RPTR="5">Bond et al., 2008</REF>; <REF ID="R-15" RPTR="26">Nakov, 2008</REF><REF ID="R-16" RPTR="28">Nakov, 2008</REF>a; <REF ID="R-15" RPTR="27">Nakov, 2008</REF><REF ID="R-16" RPTR="29">Nakov, 2008</REF>b).</S>
+        <S ID="S-44817">Paraphrases are incorporated into the MT systems by expanding the training data.</S>
+      </P>
+      <P>
+        <S ID="S-44818">&#8226; Word-lattice-based method with paraphrases (<REF ID="R-04" RPTR="10">Du et al., 2010</REF>; Onishi et al.,</S>
+      </P>
+      <P>
+        <S ID="S-44819">2010).</S>
+        <S ID="S-44820">Instead of augmenting the translation table, source-language paraphrases are constructed to enrich the inputs to the SMT system.</S>
+        <S ID="S-44821">Another directly related work is to use word lattices to deal with multi-source translation (<REF ID="R-22" RPTR="38">Schroeder et al., 2009</REF>), in which paraphrases are actually generated from the alignments of difference source sentences.</S>
+      </P>
+      <P>
+        <S ID="S-44822">Comparing these three methods, the word-latticebased method has the least overheads because:</S>
+      </P>
+      <P>
+        <S ID="S-44823">&#8226; The translation model augmentation method has to re-run the whole MT pipeline once the inputs are changed, while the word-latticebased method only need to transform the new input sentences into word lattices.</S>
+      </P>
+      <P>
+        <S ID="S-44824">&#8226; The training corpus augmentation method requires corpus-scale expansion, which drastically increases the computational complexity on large corpora, while the word-lattice-based method only deals with the development set and test set.</S>
+      </P>
+      <P>
+        <S ID="S-44825">In (<REF ID="R-04" RPTR="11">Du et al., 2010</REF>; <REF ID="R-20" RPTR="34">Onishi et al., 2010</REF>), it is also observed that the word-lattice-based method performed better than the translation model augmentation method on different scales and two different language pairs in several translation tasks.</S>
+        <S ID="S-44826">Thus they concluded that the word-lattice-based method is preferable for this task.</S>
+        <S ID="S-44827">However, there are still some drawbacks for the word-lattice-based method:</S>
+      </P>
+      <P>
+        <S ID="S-44828">&#8226; In the lattice construction processing, duplicated paths are created and fed into SMT decoders.</S>
+        <S ID="S-44829">This decreases the paraphrase capacity in the word lattices.</S>
+        <S ID="S-44830">Note that we use the phrase &#8220;paraphrase capacity&#8221; to represent the amount of paraphrases that are actually built into the word lattices.</S>
+        <S ID="S-44831">As presented in (<REF ID="R-04" RPTR="12">Du et al., 2010</REF>), only a limited number of paraphrases are allowed to be used while others are pruned during the construction process, so duplicate paths actually decrease the number of paraphrases that contribute to the translation quality.</S>
+      </P>
+      <P>
+        <S ID="S-44832">&#8226; The lattice decoding in SMT decoder have a very high computational complexity which 32 makes the system less feasible in real time application.</S>
+      </P>
+      <P>
+        <S ID="S-44833">Therefore, in this paper, we use confusion networks (CNs) instead of word lattices to carry paraphrase information in the inputs for SMT decoders.</S>
+        <S ID="S-44834">CNs are constructed from the aforementioned word lattices, while duplicate paths are merged to increase paraphrase capacity (e.g. by admitting more nonduplicate paraphrases without increasing the input size).</S>
+        <S ID="S-44835">Furthermore, much less computational complexity is required to perform CN decoding instead of lattice decoding in the SMT decoder.</S>
+        <S ID="S-44836">We carried out experiments on small-, medium- and largescale English&#8211;Chinese translation tasks to compare against a baseline PBSMT system, the translation model augmentation of (<REF ID="R-03" RPTR="7">Callison-Burch et al., 2006</REF>) method and the word-lattice-based method of (<REF ID="R-04" RPTR="13">Du et al., 2010</REF>) to show the effectiveness of our novel approach.</S>
+      </P>
+      <P>
+        <S ID="S-44837">The motivation of this work is to use CN as the compromise between speed and quality, which comes from previous studies in speech recognition and speech translation: in (<REF ID="R-05" RPTR="19">Hakkani-T&#252;r et al., 2005</REF>), word lattices are transformed into CNs to obtain compact representations of multiple aligned ASR hypotheses in speech understanding; in (<REF ID="R-01" RPTR="1">Bertoldi et al., 2008</REF>), CNs are also adopted instead of word lattices as the source-side inputs for speech translation systems.</S>
+        <S ID="S-44838">The main contribution of this paper is to show that this compromise also works for SMT systems incorporating sourcelanguage paraphrases in the inputs.</S>
+        <S ID="S-44839">Regarding the use of paraphrases SMT system, there are still other two categories of work that are related to this paper:</S>
+      </P>
+      <P>
+        <S ID="S-44840">&#8226; Using paraphrases to improve system optimization (<REF ID="R-11" RPTR="23">Madnani et al., 2007</REF>).</S>
+        <S ID="S-44841">With an English&#8211; English MT system, this work utilises paraphrases to reduce the number of manually translated references that are needed in the parameter tuning process of SMT, while preserved a similar translation quality.</S>
+      </P>
+      <P>
+        <S ID="S-44842">&#8226; Using paraphrases to smooth translation models (<REF ID="R-09" RPTR="21">Kuhn et al., 2010</REF>; <REF ID="R-14" RPTR="25">Max, 2010</REF>).</S>
+        <S ID="S-44843">Either cluster-based or example-based methods are</S>
+      </P>
+      <P>
+        <S ID="S-44844">proposed to obtain better estimation on phrase translation probabilities with paraphrases.</S>
+      </P>
+      <P>
+        <S ID="S-44845">The rest of this paper is organized as follows: In section 2, we present an overview of the wordlattice-based method and its drawbacks.</S>
+        <S ID="S-44846">Section 3 proposes the CN-based method, including the building process and its application on paraphrases in SMT.</S>
+        <S ID="S-44847">Section 4 presents the experiments and results of the proposed method as well as discussions.</S>
+        <S ID="S-44848">Conclusions and future work are then given in Section 5.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Word-lattice-based method</HEADER>
+      <P>
+        <S ID="S-44901">Compared with translation model augmentation with paraphrases (<REF ID="R-03" RPTR="8">Callison-Burch et al., 2006</REF>), word-lattice-based paraphrasing for PBSMT is introduced in (<REF ID="R-04" RPTR="14">Du et al., 2010</REF>).</S>
+        <S ID="S-44902">A brief overview of this method is given in this section.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Lattice construction from paraphrases</HEADER>
+        <P>
+          <S ID="S-44849">The first step of the word-lattice-based method is to generate paraphrases from parallel corpus.</S>
+          <S ID="S-44850">The algorithm in (<REF ID="R-00" RPTR="0">Bannard and Callison-Burch, 2005</REF>) is used for this purpose by pivoting through phrases in the source- and the target- languages: for each source phrase, all occurrences of its target phrases are found, and all the corresponding source phrases of these target phrases are considered as the potential paraphrases of the original source phrase (Callison- Burch et al., 2006).</S>
+          <S ID="S-44851">A paraphrase probability p(e 2 |e 1 ) is defined to reflect the similarities between two phrases, as in (1):</S>
+        </P>
+        <P>
+          <S ID="S-44852">p(e 2 |e 1 ) = &#8721; f p(f|e 1 )p(e 2 |f) (1)</S>
+        </P>
+        <P>
+          <S ID="S-44853">where the probability p(f|e 1 ) is the probability that the original source phrase e 1 translates as a particular phrase f on the target side, and p(e 2 |f) is the probability that the candidate paraphrase e 2 translates as the source phrase.</S>
+          <S ID="S-44854">Here p(e 2 |f) and p(f|e 1 ) are defined as the translation probabilities estimated using maximum likelihood by counting the observations of alignments between phrases e and f in the 33 ...</S>
+        </P>
+        <P>
+          <S ID="S-44855">...</S>
+        </P>
+        <P>
+          <S ID="S-44856">q 1 q 2 &#8230; q m</S>
+        </P>
+        <P>
+          <S ID="S-44857">... w x-1 w x w x+1 ... w y w y+1</S>
+        </P>
+        <P>
+          <S ID="S-44858">w x-1</S>
+        </P>
+        <P>
+          <S ID="S-44859">q 1 q 2 ... q m</S>
+        </P>
+        <P>
+          <S ID="S-44860">w x w x+1 ... w y w y+1 ...</S>
+        </P>
+        <P>
+          <S ID="S-44861">parallel corpus, as in (2) and (3):</S>
+        </P>
+        <P>
+          <S ID="S-44862">p(e 2 |f) &#8776; count(e 2, f) &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-44863">e 2</S>
+        </P>
+        <P>
+          <S ID="S-44864">count(e 2 , f) p(f|e 1 ) &#8776; &#8721; count(f, e 1)</S>
+        </P>
+        <P>
+          <S ID="S-44865">f count(f, e 1)</S>
+        </P>
+        <P>
+          <S ID="S-44866">(2)</S>
+        </P>
+        <P>
+          <S ID="S-44867">(3)</S>
+        </P>
+        <P>
+          <S ID="S-44868">The second step is to transform input sentences in the development and test sets into word lattices with paraphrases extracted in the first step.</S>
+          <S ID="S-44869">As illustrated in Figure 1, given a sequence of words {w 1 , .</S>
+          <S ID="S-44870">.</S>
+          <S ID="S-44871">.</S>
+          <S ID="S-44872">, w N } as the input, for each of the paraphrase pairs found in the source sentence (e.g. p i = {q 1 , .</S>
+          <S ID="S-44873">.</S>
+          <S ID="S-44874">.</S>
+          <S ID="S-44875">, q m } for {w x , .</S>
+          <S ID="S-44876">.</S>
+          <S ID="S-44877">.</S>
+          <S ID="S-44878">, w y }), add in extra nodes and edges to make sure those phrases coming from paraphrases share the same start nodes and end nodes with that of the original ones.</S>
+          <S ID="S-44879">Subsequently the following empirical methods are used to assign weights on paraphrases edges:</S>
+        </P>
+        <P>
+          <S ID="S-44880">&#8226; Edges originating from the input sentences are assigned weight 1.</S>
+        </P>
+        <P>
+          <S ID="S-44881">&#8226; The first edges for each of the paraphrases are calculated as in (4):</S>
+        </P>
+        <P>
+          <S ID="S-44882">w(e 1 p i ) = 1 k + i</S>
+        </P>
+        <P>
+          <S ID="S-44883">(1 &lt;= i &lt;= k) (4)</S>
+        </P>
+        <P>
+          <S ID="S-44884">where 1 stands for the first edge of paraphrase p i , and i is the probability rank of p i among those paraphrases sharing with a same start node, while k is a predefined constant as a trade-off parameter for efficiency and performance, which is related to the paraphrase capacity.</S>
+        </P>
+        <P>
+          <S ID="S-44885">&#8226; The rest of the edges corresponding to the paraphrases are assigned weight 1.</S>
+        </P>
+        <P>
+          <S ID="S-44886">The last step is to modify the MT pipeline to tune and evaluate the SMT system with word lattice inputs, as is described in (<REF ID="R-04" RPTR="15">Du et al., 2010</REF>; <REF ID="R-20" RPTR="35">Onishi et al., 2010</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-44887">For further discussion, a real example of the generated word lattice is illustrated in Figure 2.</S>
+          <S ID="S-44888">In the word lattice, double-line circled nodes and solid lined edges come from originated from the original sentence, while others are generated from paraphrases.</S>
+          <S ID="S-44889">Word, weight and ranking of each edge are displayed in the figure.</S>
+          <S ID="S-44890">By adopting such an input structure, the diversity of the input sentences is increased to provide more flexible translation options during the decoding process, which has been shown to improve translation performance (<REF ID="R-04" RPTR="16">Du et al., 2010</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Path duplication and decoding efficiency</HEADER>
+        <P>
+          <S ID="S-44891">As can be seen in Figure 2, the construction process in the previous steps tends to generate duplicate paths in the word lattices.</S>
+          <S ID="S-44892">For example, there are two paths from node 6 to node 11 with the same words &#8220;secretary of state&#8221; but different edge probabilities (the path via node 27 and 28 has the probability 1/12, while the path via node 26 and 9 has the probability 1/99).</S>
+          <S ID="S-44893">This is because the aforementioned straightforward construction process does not track path duplications from different spans on the source side.</S>
+          <S ID="S-44894">Since the number of admitted paraphrases is restricted by parameter k in formula (4), the path duplication will decrease the paraphrase capacity to a certain extend.</S>
+        </P>
+        <P>
+          <S ID="S-44895">Moreover, state of the art PBSMT decoders (e.g. Moses (Koehn et al., 2007)) have a much higher computational complexity for lattice structures than for sentences.</S>
+          <S ID="S-44896">Thus even though only the test sentences need to be transformed into word lattices, decoding time is still too slow for real-time applications.</S>
+        </P>
+        <P>
+          <S ID="S-44897">Motivated by transforming ASR word-graphs into CNs (<REF ID="R-01" RPTR="2">Bertoldi et al., 2008</REF>), we adopt CN as the trade-off between efficiency and quality.</S>
+          <S ID="S-44898">We aim to merge duplicate paths in the word lattices to increase paraphrase capacity, and to speed up the decoding process via CN decoding.</S>
+          <S ID="S-44899">Details of the proposed method are presented in the following section.</S>
+          <S ID="S-44900">34</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Confusion-network-based method</HEADER>
+      <P>
+        <S ID="S-44949">CNs are weighted direct graphs where each path from the start node to the end node goes through all the other nodes.</S>
+        <S ID="S-44950">Each edge is labelled with a word and a probability (or weight).</S>
+        <S ID="S-44951">Although it is commonly required to normalize the probability of edges between two consecutive nodes to sum up to one, from the point of view of the decoder, this is not a strict constraint as long as any score is provided (similar to the weights on the word lattices in the last section, and we prefer to call it &#8220;weight&#8221; in this case).</S>
+      </P>
+      <P>
+        <S ID="S-44952">The benefits of using CNs are:</S>
+      </P>
+      <P>
+        <S ID="S-44953">1. the ability to represent the original word lattice with a highly compact structure;</S>
+      </P>
+      <P>
+        <S ID="S-44954">2. all hypotheses in the word lattice are totally ordered, so that the decoding algorithm is mostly retained except for the collection of translation options and the handeling of &#603; edges (<REF ID="R-01" RPTR="3">Bertoldi et al., 2008</REF>), which requires much less computational resources than the lattice decoding.</S>
+      </P>
+      <P>
+        <S ID="S-44955">The rest of this section details the construction process of the CNs and the application in paraphraseenriched SMT.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Confusion Network building</HEADER>
+        <P>
+          <S ID="S-44903">We build our CN from the aforementioned word lattices.</S>
+          <S ID="S-44904">Previous studies provide several methods to do this.</S>
+          <S ID="S-44905">(Mangu et al., 2000) propose a method to cluster lattice words on the similarity of pronunciations and frequency of occurrence, and then to create CNs using cluster orders.</S>
+          <S ID="S-44906">Although this method has a computational complexity of O(n 3 ), the SRILM toolkit (<REF ID="R-25" RPTR="41">Stolcke, 2002</REF>) provides a modified algorithm which runs much faster than the original version.</S>
+          <S ID="S-44907">In (<REF ID="R-05" RPTR="20">Hakkani-T&#252;r et al., 2005</REF>), a pivot algorithm is proposed to form CNs by normalizing the topology of the input lattices.</S>
+        </P>
+        <P>
+          <S ID="S-44908">In this paper, we use the modified method of (Mangu et al., 2000) provided by the SRILM toolkit to convert word lattices into CNs.</S>
+          <S ID="S-44909">Moreover, we aim to obtain CNs with the following guidelines:</S>
+        </P>
+        <P>
+          <S ID="S-44910">&#8226; Cluster the lattice words only by topological orders and edge weights without considering word similarity.</S>
+          <S ID="S-44911">The objective is to reduce the</S>
+        </P>
+        <P>
+          <S ID="S-44912">impact of path duplications in the building process, since duplicate words will bias the importance of paths.</S>
+        </P>
+        <P>
+          <S ID="S-44913">&#8226; Assign edge weights by the ranking of paraphrase probabilities, rather than by posterior probabilities from the modified method of (Mangu et al., 2000).</S>
+          <S ID="S-44914">This is similar to that given in formula (4).</S>
+          <S ID="S-44915">The reason for this is to reduce the impact of path duplications on the calculation of weights.</S>
+        </P>
+        <P>
+          <S ID="S-44916">Thus, we modified the construction process as follows:</S>
+        </P>
+        <P>
+          <S ID="S-44917">1.</S>
+          <S ID="S-44918">For each of the input word lattices, replace word texts with unique identifiers (to make the lattice alignment uncorrelated to the word similarity, since in this case, all words in the lattice are different from each other).</S>
+        </P>
+        <P>
+          <S ID="S-44919">2.</S>
+          <S ID="S-44920">Evenly distribute edge weights for each of the lattices by modifying formula (4) as in (5):</S>
+        </P>
+        <P>
+          <S ID="S-44921">w(e j p i ) = 1</S>
+        </P>
+        <P>
+          <S ID="S-44922">M i</S>
+        </P>
+        <P>
+          <S ID="S-44923">&#8730; (k + i) (1 &lt;= i &lt;= k) (5)</S>
+        </P>
+        <P>
+          <S ID="S-44924">where 1 &lt;= j &lt;= M i , given e j p i is the j th edge of paraphrase p i , and M i is the number of words in p i .</S>
+          <S ID="S-44925">This is to avoid large weights on the paraphrase edges for lattice alignments.</S>
+        </P>
+        <P>
+          <S ID="S-44926">3.</S>
+          <S ID="S-44927">Transform the weighted word lattices into CNs with the SRILM toolkit, and the paraphrase ranking information is carried on the edges.</S>
+        </P>
+        <P>
+          <S ID="S-44928">4.</S>
+          <S ID="S-44929">Replace the word texts in step 1, and then for each column of the CN, merge edges with same words by keeping those with the highest ranking (a smaller number indicates a higher ranking, and edges from the original sentences will always have the highest ranking).</S>
+          <S ID="S-44930">Note that to assign ranking for each &#603; edge which does not appear in the word lattice, we use the ranking of non-original edges (in the same column) which have the closest posterior probability to it.</S>
+          <S ID="S-44931">(Assign ranking 1 if failed to find a such edge).</S>
+        </P>
+        <P>
+          <S ID="S-44932">5.</S>
+          <S ID="S-44933">Reassign the edge weights: 1) edges from original sentences are assigned with weight 1; 2) edges from paraphrases are assigned with an</S>
+        </P>
+        <P>
+          <S ID="S-44934">empirical method as in (6):</S>
+        </P>
+        <P>
+          <S ID="S-44935">w(e cn p i ) = 1 k + i (1 &lt;= i &lt;= k) (6)</S>
+        </P>
+        <P>
+          <S ID="S-44936">where e cn p i are edges corresponding with paraphrase p i , and i is the probability rank of p i in formula (4), while k is also defined in formula (4).</S>
+        </P>
+        <P>
+          <S ID="S-44937">A real example of a constructed CN is depicted in Figure 3, which is correspondent with the word lattice in Figure 2.</S>
+          <S ID="S-44938">Unlike the word lattices, all the nodes in the CN are generated from the original sentence, while solid lined edges come from the original sentence, and dotted lined edges correspond to paraphrases.</S>
+        </P>
+        <P>
+          <S ID="S-44939">As in shown in the Figures, duplicate paths in the word lattices have been merged into CN edges by step 4.</S>
+          <S ID="S-44940">For example, the two occurrences of &#8220;secretary of state&#8221; in the word lattices (one path from node 6 to 11 via 27 and 28, and one path from node 6 to 11 via 26 and 9 in the word lattice) are merged to keep the highest-ranked path in the CN (note there is one &#603; edge between node 9 and 10 to accomplish the merging operation).</S>
+          <S ID="S-44941">Furthermore, each edge in the CN is assigned a weight by formula (6).</S>
+          <S ID="S-44942">This weight assignment procedure penalizes paths from paraphrases according to the paraphrase probabilities, in a similar manner to the aforementioned word-lattice-based method.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Modified MT pipeline</HEADER>
+        <P>
+          <S ID="S-44943">By transforming word lattices into CNs, duplicate paths are merged.</S>
+          <S ID="S-44944">Furthermore the new features on the edges are introduced by formula (6), which is then tuned on the development set using MERT (<REF ID="R-17" RPTR="30">Och, 2003</REF>) in the log-linear model (<REF ID="R-18" RPTR="32">Och and Ney, 2002</REF>).</S>
+          <S ID="S-44945">Since the SMT decoders are able to perform CN decoding (<REF ID="R-01" RPTR="4">Bertoldi et al., 2008</REF>) in an efficient multi-stack decoding way, decoding time is drastically reduced compared to lattice decoding.</S>
+        </P>
+        <P>
+          <S ID="S-44946">The training steps are then modified as follows: 1) Extract phrase table, reordering table, and build target-side language models from parallel and monolingual corpora respectively for the PBSMT model; 2) Transform source sentences in the development set into word lattices, and then transform them into CNs using the method proposed in Section 3.1; 3) Tune the PBSMT model on the CNs via 36</S>
+        </P>
+        <P>
+          <S ID="S-44947">the development set.</S>
+          <S ID="S-44948">Note that the overhead of the evaluation steps are: transform each test set sentence into a word lattice, and also transform them into a CN, then feed them into the SMT decoder to obtain decoding results.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments</HEADER>
+      <P>
+        <S ID="S-44998"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Experimental setup</HEADER>
+        <P>
+          <S ID="S-44956">Experiments were carried out on three English&#8211; Chinese translation tasks.</S>
+          <S ID="S-44957">The training corpora comprise 20K, 200K and 2.1 million sentence pairs, where the former two corpora are derived from FBIS corpus 1 which is sentence-aligned by Champollion aligner (<REF ID="R-10" RPTR="22">Ma, 2006</REF>), the latter corpus comes from HK parallel corpus, 2 ISI parallel corpus, 3 other news data and parallel dictionaries from LDC.</S>
+        </P>
+        <P>
+          <S ID="S-44958">The development set and the test set for the 20K and 200K corpora are randomly selected from the FBIS corpus, each of which contains 1,200 sentences, with one reference.</S>
+          <S ID="S-44959">For the 2.1 million corpus, the NIST 2005 Chinese&#8211;English current set (1,082 sentences) with one reference is used as the development set, and NIST 2003 English&#8211;Chinese current set (1,859 sentences) with four references is used as the test set.</S>
+        </P>
+        <P>
+          <S ID="S-44960">Three baseline systems are built for comparison: Moses PBSMT baseline system (Koehn et al., 2007), a realization of the translation model augmentation system described in (<REF ID="R-03" RPTR="9">Callison-Burch et al., 2006</REF>) (named &#8220;Para-Sub&#8221; hereafter), and the word-lattice based system proposed in (<REF ID="R-04" RPTR="17">Du et al., 2010</REF>).</S>
+          <S ID="S-44961">Word alignments on the parallel corpus are performed using GIZA++ (<REF ID="R-19" RPTR="33">Och and Ney, 2003</REF>) with the &#8220;grow-diag-final&#8221; refinement.</S>
+          <S ID="S-44962">Maximum phrase length is set to 10 words and the parameters in the log-linear model are tuned by MERT (<REF ID="R-17" RPTR="31">Och, 2003</REF>).</S>
+          <S ID="S-44963">All the language models are 5-gram built with the SRILM toolkit (<REF ID="R-25" RPTR="42">Stolcke, 2002</REF>) on the monolingual part of the parallel corpora.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Paraphrase acquisition</HEADER>
+        <P>
+          <S ID="S-44964">The paraphrases data for all paraphrase-enriched system is derived from the &#8220;Paraphrase Phrase Ta-</S>
+        </P>
+        <P>
+          <S ID="S-44965">ble&#8221; 4 of TER-Plus (<REF ID="R-24" RPTR="40">Snover et al., 2009</REF>).</S>
+          <S ID="S-44966">Furthermore, the following two steps are taken to filter out noise paraphrases as described in (<REF ID="R-04" RPTR="18">Du et al., 2010</REF>):</S>
+        </P>
+        <P>
+          <S ID="S-44967">1.</S>
+          <S ID="S-44968">Filter out paraphrases with probabilities lower than 0.01.</S>
+        </P>
+        <P>
+          <S ID="S-44969">2.</S>
+          <S ID="S-44970">Filter out paraphrases which are not observed in the phrase table.</S>
+          <S ID="S-44971">This objective is to guarantee that no extra out-of-vocabulary words are introduced into the paraphrase systems.</S>
+        </P>
+        <P>
+          <S ID="S-44972">The filtered paraphrase table is then used to generate word lattices and CNs.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Experimental results</HEADER>
+        <P>
+          <S ID="S-44973">The results are reported in BLEU (<REF ID="R-21" RPTR="37">Papineni et al., 2002</REF>) and TER (<REF ID="R-23" RPTR="39">Snover et al., 2006</REF>) scores.</S>
+          <S ID="S-44974">Table 1 compares the performance of four systems on three translation tasks.</S>
+          <S ID="S-44975">As can be observed from the Table, for 20K and 200K corpora, the word-lattice-based system accomplished the best results.</S>
+          <S ID="S-44976">For the 20K corpus, the CN outperformed the baseline PBSMT by 0.31 absolute (2.15% relative) BLEU points and 1.5 absolute (1.99% relative) TER points.</S>
+          <S ID="S-44977">For the 200K corpus, it still outperformed the &#8220;Para-Sub&#8221; by 0.06 absolute (0.26% relative) BLEU points and 0.15 absolute (0.23% relative) TER points.</S>
+          <S ID="S-44978">Note that for the 2.1M corpus, although CN underperformed the best word lattice by an insignificant amount (0.06 absolute, 0.41%</S>
+        </P>
+        <P>
+          <S ID="S-44979">4 http://www.umiacs.umd.edu/&#732;snover/terp/</S>
+        </P>
+        <P>
+          <S ID="S-44980">downloads/terp-pt.v1.tgz</S>
+        </P>
+        <P>
+          <S ID="S-44981">relative) in terms of BLEU points, it has the best performance in terms of TER points (0.22 absolute, 0.3% relative than word lattice).</S>
+          <S ID="S-44982">Furthermore, the CN outperformed &#8220;Para-Sub&#8221; by 0.36 absolute (2.55% relative) BLEU points and 1.37 absolute (1.84% relative) TER points, and also beat the baseline PBSMT system by 0.45 absolute (3.21% relative) BLEU points and 1.82 absolute (2.43% relative) TER points.</S>
+          <S ID="S-44983">The paired 95% confidence interval of significant test (Zhang and Vogel, 2004) between the &#8220;Lattice&#8221; and &#8220;CN&#8221; system is [-0.19, +0.38], which also suggests that the two system has a comparable performance in terms of BLEU.</S>
+        </P>
+        <P>
+          <S ID="S-44984">In Table 2, decoding time on test sets is reported to compare the computational efficiency of the baseline PBSMT, word-lattice-based and CNbased methods.</S>
+          <S ID="S-44985">Note that word lattice construction time and CN building time (including word lattice construction and conversion from word lattices into CNs with the SRILM toolkit (<REF ID="R-25" RPTR="43">Stolcke, 2002</REF>)) are counted in the decoding time and illustrated in the table within parentheses respectively.</S>
+          <S ID="S-44986">Although both word-lattice-based and CN-based methods require longer decoding times than the baseline PB- SMT system, it is observed that compared with the word lattices, CNs reduced the decoding time significantly on three tasks, namely 52.06% for the 20K model, 75.75% for the 200K model and 78.88% for the 2.1M model.</S>
+          <S ID="S-44987">It is also worth noting that the &#8220;Para-Sub&#8221; system has a similar decoding time with baseline PBSMT since only the translation table is modified.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.4 Discussion</HEADER>
+        <P>
+          <S ID="S-44988">From the performance and decoding time reported in the last section, it is obvious that on large scale corpora, the CN-based method significantly reduced the computational complexity while preserved the system performance of the best lattice-based method.</S>
+          <S ID="S-44989">Thus it makes the paraphrase-enriched SMT system more applicable to real-world applications.</S>
+          <S ID="S-44990">On the other hand, for small- and medium-scale data, CNs can be used as a compromise between speed and quality, since decoding time is much less than word lattices, and compared with the &#8220;Para-Sub&#8221; system, the only overhead is the transforming of the input sentences.</S>
+        </P>
+        <P>
+          <S ID="S-44991">It is also interesting that the relative performance of the CNs increases gradually with the size of the training corpus, which indicates that it is more suitable for models built from large scale data.</S>
+          <S ID="S-44992">Considering the decoding time, it is preferable to use CNs instead of word lattices for such translation tasks.</S>
+          <S ID="S-44993">However, for the small- and medium-scale data, the CN system is not competitive even compared with the baseline.</S>
+          <S ID="S-44994">In this case it suggests that, on these two tasks, the coverage issue is not solved by incorporating paraphrases with the CN structure.</S>
+          <S ID="S-44995">It might because of the ambiguity that introduced by CNs harms the decoder to choose the appropriate source words from paraphrases.</S>
+          <S ID="S-44996">On the other hand, this ambiguity could be decreased with translation models trained on a large corpus, which provides enough observations for the decoders to favour para- 38</S>
+        </P>
+        <P>
+          <S ID="S-44997">phrases.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusion and future work</HEADER>
+      <P>
+        <S ID="S-44999">In this paper, CNs are used instead of word lattices to incorporate paraphrases into SMT.</S>
+        <S ID="S-45000">Transformation from word lattices into CNs is used to merge path duplications, and decoding time is drastically reduced with CN decoding.</S>
+        <S ID="S-45001">Experiments are carried out on small-, medium- and large-scale English&#8211; Chinese translation tasks and confirm that compared with word lattices, it is much more computationally efficient to use CNs, while no loss of performance is observed on the large-scale task.</S>
+        <S ID="S-45002">In the future, we plan to apply more features such as source-side language models and phrase length (<REF ID="R-20" RPTR="36">Onishi et al., 2010</REF>) on the CNs to obtain better system performance.</S>
+        <S ID="S-45003">Furthermore, we will carry out this work on other language pairs to show the effectiveness of paraphrases in SMT systems.</S>
+        <S ID="S-45004">We will also investigate the reason for its lower performance on the small- and medium-scale corpora, as well as the impact of the paraphrase filtering procedure on translation quality.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-45005">This research is supported by the Science Foundation Ireland (Grant 07/CE/I1142) as part of the Centre for Next Generation Localisation (www.cngl.ie) at Dublin City University.</S>
+      <S ID="S-45006">Thanks to the reviewers for their invaluable comments and suggestions.</S>
+    </P>
+    <P>
+      <S ID="S-45007">References</S>
+    </P>
+    <P>
+      <S ID="S-45008">Colin Bannard and Chris Callison-Burch.</S>
+      <S ID="S-45009">2005.</S>
+      <S ID="S-45010">Paraphrasing with bilingual parallel corpora.</S>
+      <S ID="S-45011">In 43rd Annual meeting of the Association for Computational Linguistics, Ann Arbor, MI, pages 597&#8211;604.</S>
+      <S ID="S-45012">Nicola Bertoldi, Richard Zens, Marcello Federico, and</S>
+    </P>
+    <P>
+      <S ID="S-45013">Wade Shen 2008.</S>
+      <S ID="S-45014">Efficient Speech Translation Through Confusion Network Decoding.</S>
+      <S ID="S-45015">In IEEE Transactions on Audio, Speech, and Language Processing, 16(8), pages 1696&#8211;1705.</S>
+      <S ID="S-45016">Francis Bond, Eric Nichols, Darren Scott Appling and</S>
+    </P>
+    <P>
+      <S ID="S-45017">Michael Paul.</S>
+      <S ID="S-45018">2008.</S>
+      <S ID="S-45019">Improving Statistical Machine Translation by Paraphrasing the Training Data.</S>
+      <S ID="S-45020">In Proceedings of the International Workshop on Spoken Language Translation (IWSLT), Hawaii, pages 150&#8211; 157.</S>
+    </P>
+    <P>
+      <S ID="S-45021">Chris Callison-Burch, Philipp Koehn and Miles Osborne.</S>
+      <S ID="S-45022">2006.</S>
+      <S ID="S-45023">Improved Statistical Machine Translation Using Paraphrases.</S>
+      <S ID="S-45024">In Proceedings of the Human Language Technology conference - North American chapter of the Association for Computational Linguistics (HLT- NAACL), NY, pages 17&#8211;24.</S>
+    </P>
+    <P>
+      <S ID="S-45025">Jinhua Du, Jie Jiang and Andy Way.</S>
+      <S ID="S-45026">2010.</S>
+      <S ID="S-45027">Facilitating Translation Using Source Language Paraphrase Lattices.</S>
+      <S ID="S-45028">In Proceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP), Cambridge, MA, pages 420&#8211;429.</S>
+    </P>
+    <P>
+      <S ID="S-45029">Dilek Hakkani-T&#252;r, Fr&#233;d&#233;ric B&#233;chet, Giuseppe Riccardi and Gokhan Tur.</S>
+      <S ID="S-45030">2005.</S>
+      <S ID="S-45031">Beyond ASR 1-best: Using word confusion networks in spoken language understanding.</S>
+      <S ID="S-45032">In Computer Speech and Language (2005): 20(4), pages 495&#8211;514.</S>
+    </P>
+    <P>
+      <S ID="S-45033">Philipp Koehn, Hieu Hoang, A. Birch, C. Callison-Burch, M. Federico, N. Bertoldi, B. Cowan, Wade Shen, C. Moran, R. Zens, C. Dyer, O. Bojar, A. Constantin and Evan Herbst.</S>
+      <S ID="S-45034">2007.</S>
+      <S ID="S-45035">Moses: Open Source Toolkit for Statistical Machine Translation.</S>
+      <S ID="S-45036">In ACL 2007: demo and poster sessions, Prague, Czech Republic, pages 177&#8211;180.</S>
+      <S ID="S-45037">Roland Kuhn, Boxing Chen, George Foster and Evan</S>
+    </P>
+    <P>
+      <S ID="S-45038">Stratford.</S>
+      <S ID="S-45039">2010.</S>
+      <S ID="S-45040">Phrase Clustering for Smoothing TM Probabilities - or, How to Extract Paraphrases from Phrase Tables.</S>
+      <S ID="S-45041">In Proceedings of the 23rd International Conference on Computational Linguistics (Coling 2010), Beijing, China, pages 608&#8211;616.</S>
+    </P>
+    <P>
+      <S ID="S-45042">Xiaoyi Ma.</S>
+      <S ID="S-45043">2006.</S>
+      <S ID="S-45044">Champollion: A Robust Parallel Text</S>
+    </P>
+    <P>
+      <S ID="S-45045">Sentence Aligner.</S>
+      <S ID="S-45046">LREC 2006: Fifth International Conference on Language Resources and Evaluation, Genova, Italy, pages 489&#8211;492.</S>
+      <S ID="S-45047">Nitin Madnani, Necip Fazil Ayan, Philip Resnik and Bonnie J. Dorr.</S>
+      <S ID="S-45048">2007.</S>
+      <S ID="S-45049">Using Paraphrases for Parameter Tuning in Statistical Machine Translation.</S>
+      <S ID="S-45050">In Proceed- 39</S>
+    </P>
+    <P>
+      <S ID="S-45051">ings of the Second Workshop on Statistical Machine</S>
+    </P>
+    <P>
+      <S ID="S-45052">Translation, Prague, Czech Republic, pages 120&#8211;127.</S>
+      <S ID="S-45053">Lidia Mangu, Eric Brill and Andreas Stolcke.</S>
+      <S ID="S-45054">2000.</S>
+    </P>
+    <P>
+      <S ID="S-45055">Finding Consensus in Speech Recognition: Word Error Minimization and Other Applications of Confusion Networks.</S>
+      <S ID="S-45056">In Computer Speech and Language 14 (4), pages 373&#8211;400.</S>
+      <S ID="S-45057">Yuval Marton, Chris Callison-Burch and Philip Resnik.</S>
+    </P>
+    <P>
+      <S ID="S-45058">2009.</S>
+      <S ID="S-45059">Improved Statistical Machine Translation Using Monolingually-Derived Paraphrases.</S>
+      <S ID="S-45060">In Proceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP), Singapore, pages 381&#8211;390.</S>
+      <S ID="S-45061">Aur&#233;lien Max.</S>
+      <S ID="S-45062">2010.</S>
+      <S ID="S-45063">Example-Based Paraphrasing</S>
+    </P>
+    <P>
+      <S ID="S-45064">for Improved Phrase-Based Statistical Machine Translation.</S>
+      <S ID="S-45065">In Proceedings of the 2010 Conference on Empirical Methods in Natural Language Processing, Cambridge, MA, pages 656&#8211;666.</S>
+      <S ID="S-45066">Preslav Nakov.</S>
+      <S ID="S-45067">2008a.</S>
+      <S ID="S-45068">Improved Statistical Machine Translation Using Monolingual Paraphrases In Proceedings of the European Conference on Artificial Intelligence (ECAI), Patras, Greece, pages 338&#8211;342.</S>
+      <S ID="S-45069">Preslav Nakov.</S>
+      <S ID="S-45070">2008b.</S>
+      <S ID="S-45071">Improving English-Spanish statistical machine translation: experiments in domain adaptation, sentence paraphrasing, tokenization, and recasing.</S>
+      <S ID="S-45072">In Proceedings of ACL-08:HLT.</S>
+      <S ID="S-45073">Third Workshop on Statistical Machine Translation, Columbus, Ohio, USA, pages 147&#8211;150.</S>
+      <S ID="S-45074">Franz Josef Och.</S>
+      <S ID="S-45075">2003.</S>
+      <S ID="S-45076">Minimum Error Rate Training in</S>
+    </P>
+    <P>
+      <S ID="S-45077">Statistical Machine Translation.</S>
+      <S ID="S-45078">In Proceedings of the 41st Annual Meeting of the Association for Computational Linguistics (ACL), pages 160&#8211;167.</S>
+      <S ID="S-45079">Franz Josef Och and Hermann Ney.</S>
+      <S ID="S-45080">2002.</S>
+      <S ID="S-45081">Discriminative training and maximum entropy models for statistical machine translation.</S>
+      <S ID="S-45082">In Proceedings of the 40th Annual Meeting of the Association for Computational Linguistics (ACL), Philadelphia, PA, pages 295&#8211;302.</S>
+      <S ID="S-45083">Franz Och and Hermann Ney.</S>
+      <S ID="S-45084">2003.</S>
+      <S ID="S-45085">A systematic comparison of various statistical alignment models.</S>
+      <S ID="S-45086">Computational Linguistics, 29(1), pages 19&#8211;51.</S>
+      <S ID="S-45087">Takashi Onishi, Masao Utiyama and Eiichiro, Sumita.</S>
+    </P>
+    <P>
+      <S ID="S-45088">2010.</S>
+      <S ID="S-45089">Paraphrase Lattice for Statistical Machine Translation.</S>
+      <S ID="S-45090">In Proceedings of the ACL 2010 Conference Short Papers, Uppsala, Sweden, pages 1&#8211;5.</S>
+      <S ID="S-45091">Kishore Papineni, Salim Roukos, Todd Ward, and Wei- Jing Zhu.</S>
+      <S ID="S-45092">2002.</S>
+      <S ID="S-45093">BLEU: A Method For Automatic Evaluation of Machine Translation.</S>
+      <S ID="S-45094">ACL-2002: 40th Annual meeting of the Association for Computational Linguistics, pp.311-318, Philadelphia, PA.</S>
+      <S ID="S-45095">Josh Schroeder, Trevor Cohn and Philipp Koehn.</S>
+      <S ID="S-45096">2009.</S>
+    </P>
+    <P>
+      <S ID="S-45097">Word Lattices for Multi-Source Translation.</S>
+      <S ID="S-45098">In Proceedings of the 12th Conference of the European Chapter of the ACL (EACL 2009), Athens, Greece, pages 719&#8211;727.</S>
+    </P>
+    <P>
+      <S ID="S-45099">Matthew Snover, Bonnie Dorr, Richard Schwartz, Linnea Micciulla and John Makhoul.</S>
+      <S ID="S-45100">2006.</S>
+      <S ID="S-45101">A study of translation edit rate with targeted human annotation.</S>
+      <S ID="S-45102">In Proceedings of the 7th Conference of the Association for Machine Translation in the Americas, Cambridge, pages 223&#8211;231.</S>
+      <S ID="S-45103">Matthew Snover, Nitin Madnani, Bonnie J.Dorr and</S>
+    </P>
+    <P>
+      <S ID="S-45104">Richard Schwartz.</S>
+      <S ID="S-45105">2009.</S>
+      <S ID="S-45106">Fluency, adequacy, or HTER?</S>
+      <S ID="S-45107">Exploring different human judgments with a tunable MT metric.</S>
+      <S ID="S-45108">In Proceedings of the Fourth Workshop on Statistical Machine Translation, Athens, Greece, pages 259&#8211;268.</S>
+      <S ID="S-45109">Andreas Stolcke.</S>
+      <S ID="S-45110">2002.</S>
+      <S ID="S-45111">SRILM - an extensible language</S>
+    </P>
+    <P>
+      <S ID="S-45112">modeling toolkit.</S>
+      <S ID="S-45113">In Proceedings of the International Conference on Spoken Language Processing (ICSLP), Denver, Colorado, pages 901&#8211;904.</S>
+      <S ID="S-45114">Ying Zhang and Stephan Vogel.</S>
+      <S ID="S-45115">2004.</S>
+      <S ID="S-45116">Measuring confidence intervals for the machine translation evaluation metrics.</S>
+      <S ID="S-45117">In Proceedings of the 10th International Conference on Theoretical and Methodological Issues in Machine Translation (TMI).</S>
+      <S ID="S-45118">pages 85&#8211;94.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Colin Bannard</RAUTHOR>
+      <REFTITLE>Paraphrasing with bilingual parallel corpora.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Nicola Bertoldi</RAUTHOR>
+      <REFTITLE>Efficient Speech Translation Through Confusion Network Decoding.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Francis Bond</RAUTHOR>
+      <REFTITLE>Improving Statistical Machine Translation by Paraphrasing the Training Data.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Chris Callison-Burch</RAUTHOR>
+      <REFTITLE>Improved Statistical Machine Translation Using Paraphrases.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Jinhua Du</RAUTHOR>
+      <REFTITLE>Facilitating Translation Using Source Language Paraphrase Lattices.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Dilek Hakkani-T&#252;r</RAUTHOR>
+      <REFTITLE>Beyond ASR 1-best: Using word confusion networks in spoken language understanding.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>R Zens Moran</RAUTHOR>
+      <REFTITLE>Moses: Open Source Toolkit for Statistical Machine Translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Roland Kuhn</RAUTHOR>
+      <REFTITLE>Phrase Clustering for Smoothing TM Probabilities - or, How to Extract Paraphrases from Phrase Tables.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Xiaoyi Ma</RAUTHOR>
+      <REFTITLE>Champollion: A Robust Parallel Text Sentence Aligner. LREC</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Nitin Madnani</RAUTHOR>
+      <REFTITLE>Using Paraphrases for Parameter Tuning in Statistical Machine Translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Lidia Mangu</RAUTHOR>
+      <REFTITLE>Eric Brill and Andreas Stolcke.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Yuval Marton</RAUTHOR>
+      <REFTITLE>Improved Statistical Machine Translation Using Monolingually-Derived Paraphrases.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Aur&#233;lien Max</RAUTHOR>
+      <REFTITLE>Example-Based Paraphrasing for Improved Phrase-Based Statistical Machine Translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Preslav Nakov</RAUTHOR>
+      <REFTITLE>Improved Statistical Machine Translation Using Monolingual Paraphrases</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Preslav Nakov</RAUTHOR>
+      <REFTITLE>Improving English-Spanish statistical machine translation: experiments in domain adaptation, sentence paraphrasing, tokenization, and recasing.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum Error Rate Training in Statistical Machine Translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Discriminative training and maximum entropy models for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Franz Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Takashi Onishi</RAUTHOR>
+      <REFTITLE>Paraphrase Lattice for Statistical Machine Translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: A Method For Automatic Evaluation</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Josh Schroeder</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Bonnie Dorr Snover</RAUTHOR>
+      <REFTITLE>Word Lattices for Multi-Source Translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Matthew Snover</RAUTHOR>
+      <REFTITLE>Fluency, adequacy, or HTER? Exploring different human judgments with a tunable MT metric.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>SRILM - an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

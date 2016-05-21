@@ -1,0 +1,295 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>The University of Maryland Statistical Machine Translation System for the Fifth Workshop on Machine Translation</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-42906">This paper describes the system we developed to improve German-English translation of News text for the shared task of the Fifth Workshop on Statistical Machine Translation.</A-S>
+    <A-S ID="S-42907">Working within cdec, an open source modular framework for machine translation, we explore the benefits of several modifications to our hierarchical phrase-based model, including segmentation lattices, minimum Bayes Risk decoding, grammar extraction methods, and varying language models.</A-S>
+    <A-S ID="S-42908">Furthermore, we analyze decoder speed and memory performance across our set of models and show there is an important trade-off that needs to be made.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-42909">For the shared translation task of the Fifth Workshop on Machine Translation (WMT10), we participated in German to English translation under the constraint setting.</S>
+        <S ID="S-42910">We were especially interested in translating from German due to set of challenges it poses for translation.</S>
+        <S ID="S-42911">Namely, German possesses a rich inflectional morphology, productive compounding, and significant word reordering with respect to English.</S>
+        <S ID="S-42912">Therefore, we directed our system design and experimentation toward addressing these complications and minimizing their negative impact on translation quality.</S>
+        <S ID="S-42913">The rest of this paper is structured as follows.</S>
+        <S ID="S-42914">After a brief description of the baseline system in Section 2, we detail the steps taken to improve upon it in Section 3, followed by experimental results and analysis of decoder performance metrics.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Baseline system</HEADER>
+      <P>
+        <S ID="S-42939">As our baseline system, we employ a hierarchical phrase-based translation model, which is formally based on the notion of a synchronous context-free grammar (SCFG) (<REF ID="R-02" RPTR="2">Chiang, 2007</REF>).</S>
+        <S ID="S-42940">These grammars contain pairs of CFG rules with aligned nonterminals, and by introducing these nonterminals into the grammar, such a system is able to utilize both word and phrase level reordering to capture the hierarchical structure of language.</S>
+        <S ID="S-42941">SCFG translation models have been shown to be well suited for German-English translation, as they are able to both exploit lexical information for and efficiently compute all possible reorderings using a CKY-based decoder (<REF ID="R-03" RPTR="4">Dyer et al., 2009</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-42942">Our system is implemented within cdec, an efficient and modular open source framework for aligning, training, and decoding with a number of different translation models, including SCFGs (<REF ID="R-04" RPTR="6">Dyer et al., 2010</REF>).</S>
+        <S ID="S-42943">1 cdec&#8217;s modular framework facilitates seamless integration of a translation model with different language models, pruning strategies and inference algorithms.</S>
+        <S ID="S-42944">As input, cdec expects a string, lattice, or context-free forest, and uses it to generate a hypergraph representation, which represents the full translation forest without any pruning.</S>
+        <S ID="S-42945">The forest can now be rescored, by intersecting it with a language model for instance, to obtain output translations.</S>
+        <S ID="S-42946">The above capabilities of cdec allow us to perform the experiments described below, which would otherwise be quite cumbersome to carry out in another system.</S>
+      </P>
+      <P>
+        <S ID="S-42947">The set of features used in our model were the rule translation relative frequency P (e|f), a target n-gram language model P (e), a &#8216;pass-through&#8217; penalty when passing a source language word to the target side without translating it, lexical translation probabilities P lex (e|f) and P lex (f|e),</S>
+      </P>
+      <P>
+        <S ID="S-42948">1 http://cdec-decoder.org</S>
+      </P>
+      <P>
+        <S ID="S-42949">a count of the number of times that arity-0,1, or 2 SCFG rules were used, a count of the total number of rules used, a source word penalty, a target word penalty, the segmentation model cost, and a count of the number of times the glue rule is used.</S>
+        <S ID="S-42950">The number of non-terminals allowed in a synchronous grammar rule was restricted to two, and the non-terminal span limit was 12 for non-glue grammars.</S>
+        <S ID="S-42951">The hierarchical phrase-base translation grammar was extracted using a suffix array rule extractor (<REF ID="R-09" RPTR="12">Lopez, 2007</REF>).</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Data preparation</HEADER>
+        <P>
+          <S ID="S-42915">In order to extract the translation grammar necessary for our model, we used the provided Europarl and News Commentary parallel training data.</S>
+          <S ID="S-42916">The lowercased and tokenized training data was then filtered for length and aligned using the GIZA++ implementation of IBM Model 4 (<REF ID="R-10" RPTR="14">Och and Ney, 2003</REF>) to obtain one-to-many alignments in both directions and symmetrized by combining both into a single alignment using the grow-diagfinal-and method (<REF ID="R-05" RPTR="9">Koehn et al., 2003</REF>).</S>
+          <S ID="S-42917">We constructed a 5-gram language model using the SRI language modeling toolkit (<REF ID="R-14" RPTR="18">Stolcke, 2002</REF>) from the provided English monolingual training data and the non-Europarl portions of the parallel data with modified Kneser-Ney smoothing (<REF ID="R-01" RPTR="1">Chen and Goodman, 1996</REF>).</S>
+          <S ID="S-42918">Since the beginnings and ends of sentences often display unique characteristics that are not easily captured within the context of the model, and have previously been demonstrated to significantly improve performance (<REF ID="R-03" RPTR="5">Dyer et al., 2009</REF>), we explicitly annotate beginning and end of sentence markers as part of our translation process.</S>
+          <S ID="S-42919">We used the 2525 sentences in newstest2009 as our dev set on which we tuned the feature weights, and report results on the 2489 sentences of the news-test2010 test set.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Viterbi envelope semiring training</HEADER>
+        <P>
+          <S ID="S-42920">To optimize the feature weights for our model, we use Viterbi envelope semiring training (VEST), which is an implementation of the minimum error rate training (MERT) algorithm (<REF ID="R-04" RPTR="7">Dyer et al., 2010</REF>; <REF ID="R-11" RPTR="15">Och, 2003</REF>) for training with an arbitrary loss function.</S>
+          <S ID="S-42921">VEST reinterprets MERT within a semiring framework, which is a useful mathematical abstraction for defining two general operations, addition (&#8853;) and multiplication (&#8855;) over a set of values.</S>
+          <S ID="S-42922">Formally, a semiring is a 5-tuple (K, &#8853;, &#8855;, 0, 1), where addition must be communicative and associative, multiplication must be associative and must distribute over addition, and an identity element exists for both.</S>
+          <S ID="S-42923">For VEST, having K be the set of line segments, &#8853; be the union of them, and &#8855; be Minkowski addition of the lines represented as points in the dual plane, allows us to compute the necessary MERT line search with the INSIDE algorithm.</S>
+          <S ID="S-42924">2 The error function we use is BLEU (<REF ID="R-12" RPTR="16">Papineni et al., 2002</REF>), and the decoder is configured to use cube pruning (Huang and <REF ID="R-02" RPTR="3">Chiang, 2007</REF>) with a limit of 100 candidates at each node.</S>
+          <S ID="S-42925">During decoding of the test set, we raise the cube pruning limit to 1000 candidates at each node.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Compound segmentation lattices</HEADER>
+        <P>
+          <S ID="S-42926">To deal with the aforementioned problem in German of productive compounding, where words are formed by the concatenation of several morphemes and the orthography does not delineate the morpheme boundaries, we utilize word segmentation lattices.</S>
+          <S ID="S-42927">These lattices serve to encode alternative ways of segmenting compound words, and as such, when presented as the input to the system allow the decoder to automatically choose which segmentation is best for translation, leading to markedly improved results (<REF ID="R-16" RPTR="20">Dyer, 2009</REF>).</S>
+          <S ID="S-42928">In order to construct diverse and accurate segmentation lattices, we built a maximum entropy model of compound word splitting which makes use of a small number of dense features, such as frequency of hypothesized morphemes as separate units in a monolingual corpus, number of predicted morphemes, and number of letters in a predicted morpheme.</S>
+          <S ID="S-42929">The feature weights are tuned to maximize conditional log-likelihood using a small amount of manually created reference lattices which encode linguistically plausible segmentations for a selected set of compound words.</S>
+          <S ID="S-42930">3</S>
+        </P>
+        <P>
+          <S ID="S-42931">To create lattices for the dev and test sets, a lattice consisting of all possible segmentations for every word consisting of more than 6 letters was created, and the paths were weighted by the posterior probability assigned by the segmentation model.</S>
+          <S ID="S-42932">Then, max-marginals were computed using the forward-backward algorithm and used to prune out paths that were greater than a factor of 2.3 from the best path, as recommended by Dyer</S>
+        </P>
+        <P>
+          <S ID="S-42933">2 This algorithm is equivalent to the hypergraph MERT algorithm described by <REF ID="R-08" RPTR="11">Kumar et al. (2009)</REF>.</S>
+          <S ID="S-42934">3 The reference segmentation lattices used for training are</S>
+        </P>
+        <P>
+          <S ID="S-42935">available in the cdec distribution.</S>
+        </P>
+        <P>
+          <S ID="S-42936">(2009).</S>
+          <S ID="S-42937">4 To create the translation model for lattice input, we segmented the training data using the 1-best segmentation predicted by the segmentation model, and word aligned this with the English side.</S>
+          <S ID="S-42938">This version of the parallel corpus was concatenated with the original training parallel corpus.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Experimental variation</HEADER>
+      <P>
+        <S ID="S-42994">This section describes the experiments we performed in attempting to assess the challenges posed by current methods and our exploration of new ones.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Bloom filter language model</HEADER>
+        <P>
+          <S ID="S-42952">Language models play a crucial role in translation performance, both in terms of quality, and in terms of practical aspects such as decoder memory usage and speed.</S>
+          <S ID="S-42953">Unfortunately, these two concerns tend to trade-off one another, as increasing to a higher-order more complex language model improves performance, but comes at the cost of increased size and difficulty in deployment.</S>
+          <S ID="S-42954">Ideally, the language model will be loaded into memory locally by the decoder, but given memory constraints, it is entirely possible that the only option is to resort to a remote language model server that needs to be queried, thus introducing significant decoding speed delays.</S>
+          <S ID="S-42955">One possible alternative is a randomized language model (RandLM) (<REF ID="R-15" RPTR="19">Talbot and Osborne, 2007</REF>).</S>
+          <S ID="S-42956">Using Bloom filters, which are a randomized data structure for set representation, we can construct language models which significantly decrease space requirements, thus becoming amenable to being stored locally in memory, while only introducing a quantifiable number of false positives.</S>
+          <S ID="S-42957">In order to assess what the impact on translation quality would be, we trained a system identical to the one described above, except using a RandLM.</S>
+          <S ID="S-42958">Conveniently, it is possible to construct a RandLM directly from an existing SRILM, which is the route we followed in using the SRILM described in Section 2.1 to create our RandLM.</S>
+          <S ID="S-42959">5 Table 1 shows the comparison of SRILM and RandLM with respect to performance on BLEU and TER (<REF ID="R-13" RPTR="17">Snover et al., 2006</REF>) on the test set.</S>
+        </P>
+        <P>
+          <S ID="S-42960">4 While normally the forward-backward algorithm computes sum-marginals, by changing the addition operator to max, we can obtain max-marginals.</S>
+          <S ID="S-42961">5 Default settings were used for constructing the RandLM.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Minimum Bayes risk decoding</HEADER>
+        <P>
+          <S ID="S-42962">During minimum error rate training, the decoder employs a maximum derivation decision rule.</S>
+          <S ID="S-42963">However, upon exploration of alternative strategies, we have found benefits to using a minimum risk decision rule (<REF ID="R-06" RPTR="10">Kumar and Byrne, 2004</REF>), wherein we want the translation E of the input F that has the least expected loss, again as measured by some loss function L:</S>
+        </P>
+        <P>
+          <S ID="S-42964">&#202; = arg min E P (E|F ) [L(E, E &#8242; )]</S>
+        </P>
+        <P>
+          <S ID="S-42965">E &#8242; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-42966">= arg min P (E|F )L(E, E &#8242; )</S>
+        </P>
+        <P>
+          <S ID="S-42967">E &#8242; E</S>
+        </P>
+        <P>
+          <S ID="S-42968">Using our system, we generate a unique 500- best list of translations to approximate the posterior distribution P (E|F ) and the set of possible translations.</S>
+          <S ID="S-42969">Assuming H(E, F ) is the weight of the decoder&#8217;s current path, this can be written as:</S>
+        </P>
+        <P>
+          <S ID="S-42970">P (E|F ) &#8733; exp &#945;H(E, F )</S>
+        </P>
+        <P>
+          <S ID="S-42971">where &#945; is a free parameter which depends on the models feature functions and weights as well as pruning method employed, and thus needs to be separately empirically optimized on a held out development set.</S>
+          <S ID="S-42972">For this submission, we used &#945; = 0.5 and BLEU as the loss function.</S>
+          <S ID="S-42973">Table 2 shows the results on the test set for MBR decoding.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Grammar extraction</HEADER>
+        <P>
+          <S ID="S-42974">Although the grammars employed in a SCFG model allow increased expressivity and translation quality, they do so at the cost of having a large</S>
+        </P>
+        <P>
+          <S ID="S-42975">Language Model Grammar Decoder Memory (GB) Decoder time (Sec/Sentence)</S>
+        </P>
+        <P>
+          <S ID="S-42976">number of rules, thus efficiently storing and accessing grammar rules can become a major problem.</S>
+          <S ID="S-42977">Since a grammar consists of the set of rules extracted from a parallel corpus containing tens of millions of words, the resulting number of rules can be in the millions.</S>
+          <S ID="S-42978">Besides storing the whole grammar locally in memory, other approaches have been developed, such as suffix arrays, which lookup and extract rules on the fly from the phrase table (<REF ID="R-09" RPTR="13">Lopez, 2007</REF>).</S>
+          <S ID="S-42979">Thus, the memory requirements for decoding have either been for the grammar, when extracted beforehand, or the corpus, for suffix arrays.</S>
+          <S ID="S-42980">In cdec, however, loading grammars for single sentences from a disk is very fast relative to decoding time, thus we explore the additional possibility of having sentence-specific grammars extracted and loaded on an as-needed basis by the decoder.</S>
+          <S ID="S-42981">This strategy is shown to massively reduce the memory footprint of the decoder, while having no observable impact on decoding speed, introducing the possibility of more computational resources for translation.</S>
+          <S ID="S-42982">Thus, in addition to the large corpus grammar extracted in Section 2.1, we extract sentence-specific grammars for each of the test sentences.</S>
+          <S ID="S-42983">We measure the performance across using both grammar extraction mechanisms and the three different language model configurations: local SRILM, remote SRILM, and RandLM.</S>
+        </P>
+        <P>
+          <S ID="S-42984">As Table 3 shows, there is a marked tradeoff between memory usage and decoding speed.</S>
+          <S ID="S-42985">Using a local SRILM regardless of grammar increases decoding speed by a factor of 3 compared to the remote SRILM, and approximately a factor of 2 against the RandLM.</S>
+          <S ID="S-42986">However, this speed comes at the cost of its memory footprint.</S>
+          <S ID="S-42987">With a corpus grammar, the memory footprint of the local SRILM is twice as large as the RandLM, and almost 4 times as large as the remote SRILM.</S>
+          <S ID="S-42988">Using sentence-specific grammars, the difference becomes increasingly glaring, as the remote SRILM memory footprint drops to &#8776;450MB, a factor of nearly 24 compared to the local SRILM and a factor of 10 compared to the process size with the RandLM.</S>
+          <S ID="S-42989">Thus, using the remote SRILM reduces the memory footprint substantially but at the cost of significantly slower decoding speed, and conversely, using the local SRILM produces increased decoder speed but introduces a substantial memory overhead.</S>
+          <S ID="S-42990">The RandLM provides a median between the two extremes: reduced memory and (relatively) fast decoding at the price of somewhat decreased translation quality.</S>
+          <S ID="S-42991">Since we are using a relatively large beam of 1000 candidates for decoding, the time presented in Table 3 does not represent an accurate basis for comparison of cdec to other decoders, which should be done using the results presented in <REF ID="R-04" RPTR="8">Dyer et al. (2010)</REF>.</S>
+        </P>
+        <P>
+          <S ID="S-42992">We also tried one other grammar extraction configuration, which was with so-called &#8216;loose&#8217; phrase extraction heuristics, which permit unaligned words at the edges of phrases (<REF ID="R-00" RPTR="0">Ayan and Dorr, 2006</REF>).</S>
+          <S ID="S-42993">When decoded using the SRILM and MBR, this achieved the best performance for our system, with a BLEU score of 23.6 and TER of 67.7.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Conclusion</HEADER>
+      <P>
+        <S ID="S-42995">We presented the University of Maryland hierarchical phrase-based system for the WMT2010 shared translation task.</S>
+        <S ID="S-42996">Using cdec, we experimented with a number of methods that are shown above to lead to improved German-to-English translation quality over our baseline according to</S>
+      </P>
+      <P>
+        <S ID="S-42997">BLEU and TER evaluation.</S>
+        <S ID="S-42998">These include methods</S>
+      </P>
+      <P>
+        <S ID="S-42999">to directly address German morphological complexity, such as appropriate feature functions, segmentation lattices, and a model for automatically constructing the lattices, as well as alternative decoding strategies, such as MBR.</S>
+        <S ID="S-43000">We also presented</S>
+      </P>
+      <P>
+        <S ID="S-43001">several language model configuration alternatives, as well as grammar extraction methods, and emphasized the trade-off that must be made between decoding time, memory overhead, and translation quality in current statistical machine translation systems.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-43002">The authors gratefully acknowledge partial support from the GALE program of the Defense Advanced Research Projects Agency, Contract No.</S>
+      <S ID="S-43003">HR0011-06-2-001 and NSF award IIS0838801.</S>
+      <S ID="S-43004">Any opinions, findings, conclusions or recommendations expressed in this paper are those of the authors and do not necessarily reflect the view of the sponsors.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Necip Fazil Ayan</RAUTHOR>
+      <REFTITLE>Going beyond AER: An extensive analysis of word alignments and their impact on MT.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Stanley F Chen</RAUTHOR>
+      <REFTITLE>An empirical study of smoothing techniques for language modeling.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Chris Dyer</RAUTHOR>
+      <REFTITLE>The University of Maryland statistical machine translation system for the Fourth Workshop on Machine Translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Chris Dyer</RAUTHOR>
+      <REFTITLE>cdec: A decoder, alignment, and learning framework for finite-state and context-free translation models.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Shankar Kumar</RAUTHOR>
+      <REFTITLE>Minimum bayes-risk decoding for statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Shankar Kumar</RAUTHOR>
+      <REFTITLE>Efficient minimum error rate training and minimum bayes-risk decoding for translation hypergraphs and lattices.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Adam Lopez</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation with suffix arrays.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Franz Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Matthew Snover</RAUTHOR>
+      <REFTITLE>A study of translation edit rate with targeted human annotation. In</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>SRILM - an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>David Talbot</RAUTHOR>
+      <REFTITLE>Randomised language modelling for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Chris Dyer</RAUTHOR>
+      <REFTITLE>Using a maximum entropy model to build segmentation lattices for mt.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

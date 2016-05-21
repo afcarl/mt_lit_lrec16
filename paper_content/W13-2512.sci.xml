@@ -1,0 +1,539 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Using a Random Forest Classifier to recognise translations of biomedical terms across languages</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-55560">We present a novel method to recognise semantic equivalents of biomedical terms in language pairs.</A-S>
+    <A-S ID="S-55561">We hypothesise that biomedical term are formed by semantically similar textual units across languages.</A-S>
+    <A-S ID="S-55562">Based on this hypothesis, we employ a Random Forest (RF) classifier that is able to automatically mine higher order associations between textual units of the source and target language when trained on a corpus of both positive and negative examples.</A-S>
+    <A-S ID="S-55563">We apply our method on two language pairs: one that uses the same character set and another with a different script, English-French and English- Chinese, respectively.</A-S>
+    <A-S ID="S-55564">We show that English-French pairs of terms are highly transliterated in contrast to the English- Chinese pairs.</A-S>
+    <A-S ID="S-55565">Nonetheless, our method performs robustly on both cases.</A-S>
+    <A-S ID="S-55566">We evaluate RF against a state-of-the-art alignment method, GIZA++, and we report a statistically significant improvement.</A-S>
+    <A-S ID="S-55567">Finally, we compare RF against Support Vector Machines and analyse our results.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-55568">Given a term in a source language and term in a target language the task of this paper is to classify this pair as a translation or not.</S>
+        <S ID="S-55569">We investigate the performance of the proposed classifier by applying it on a balanced classification problem, i.e. our experimental datasets contain an equal number of positive and negative examples.</S>
+        <S ID="S-55570">The proposed classification model can be used as a component of a larger system that automatically compiles bilingual dictionaries of technical terms across languages.</S>
+        <S ID="S-55571">Bilingual dictionaries of terms are important resources for many Natural Language Processing (NLP) applications including Statistical Machine Translation (SMT) (<REF ID="R-08" RPTR="9">Feng et al., 2004</REF>; <REF ID="R-14" RPTR="18">Huang and Vogel, 2002</REF>; <REF ID="R-29" RPTR="34">Wu et al., 2008</REF>), Cross- Language Information Retrieval (<REF ID="R-01" RPTR="1">Ballesteros and Croft, 1997</REF>) and Question Answering systems (<REF ID="R-00" RPTR="0">Al-Onaizan and Knight, 2002</REF>).</S>
+        <S ID="S-55572">Especially in the biomedical domain, manually creating and more importantly updating such resources is an expensive process, due to the vast amount of neologisms, i.e. newly introduced terms (<REF ID="R-31" RPTR="38">Pustejovsky et al., 2001</REF>).</S>
+        <S ID="S-55573">The UMLS metathesaurus which is one the most popular hub of multilingual resources in the biomedical domain, contains technical terms in 21 languages that are linked together using a concept identifier.</S>
+        <S ID="S-55574">In Spanish, the second most popular language in UMLS, only 16.44% of the 7.6M English terms are covered while other languages fluctuate between 0.0052% (for Hebrew terms) to 3.26% (for Japanese terms).</S>
+        <S ID="S-55575">Hence, these lexica are far for complete and methods that semiautomatically (i.e., in a post-processing step, curators can manually remove erroneous dictionary entries) discover pairs of terms across languages are needed to enrich such multilingual resources.</S>
+        <S ID="S-55576">Our method can be applied to parallel, aligned corpora, where we expect approximately the same, balanced classification problem.</S>
+        <S ID="S-55577">However, in comparable corpora the search space of candidate alignments is of vast size, i.e., quadratic the the size of the input data.</S>
+        <S ID="S-55578">To cope with this heavily unbalanced classification problem, we would need to narrow down the number of negative instances before classification.</S>
+      </P>
+      <P>
+        <S ID="S-55579">We hypothesise that there are language independent rules that apply to biomedical terms across many languages.</S>
+        <S ID="S-55580">Often the same or similar textual units (e.g., morphemes and suffixes) are concatenated to realise the same terms in different languages.</S>
+        <S ID="S-55581">For example, Table 1 illustrates how a morpheme expressing pain (ache in English) is used to realise the same terms in English, Chinese and French.</S>
+        <S ID="S-55582">The realisations of the term &#8220;head-</S>
+      </P>
+      <P>
+        <S ID="S-55583">English Morpheme: -ache Chinese Morpheme: &#30171; French Morpheme: -mal</S>
+      </P>
+      <P>
+        <S ID="S-55584">ache&#8221; is expected to consist of the units for &#8220;head&#8221; and &#8220;ache&#8221; regardless of the language of realisation.</S>
+        <S ID="S-55585">Hence, knowing the translations of &#8220;head&#8221; and &#8220;ache&#8221; allows the reconstruction &#8220;headache&#8221; in a target language.</S>
+        <S ID="S-55586">In our method, we use a Random Forest (RF) classifier (<REF ID="R-02" RPTR="2">Breiman, 2001</REF>) to learn the underlying rules according to which terms are being constructed across languages.</S>
+        <S ID="S-55587">An RF is an ensemble of Decision Trees voting for the most popular class.</S>
+        <S ID="S-55588">RF classifiers are popular in the biomedical domain for various tasks: classification of microarray data (D&#237;az-Uriarte and De Andres, 2006), compound classification in cheminformatics (<REF ID="R-36" RPTR="43">Svetnik et al., 2003</REF>), classification of microRNA data (<REF ID="R-15" RPTR="19">Jiang et al., 2007</REF>) and protein-protein interactions in Systems Biology (<REF ID="R-05" RPTR="7">Chen and Liu, 2005</REF>).</S>
+        <S ID="S-55589">In NLP, RF classifiers have been used for: Language Modelling (<REF ID="R-30" RPTR="37">Xu and Jelinek, 2004</REF>) and semantic parsing (<REF ID="R-24" RPTR="30">Nielsen and Pradhan, 2004</REF>).</S>
+        <S ID="S-55590">To the best of the authors&#8217; knowledge, this is the first attempt to employ RF for identifying translation equivalents of biomedical terms.</S>
+        <S ID="S-55591">We prefer RF over other traditional machine learning approaches such as Support Vector Machines (SVMs) for a number of reasons.</S>
+        <S ID="S-55592">Firstly, RF is able to automatically construct correlation paths from the feature space, i.e. decision rules that correspond to the translation rules that we intend to capture.</S>
+        <S ID="S-55593">Secondly, RF is considered one of the most accurate classifier available (D&#237;az-Uriarte and De Andres, 2006; <REF ID="R-15" RPTR="20">Jiang et al., 2007</REF>).</S>
+        <S ID="S-55594">Finally, RF is reported to cope well with datasets where the number of features is larger than the number of observations (D&#237;az-Uriarte and De Andres, 2006).</S>
+        <S ID="S-55595">In our dataset, the number of features is almost four times more than that of the observations.</S>
+        <S ID="S-55596">We represent pairs of terms using character gram features (i.e., first order features).</S>
+        <S ID="S-55597">Such shallow features have been proven effective in a number of NLP applications including: Named Entity Recognition (<REF ID="R-16" RPTR="21">Klein et al., 2003</REF>), Multilingual Named Entity Transliteration (<REF ID="R-17" RPTR="22">Klementiev and Roth, 2006</REF>; <REF ID="R-09" RPTR="12">Freitag and Khadivi, 2007</REF>) and predicting authorship (<REF ID="R-35" RPTR="42">Stamatatos, 2006</REF>).</S>
+        <S ID="S-55598">In addition, by selecting character n-grams instead of word n-grams, one avoids to segment words in Chinese which has been proven to be a challenging topic (<REF ID="R-34" RPTR="41">Sproat and Emerson, 2003</REF>).</S>
+        <S ID="S-55599">We evaluate our proposed method on two datasets of biomedical terms (English-French and English-Chinese) that contain equal numbers of positive and negative instances.</S>
+        <S ID="S-55600">RF achieves higher classification performance than baseline methods.</S>
+        <S ID="S-55601">To boost SVM&#8217;s performance further, we used a second order feature space to represent the data.</S>
+        <S ID="S-55602">It consists of pairs of character grams that co-occur in translation pairs.</S>
+        <S ID="S-55603">In the second order feature space, the performance of SVMs improved significantly.</S>
+        <S ID="S-55604">The rest of the paper is structured as follows.</S>
+        <S ID="S-55605">In Section 2, we present previous approaches in identifying translation equivalents of terms or named entities.</S>
+        <S ID="S-55606">In Section 3, we define the classification problem, we formulate the RF classifier and we discuss the first and second order feature space that we use to represent pairs of terms.</S>
+        <S ID="S-55607">In Section 4, we show that RF achieves superior classification performance.</S>
+        <S ID="S-55608">In Section 5, we overview our method and we discuss how it can be used to compile large-scale bilingual dictionaries of terms from comparable corpora.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related Work</HEADER>
+      <P>
+        <S ID="S-55609">In this section, we review previous approaches that exploit the internal structure of sequences to align terms or named entities across languages.</S>
+        <S ID="S-55610">(<REF ID="R-17" RPTR="23">Klementiev and Roth, 2006</REF>; <REF ID="R-09" RPTR="13">Freitag and Khadivi, 2007</REF>) use character gram features, similar to the feature space that we propose in this paper, to train discriminative, supervised models.</S>
+        <S ID="S-55611">Klementiev and Roth (2006) introduce a supervised Perceptron model for English and Russian named entities.</S>
+        <S ID="S-55612">They construct a character gram feature space as follows: firstly, they extract all distinct character grams from both source and target named entity.</S>
+        <S ID="S-55613">Then, they pair character grams of the source named entity with character grams of the corresponding target named entity into features.</S>
+        <S ID="S-55614">In or-</S>
+      </P>
+      <P>
+        <S ID="S-55615">der to reduce the number of features, they link only those character grams whose position offsets in the source and target sequence differs by -1, 0 or 1.</S>
+        <S ID="S-55616">Freitag and Khadivi (2007) employ the same character gram feature space but they do not constraint the included character-grams to their relative position offsets in the source and target sequence.</S>
+        <S ID="S-55617">The boolean features are defined for every distinct character-grams observed in the data of length k or shorter.</S>
+        <S ID="S-55618">Using this feature space they train an Averaged Perceptron model, able to incorporate an arbitrary number of features in the input vectors, for English and Arabic named entities.</S>
+        <S ID="S-55619">The above character gram based methods mainly focused on aligning named entities of the general domain, i.e. person names, locations, organizations, etc., that are transliterated, i.e. present phonetic similarities, across languages.</S>
+        <S ID="S-55620">SMT-based approaches built on top of existing SMT frameworks to identify translation pairs of terms (Tsunakawa et al., 2008; <REF ID="R-29" RPTR="35">Wu et al., 2008</REF>).</S>
+        <S ID="S-55621">Tsunakawa et al. (2008), align terms between a source language L s and a target language L t using a pivot language L p .</S>
+        <S ID="S-55622">They assume that two bilingual dictionaries exist: from L s to L p and from L p to L t .</S>
+        <S ID="S-55623">Then, they train GIZA++ (<REF ID="R-25" RPTR="31">Och and Ney, 2003</REF>) on both directions and they merge the resulting phrase tables into one table between L s and L t , using grow-diag-final heuristics (<REF ID="R-19" RPTR="25">Koehn et al., 2007</REF>).</S>
+        <S ID="S-55624">Wu et al. (2008), use morphemes instead of words as translation units to train a phrase based SMT system for technical terms in English and Chinese.</S>
+        <S ID="S-55625">The use of shorter lexical fragments, e.g. lemmas, stems and suffixes, as translation units has reportedly reduced the Out-Of-Vocabulary problem (<REF ID="R-28" RPTR="33">Virpioja et al., 2007</REF>; <REF ID="R-27" RPTR="32">Popovic and Ney, 2004</REF>; Oflazer and El- Kahlout, 2007).</S>
+        <S ID="S-55626">Hybrid methods exploit that a term or a named entity can be translated in various ways across languages (<REF ID="R-33" RPTR="40">Shao and Ng, 2004</REF>; <REF ID="R-08" RPTR="10">Feng et al., 2004</REF>; <REF ID="R-23" RPTR="29">Lu and Zhao, 2006</REF>).</S>
+        <S ID="S-55627">For instance, person names are usually translated by transliteration (i.e., words exhibiting pronunciation similarities across languages, are likely to be mutual translations) while technical terms are likely to be translated by meaning (i.e., the same semantic units are used to generate the translation of the term in the target language).</S>
+        <S ID="S-55628">The resulting hybrid systems were reported to perform at least as well as existing SMT systems (<REF ID="R-08" RPTR="11">Feng et al., 2004</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-55629">Lepage and Denoual (2005) presented an analogical learning machine translation system as part of the IWSLT task (<REF ID="R-07" RPTR="8">Eck and Hori, 2005</REF>) that requires no training process and it is able to achieve state-of-the art performance.</S>
+        <S ID="S-55630">The core method of their system models relationships between sequences of characters, e.g., sentences, phrases or words, across languages using proportional analogies, i.e., [a : b = c : d], &#8220;a is to b as c is to d&#8221;, and is able to solve unknown analogical equations, i.e., [x : y = z :?</S>
+        <S ID="S-55631">] (<REF ID="R-22" RPTR="28">Lepage, 1998</REF>).</S>
+        <S ID="S-55632">Analogical learning has been proven effective in translating unseen words (<REF ID="R-20" RPTR="26">Langlais and Patry, 2007</REF>).</S>
+        <S ID="S-55633">Furthermore, analogical learning is reported to achieve a better precision but a lower recall than a phrasebased machine translation system when translating medical terms (<REF ID="R-21" RPTR="27">Langlais et al., 2009</REF>).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Methodology</HEADER>
+      <P>
+        <S ID="S-55649">Let e m = (e 1 , &#183; &#183; &#183; , e m ) be an English term consisting of m translation units and f n = (f 1 , &#183; &#183; &#183; , f n ) a French or Chinese term consisting of n units.</S>
+        <S ID="S-55650">As translation units, we consider character grams.</S>
+        <S ID="S-55651">We define a function f : (e m , f n ) &#8722;&#8594; {0, 1}: {</S>
+      </P>
+      <P>
+        <S ID="S-55652">f(e m , f n 1, if e ) = m translates into f n 0, otherwise</S>
+      </P>
+      <P>
+        <S ID="S-55653">The function can be learned by training a Random Forest (RF) classifier 1 .</S>
+        <S ID="S-55654">Let N be the number of training instances, |&#937;| the total number of features, i.e. the number of dimensions of the feature space, |&#964;| a predefined number of random decision trees and |&#966;| a predefined number of random features.</S>
+        <S ID="S-55655">An RF classifier is defined as a collection of fully grown decision tree classifiers, &#948; i (X) (<REF ID="R-02" RPTR="3">Breiman, 2001</REF>):</S>
+      </P>
+      <P>
+        <S ID="S-55656">RF = {&#948; 1 (X), &#183; &#183; &#183; , &#948; &#964; (X)}, X = (e m , ch n ) (1) A pair of terms is classified as a translation pair if the majority of the trees is voting for this class label.</S>
+        <S ID="S-55657">Let I(&#948; i (X)) be the vote of the i th tree in the forest and av j&#8712;{0,1} the average number of votes for class labels 0 (translation) and 1 (nontranslation).</S>
+        <S ID="S-55658">The function f of &#964; decision trees can be written as the majority function:</S>
+      </P>
+      <P>
+        <S ID="S-55659">f(e m , ch n ) = Maj (I(&#948; 1 (X)), &#183; &#183; &#183; , I(&#948; &#964; (X))) &#8970; &#8721; 1 &#964;</S>
+      </P>
+      <P>
+        <S ID="S-55660">= I(&#948; i(X)) + 1 /2(&#8722;1) r &#8971; (2) 2 &#964;</S>
+      </P>
+      <P>
+        <S ID="S-55661">1 The WEKA implementation (<REF ID="R-13" RPTR="17">Hall et al., 2009</REF>) of RF was</S>
+      </P>
+      <P>
+        <S ID="S-55662">used for all experiments of this paper.</S>
+      </P>
+      <P>
+        <S ID="S-55663">The majority function returns 1 if the majority of I(&#948; i (X)) is 1, or returns 0 if the majority of I(&#948; i (X)) is 0.</S>
+        <S ID="S-55664">Adding or subtracting 1 /2 controls whether a tie is resolved towards 1 or 0, respectively.</S>
+        <S ID="S-55665">In RF ties are resolved randomly.</S>
+        <S ID="S-55666">To represent this, the negative unit (&#8722;1) is raised to a randomly chosen positive integer r &#8712; N + .</S>
+      </P>
+      <P>
+        <S ID="S-55667">We tuned the RF classifier using 140 random trees and |&#966;| = log 2 |&#937;| + 1 features as suggested in Breiman (<REF ID="R-02" RPTR="4">Breiman, 2001</REF>).</S>
+        <S ID="S-55668">The RF mechanism that triggers term construction rules across languages lies in the decision trees.</S>
+        <S ID="S-55669">A RF grows a decision tree by selecting the most informative feature, i.e. corresponding to the lowest entropy, out of &#966; random features.</S>
+        <S ID="S-55670">For each selected feature, a node is created and this process is repeated for all &#966; random features of the unprunned decision trees.</S>
+        <S ID="S-55671">In other words, the process starts with the most informative feature and builds association rules between all random features.</S>
+        <S ID="S-55672">These are the construction rules that we are interested in.</S>
+        <S ID="S-55673">Figure 1 illustrates a path in one of the decision trees of an RF classifier taken from the experiments we conducted on the English-Chinese dataset.</S>
+        <S ID="S-55674">In only one of thousands of branches of the forest, the classifier is able to partially trigger the construction rule of kinase, a type of enzyme, between English and Chinese.</S>
+        <S ID="S-55675">The translation rule correctly associates the English n-grams kin and as with their Chinese translation &#28608; &#37238; .</S>
+        <S ID="S-55676">In addition, the translation rule contains both positive and negative associations between features.</S>
+        <S ID="S-55677">The English n-grams ing and or are negatively correlated with the term kinase.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Feature Engineering</HEADER>
+        <P>
+          <S ID="S-55634">Each pair of terms is represented as a feature vector of character n-grams.</S>
+          <S ID="S-55635">We further define two types of character n-gram features, namely first order and second order.</S>
+          <S ID="S-55636">First order character n- grams are boolean features that designate the occurrence of a corresponding character gram of predefined length in the input term.</S>
+          <S ID="S-55637">These features are monolingual, extracted separately from the source and target term.</S>
+          <S ID="S-55638">The RF classifier is shown to benefit from only monolingual features and achieves the best observed performance.</S>
+          <S ID="S-55639">In contrast, SVMs were shown not to perform well using the first order feature space because they cannot directly associate the source with the target character grams.</S>
+          <S ID="S-55640">To enhance the performance of SVMs, we constructed a second order feature space that contains associations between first order features.</S>
+          <S ID="S-55641">A second order feature is a tuple of a source and a target character gram that co-occur in one or more translation pairs.</S>
+          <S ID="S-55642">Table 2 illustrates an example.</S>
+          <S ID="S-55643">Second order character n-grams are multilingual features and are defined over true translation pairs.</S>
+          <S ID="S-55644">For this reason, we extract second order features from the training data only.</S>
+          <S ID="S-55645">In all experiments, the features were sorted in decreasing order of frequency of occurrence.</S>
+          <S ID="S-55646">We trained a RF and two SVM classifiers, namely linear-SVM and RBF-SVM, using a gradually increasing number of features, always starting from the top of the list.</S>
+          <S ID="S-55647">SMT frameworks cannot be trained on an increasing number of features because each training instance needs to correspond to at least one known translation unit (i.e., first order features).</S>
+          <S ID="S-55648">Therefore, GIZA++ is trained on the complete set of translation units.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments</HEADER>
+      <P>
+        <S ID="S-55772">In this section, we discuss the employed datasets of biomedical terms in English-French and English-Chinese and three baseline methods.</S>
+        <S ID="S-55773">We compare and discuss RF and SVMs trained on the first order and second order features.</S>
+        <S ID="S-55774">Finally, we report results of all classification methods evaluated on the same datasets.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Datasets</HEADER>
+        <P>
+          <S ID="S-55678">For our experiments, we used an online bilingual dictionary 2 for English-Chinese terms and the UMLS metathesaurus 3 for English-French terms.</S>
+          <S ID="S-55679">The former contains 31, 700 entries while the latter is a much larger dictionary containing 84, 000 entries.</S>
+          <S ID="S-55680">For training, we used the same number of instances for both language pairs (i.e., 21, 000 entries) in order not to bias the performance towards the larger English-French dataset.</S>
+          <S ID="S-55681">The remaining instances were used for testing (i.e., 10, 7000 and 63, 000 English-Chinese and English-French respectively).</S>
+          <S ID="S-55682">In the case where a source term corresponded to more that one target terms according to the seed dictionary, we randomly selected only one translation.</S>
+          <S ID="S-55683">Negative instances were created by randomly matching non-translation pairs of terms.</S>
+          <S ID="S-55684">Since we are dealing with a balanced clas-</S>
+        </P>
+        <P>
+          <S ID="S-55685">2 www2.chkd.cnki.net/kns50/ 3 nlm.nih.gov/research/umls</S>
+        </P>
+        <P>
+          <S ID="S-55686">sification problem, we created as many negative instances as the positive ones in all our datasets.</S>
+          <S ID="S-55687">In all experiments we performed a 3-fold crossvalidation.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Baselines</HEADER>
+        <P>
+          <S ID="S-55688">We evaluated RF against three classification methods, namely SVMs, GIZA++ and a Levenshtein distance-based classifier.</S>
+          <S ID="S-55689">SVMs coordinate a hyperplane in the hyperspace defined by the features to best separate the positive and negative instances, i.e. aligned from nonaligned pairs.</S>
+          <S ID="S-55690">In contrast to RF, SVMs do not support building association rules between features, i.e., translation units, which in our task seems to be a deficiency.</S>
+          <S ID="S-55691">SVMs produce one final association rule, i.e. the classification boundary which separates positive from negative examples.</S>
+          <S ID="S-55692">Its ability to distinguish aligned from non-aligned pair of terms depends on how separable the two clusters are.</S>
+          <S ID="S-55693">We evaluated several settings for the SVM classifier.</S>
+          <S ID="S-55694">Apart from the default linear kernel function, we applied a radial basis function, i.e. RBF-SVM.</S>
+          <S ID="S-55695">RBF-SVM uses the kernel trick to project the instances in a higher dimensional space to better separate the two clusters.</S>
+          <S ID="S-55696">While tuning the SVM&#8217;s classification cost C, we observed optimal performance for a value of 100.</S>
+          <S ID="S-55697">Secondly, we seeded the association rules of translation units to the SVM classifier by creating a second order feature space, discussed in detail in section 3.1.</S>
+          <S ID="S-55698">We employed the LIBSVM implementation (<REF ID="R-04" RPTR="6">Chang and Lin, 2011</REF>) of SVMs using both the linear and RBF kernels.</S>
+          <S ID="S-55699">The second baseline method is GIZA++, an</S>
+        </P>
+        <P>
+          <S ID="S-55700">open source implementation of the 5 IBM-models (<REF ID="R-03" RPTR="5">Brown et al., 1993</REF>).</S>
+          <S ID="S-55701">GIZA++ is traditionally trained on a bilingual, parallel corpus of aligned sentences and estimates the probability P (s|t) of a source translation unit (typically a word), s, given a target unit t.</S>
+          <S ID="S-55702">To apply GIZA++ on our dataset, we consider the list of terms as parallel sentences.</S>
+          <S ID="S-55703">GIZA++, trained on a list of terms, estimates the alignment probability of English-Chinese and English-French textual units, i.e. character n- grams.</S>
+          <S ID="S-55704">Each entry i, j in the translation table is the probability P (s i |t j ), where s i and t j are the source and target character n-grams in row i and column j, respectively.</S>
+          <S ID="S-55705">Further details about training a SMT toolkit for aligning technical terms can be found in (Tsunakawa et al., 2008; <REF ID="R-09" RPTR="14">Freitag and Khadivi, 2007</REF>; <REF ID="R-29" RPTR="36">Wu et al., 2008</REF>).</S>
+          <S ID="S-55706">After training GIZA++ we estimate the posterior probability P (cf n |e m ) that a test, Chinese or French term cf n = {cf 1 , &#183; &#183; &#183; , cf n } is aligned with a given English term e m = {e 1 , &#183; &#183; &#183; , e m } as follows:</S>
+        </P>
+        <P>
+          <S ID="S-55707">p(cf n |e m ) = n &#8722;m n&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-55708">i=1 j=1</S>
+        </P>
+        <P>
+          <S ID="S-55709">m&#8721; P (cf i |e j ) (3)</S>
+        </P>
+        <P>
+          <S ID="S-55710">A threshold &#958; was defined to classify a pair of terms into translations or non-translations: {</S>
+        </P>
+        <P>
+          <S ID="S-55711">f(e m , cf n 1, if p(cf ) = n |e m ) &#8805; &#958; (4) 0, otherwise</S>
+        </P>
+        <P>
+          <S ID="S-55712">We experimented with different values of &#958; (greedy search) and we selected a value that maximizes classification performance.</S>
+          <S ID="S-55713">In order to estimate how phonetically similar the two language pairs are, we employed a third base-</S>
+        </P>
+        <P>
+          <S ID="S-55714">(a) English-French dataset (b) English-Chinese dataset</S>
+        </P>
+        <P>
+          <S ID="S-55715">line method that uses the Edit/Levenshtein distance of pairs of terms to classify instances as translations or not.</S>
+          <S ID="S-55716">The Levenshtein distance is defined as the minimum edit operations, i.e., insertion, deletions and substitution, required to transform one sequence of characters to another.</S>
+          <S ID="S-55717">We cannot directly calculate the Levenshtein distance between English-Chinese pairs of terms since the two languages are using different scripts.</S>
+          <S ID="S-55718">Therefore, before we applied the Levenshtein distancebased classifier, we converted the Chinese terms to their pinyin form, i.e., Romanization system of Chinese characters.</S>
+          <S ID="S-55719">As with GIZA++, we selected a threshold &#958; that maximizes the performance of the classifier.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Results</HEADER>
+        <P>
+          <S ID="S-55720">We hypothesise that a RF classifier is able to form association paths between first order features.</S>
+          <S ID="S-55721">We also have the theoretical intuition that SVM classifiers are not able to form such association paths.</S>
+          <S ID="S-55722">As a result, we expect limited performance on the first order feature set, because it does not contain any associations among character grams.</S>
+          <S ID="S-55723">Figure 2 shows the F-Score achieved by RF, linear- SVM, RBF-SVM, GIZA++ and Levenshtein/Edit distance-based classifier on the English-French and English-Chinese datasets.</S>
+          <S ID="S-55724">RF and SVMs are trained on an increasing number of features.</S>
+          <S ID="S-55725">The behaviour of the classifiers is approximately the same in both datasets.</S>
+          <S ID="S-55726">Performance is greater on the English-French dataset since English is more similar to French than to Chinese.</S>
+          <S ID="S-55727">We also observe that linear-SVM and RBF-SVM do not behave consistently.</S>
+          <S ID="S-55728">RBF-SVM&#8217;s performance quickly climbs to a maximum and afterwards it declines while linear-SVM&#8217;s performance is constantly increasing until it balances to a very high error rate, almost corresponding to random classification.</S>
+          <S ID="S-55729">The linear-SVM classifier performs poorly using first order features only, indicating that this feature space is non-linearly separable, i.e. there exists no hyperplane that separates translation from non-translation instances.</S>
+          <S ID="S-55730">Contrary, RBF-SVM is able to construct a higher dimensional space by applying the kernel trick so as to take full advantage of a small number of frequent and informative first order features.</S>
+          <S ID="S-55731">In this higher dimensional space of few but informative first order features, the RBF-SVM classifier coordinates a hyperplane that effectively separates positive from negative instances.</S>
+          <S ID="S-55732">However, increasing the number of features introduces noise that affects the performance.</S>
+          <S ID="S-55733">The RF is able to profit from larger sets of first order features; thus, its performance is continuously increasing until it stabilises at 6, 000 features.</S>
+          <S ID="S-55734">The branches of the decision trees are shown to manage features correctly to construct most of the translation rules.</S>
+          <S ID="S-55735">Increasing the size of the feature space minimises the classification error, because more translation rules that generalize well on unseen data are constructed.</S>
+          <S ID="S-55736">The bilingual dictionary that we use for our experiments contains heterogeneous biomedical terms of diverse semantic categories.</S>
+          <S ID="S-55737">For example, our data-set contains common medical terms such as Intellectual Products (e.g. Pain Management, prise en charge de la douleur, &#25511; &#21046; &#30140; &#30171; ) or complex biological concepts such as Enzymes (e.g. homogentisate 1,2-dioxygenase,</S>
+        </P>
+        <P>
+          <S ID="S-55738">(a) English-French dataset (b) English-Chinese dataset</S>
+        </P>
+        <P>
+          <S ID="S-55739">English-French pairs English-Chinese pairs</S>
+        </P>
+        <P>
+          <S ID="S-55740">acide homogentisique-oxydase, &#23615; &#40657; &#37240; 1,2- &#21452; &#27687; &#37238; ).</S>
+          <S ID="S-55741">Therefore, we would expect poor performance of the supervised methods using only a small portion of the total set of first order features due to the high diversity of the terms.</S>
+          <S ID="S-55742">For example the morpheme ache/ mal/ &#30171; is more frequent in Disease or Syndrome named entities rather than Enzyme named entities.</S>
+          <S ID="S-55743">However, the results indicate that RF can generalize well on heterogeneous terms.</S>
+          <S ID="S-55744">Figure 2 shows that the RF classifier outperforms SMT based methods, using only 1000 features.</S>
+          <S ID="S-55745">The Levenshtein distance-based classifier performs considerably better in the English-French dataset than in English-Chinese.</S>
+          <S ID="S-55746">In fact, its best performance for the English-Chinese dataset is achieved when classifying every pair of terms as a translation, i.e. 100% recall but 50% precision.</S>
+          <S ID="S-55747">In a second experiment, we attempted to explore whether the performance of SVMs can be improved by providing cross-language association features.</S>
+          <S ID="S-55748">We employed the second order feature set discussed in subsection 3.1.</S>
+          <S ID="S-55749">We used a constant number of 6, 000 first order features, the number of features that achieved maximum F-Score for RF in the previous experiment.</S>
+          <S ID="S-55750">Besides these first order features, we added an increasing number of second order ones.</S>
+          <S ID="S-55751">Figure 3 shows the F- Score curves of the RF, linear-SVM, RBF-SVM, GIZA++ and Levenshtein distance using this feature space.</S>
+          <S ID="S-55752">We observe that second order features improved the performance of both SVMs considerably.</S>
+          <S ID="S-55753">In contrast to the previous experiment, the two SVMs present consistent bevaviour.</S>
+          <S ID="S-55754">Interestingly, the performance of the RF slightly decreased when using a small number of second order features.</S>
+          <S ID="S-55755">A possible explanation of this behaviour is that the second order associative features added noise, since the RF had already formed the association rules from first order features.</S>
+          <S ID="S-55756">In addition, for m English and n Chinese or French first order features there were m &#215; n possible combinations of second order features as explained in Subsection 3.1.</S>
+          <S ID="S-55757">Hence, there was a large number of second order features that we excluded from the training process.</S>
+          <S ID="S-55758">Consequently, decision tree branches were populated with incomplete association rules while the RF was able to form these associations automatically.</S>
+          <S ID="S-55759">Nevertheless, as more second order features were added, more association rules were explored and the RF performance in-</S>
+        </P>
+        <P>
+          <S ID="S-55760">creased.</S>
+          <S ID="S-55761">Table 3 summarises the highest performance achieved by the RF, SVMs, GIZA++ and Levenshtein distance all trained and tested on the same dataset.</S>
+          <S ID="S-55762">The resulting performance of the RF compared with GIZA++ is statistically significant (p &lt; 0.0001) in all experiments.</S>
+          <S ID="S-55763">Comparing the RF with the SVMs, we note that in the English- French dataset, the performance of the SVM-RBF is approximately the same with the performance of our proposed method.</S>
+          <S ID="S-55764">However, this comes with a cost.</S>
+          <S ID="S-55765">Firstly, SVMs can possibly achieve a comparable performance to the RF when using multilingual, second order features.</S>
+          <S ID="S-55766">In contrast, our experiments show that RF benefit from monolingual, first order features only.</S>
+          <S ID="S-55767">Secondly, SVMs need a large number of additional multilingual features, (6.000 second order features or more) to perform similarly to RF.</S>
+          <S ID="S-55768">As a consequence, the resulting models of the SVM classifiers are more complex.</S>
+          <S ID="S-55769">We measured the average time needed by the two classifiers to decide for a single pair of terms.</S>
+          <S ID="S-55770">The RF is approximately 30 times faster than SVMs (on average 0.010 and 0.292 seconds, respectively).</S>
+          <S ID="S-55771">Finally, in the English-Chinese dataset the RF performed significantly better than both SVMs.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Discussion And Future Work</HEADER>
+      <P>
+        <S ID="S-55775">In this paper, we presented a novel classification method that uses Random Forest (RF) to recognise translations of biomedical terms across languages.</S>
+        <S ID="S-55776">Our approach is based on the hypothesis that in many languages, there exist some rules for combining textual units, e.g. n-grams, to form biomedical terms.</S>
+        <S ID="S-55777">Based on this assumption, we defined a first order feature space of character grams and demonstrated that an RF classifier is able to discover such cross language translation rules for terms.</S>
+        <S ID="S-55778">We experimented with two diverse language pairs: English-French and English-Chinese.</S>
+        <S ID="S-55779">In the former case, pairs of terms exhibit high phonetic similarity while in the latter case they do not.</S>
+        <S ID="S-55780">Our results showed that the proposed method performs robustly in both cases and achieves a significantly better performance than GIZA++.</S>
+        <S ID="S-55781">We also evaluated Support Vector Machines (SVM) classifiers on the same first order feature space and showed that they fail to form translation rules in both language pairs, possibly because it cannot associate first order features with each other successfully.</S>
+        <S ID="S-55782">We attempted to boost the performance of the SVM classifier by adding association evidence of textual units to the features.</S>
+        <S ID="S-55783">We extracted second order features from the training data and we defined a new feature set consisting of both first order and second order features.</S>
+        <S ID="S-55784">In this feature space, the performance of the SVMs improved significantly.</S>
+        <S ID="S-55785">In addition to this, we observe from the reported experiments that RF achieves a better F-Score performance than GIZA++ in all datasets.</S>
+        <S ID="S-55786">Nonetheless, GIZA++ presents a better precision (but lower recall) in one dataset, i.e., English/Chinese.</S>
+        <S ID="S-55787">Based on this observation we plan to investigate the performance of a hybrid system combining RF with MT approaches.</S>
+        <S ID="S-55788">One trivial approach to apply the proposed method for compiling large-scale bilingual dictionaries of terms from comparable corpora would be to directly classify all possible pairs of terms into translations or non-translations.</S>
+        <S ID="S-55789">However, in comparable corpora, the size of the search space is quadratic to the input data.</S>
+        <S ID="S-55790">Therefore, the classification task is much more challenging since the distribution of positive and negative instances is highly skewed.</S>
+        <S ID="S-55791">To cope with the vast search space of comparable corpora, we plan to incorporate context-based approaches with the RF classification method.</S>
+        <S ID="S-55792">Context-based approaches, such as distributional vector similarity (<REF ID="R-10" RPTR="15">Fung and McKeown, 1997</REF>; <REF ID="R-32" RPTR="39">Rapp, 1995</REF>; <REF ID="R-18" RPTR="24">Koehn and Knight, 2002</REF>; <REF ID="R-12" RPTR="16">Haghighi et al., 2008</REF>), can be used to limit the number of candidate translations by filtering out pairs of terms with low contextual similarity.</S>
+        <S ID="S-55793">Finally, the proposed method can be also used to online augment the phrase table of Statistical Machine Translation (SMT) in order to better handle the Out-of-Vocabulary problem i.e. inability to translate textual units that consist of one or more words and do not occur in the training data (Habash, 2008).</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-55794">The work described in this paper is partially funded by the European Community&#8217;s Seventh Framework Program (FP7/2007-2013) under grant agreement no.</S>
+      <S ID="S-55795">318736 (OSSMETER).</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Y Al-Onaizan</RAUTHOR>
+      <REFTITLE>Translating named entities using monolingual and bilingual resources.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>L Ballesteros</RAUTHOR>
+      <REFTITLE>Phrasal translation and query expansion techniques for crosslanguage information retrieval.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>L Breiman</RAUTHOR>
+      <REFTITLE>Random forests.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>P F Brown</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: Parameter estimation.</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>C C Chang</RAUTHOR>
+      <REFTITLE>Libsvm: a library for support vector machines.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>X W Chen</RAUTHOR>
+      <REFTITLE>Prediction of protein&#8211; protein interactions using random decision forest framework.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>R D&#237;az-Uriarte</RAUTHOR>
+      <REFTITLE>Gene selection and classification of microarray data using random forest.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Matthias Eck</RAUTHOR>
+      <REFTITLE>Overview of the iwslt 2005 evaluation campaign.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>D Feng</RAUTHOR>
+      <REFTITLE>A new approach for english-chinese named entity alignment.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>D Freitag</RAUTHOR>
+      <REFTITLE>A sequence alignment model based on the averaged perceptron.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>P Fung</RAUTHOR>
+      <REFTITLE>A technical wordand term-translation aid using noisy parallel corpora across language groups.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>N Habash</RAUTHOR>
+      <REFTITLE>Four techniques for online handling of out-of-vocabulary words in arabic-english statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>A Haghighi</RAUTHOR>
+      <REFTITLE>Learning bilingual lexicons from monolingual corpora.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>M Hall</RAUTHOR>
+      <REFTITLE>The weka data mining software: an update.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>F Huang</RAUTHOR>
+      <REFTITLE>Improved named entity translation and bilingual named entity extraction.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>P Jiang</RAUTHOR>
+      <REFTITLE>Mipred: classification of real and pseudo microrna precursors using random forest prediction model with combined features. Nucleic acids research, 35(suppl 2):W339&#8211;W344.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>D Klein</RAUTHOR>
+      <REFTITLE>Named entity recognition with character-level models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>A Klementiev</RAUTHOR>
+      <REFTITLE>Weakly supervised named entity transliteration and discovery from multilingual comparable corpora.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>P Koehn</RAUTHOR>
+      <REFTITLE>Learning a translation lexicon from monolingual corpora.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>P Koehn</RAUTHOR>
+      <REFTITLE>Moses: Open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Philippe Langlais</RAUTHOR>
+      <REFTITLE>Translating unknown words by analogical learning.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Philippe Langlais</RAUTHOR>
+      <REFTITLE>Improvements in analogical learning: application to translating multi-terms of the medical domain.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Yves Lepage</RAUTHOR>
+      <REFTITLE>Solving analogies on words: an algorithm.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>M Lu</RAUTHOR>
+      <REFTITLE>Multi-feature based chineseenglish named entity extraction from comparable corpora.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Nielsen</RAUTHOR>
+      <REFTITLE>Mixing weak learners in semantic parsing.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>F J Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>K Oflazer</RAUTHOR>
+      <REFTITLE>Exploring different representational units in english-to-turkish statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Maja Popovic</RAUTHOR>
+      <REFTITLE>Towards the Use of Word Stems and Suffixes for Statistical Machine Translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>S Virpioja</RAUTHOR>
+      <REFTITLE>Morphology-aware statistical machine translation based on morphs induced in an unsupervised manner.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR>X Wu</RAUTHOR>
+      <REFTITLE>Improving English-to-Chinese Translation for Technical Terms Using Morphological Information.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="30">
+      <RAUTHOR>P Xu</RAUTHOR>
+      <REFTITLE>Random forests in language modeling.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="31">
+      <RAUTHOR>J Pustejovsky</RAUTHOR>
+      <REFTITLE>Automatic extraction of acronym-meaning pairs from medline databases.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="32">
+      <RAUTHOR>R Rapp</RAUTHOR>
+      <REFTITLE>Identifying word translations in nonparallel texts.</REFTITLE>
+      <DATE>1995</DATE>
+    </REFERENCE>
+    <REFERENCE ID="33">
+      <RAUTHOR>L Shao</RAUTHOR>
+      <REFTITLE>Mining new word translations from comparable corpora.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="34">
+      <RAUTHOR>R Sproat</RAUTHOR>
+      <REFTITLE>The first international chinese word segmentation bakeoff.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="35">
+      <RAUTHOR>Efstathios Stamatatos</RAUTHOR>
+      <REFTITLE>Ensemble-based author identification using character n-grams. In</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="36">
+      <RAUTHOR>V Svetnik</RAUTHOR>
+      <REFTITLE>Random forest: a classification and regression tool for compound classification and qsar modeling. Journal of chemical information and computer sciences,</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

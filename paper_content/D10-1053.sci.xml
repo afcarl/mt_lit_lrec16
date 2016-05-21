@@ -1,0 +1,880 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Hierarchical Phrase-based Translation Grammars Extracted from Alignment Posterior Probabilities</TITLE>
+  <AUTHORS>
+    <AUTHOR>Adri&#224; de_Gispert</AUTHOR>
+    <AUTHOR>Juan Pino</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-134213">We report on investigations into hierarchical phrase-based translation grammars based on rules extracted from posterior distributions over alignments of the parallel text.</A-S>
+    <A-S ID="S-134214">Rather than restrict rule extraction to a single alignment, such as Viterbi, we instead extract rules based on posterior distributions provided by the HMM word-to-word alignment model.</A-S>
+    <A-S ID="S-134215">We define translation grammars progressively by adding classes of rules to a basic phrase-based system.</A-S>
+    <A-S ID="S-134216">We assess these grammars in terms of their expressive power, measured by their ability to align the parallel text from which their rules are extracted, and the quality of the translations they yield.</A-S>
+    <A-S ID="S-134217">In Chinese-to-English translation, we find that rule extraction from posteriors gives translation improvements.</A-S>
+    <A-S ID="S-134218">We also find that grammars with rules with only one nonterminal, when extracted from posteriors, can outperform more complex grammars extracted from Viterbi alignments.</A-S>
+    <A-S ID="S-134219">Finally, we show that the best way to exploit source-totarget and target-to-source alignment models is to build two separate systems and combine their output translation lattices.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-134220">Current practice in hierarchical phrase-based translation extracts regular phrases and hierarchical rules from word-aligned parallel text.</S>
+        <S ID="S-134221">Alignment models estimated over the parallel text are used to generate these alignments, but these models are then typically used no further in rule extraction.</S>
+        <S ID="S-134222">This is less than ideal because these alignment models, even if they are not suitable for direct use in translation, can still provide a great deal of useful information beyond a single best estimate of the alignment of the parallel text.</S>
+        <S ID="S-134223">Our aim is to use alignment models to generate the statistics needed to build translation grammars.</S>
+        <S ID="S-134224">The challenge in doing so is to extend the current procedures, which are geared towards the use of a single alignment, to make more of what can be provided by alignment models.</S>
+        <S ID="S-134225">The goal is to extract a richer and more robust set of translation rules.</S>
+      </P>
+      <P>
+        <S ID="S-134226">There are two aspects to hierarchical phrase-based translation grammars which concern us.</S>
+        <S ID="S-134227">The first is expressive power, which we take as the ability to generate known reference translations from sentences in the source language.</S>
+        <S ID="S-134228">This is determined by the degree of phrase movements and the translations allowed by the rules of the grammar.</S>
+        <S ID="S-134229">For a grammar with given types of rules, larger rule sets will yield greater expressive power.</S>
+        <S ID="S-134230">This motivates studies of grammars based on the rules which are extracted and the movement the grammar allows.</S>
+        <S ID="S-134231">The second aspect is of course translation accuracy.</S>
+        <S ID="S-134232">If the expressive power is adequate, then the desire is that the grammar assigns a high score to a correct translation.</S>
+      </P>
+      <P>
+        <S ID="S-134233">We use posterior probabilities over parallel data to address both of these aspects.</S>
+        <S ID="S-134234">These posteriors allow us to build larger rule sets with improved translation accuracy.</S>
+        <S ID="S-134235">Ideally, for a sentence pair we wish to consider all possible alignments between all possible source and target phrases within these sentences.</S>
+        <S ID="S-134236">Given a grammar allowing certain types of movement, we would then extract all possible parses that are consistent with any alignments of these phrases.</S>
+      </P>
+      <P>
+        <S ID="S-134237">To make this approach feasible, we consider only phrase-to-phrase alignments with a high posterior probability under the alignment models.</S>
+        <S ID="S-134238">In this way, the alignment model probabilities guide rule extraction.</S>
+      </P>
+      <P>
+        <S ID="S-134239">The paper is organized as follows.</S>
+        <S ID="S-134240">Section 2 reviews related work on using posteriors to extract phrases, as well as other approaches that tightly integrate word alignment and rule extraction.</S>
+        <S ID="S-134241">Section 3 describes rule extraction based on word and phrase posterior distributions provided by the HMM word-to-word alignment model.</S>
+        <S ID="S-134242">In Section 4 we define translation grammars progressively by adding classes of rules to a basic phrase-based system, motivating each rule type by the phrase movement it is intended to achieve.</S>
+        <S ID="S-134243">In Section 5 we assess these grammars in terms of their expressive power and the quality of the translations they yield in Chinese-to- English, showing that rule extraction from posteriors gives translation improvements.</S>
+        <S ID="S-134244">We also find that the best way to exploit source-to-target and targetto-source alignment models is to build two separate systems and combine their output translation lattices.</S>
+        <S ID="S-134245">Section 6 presents the main conclusions of this work.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related Work</HEADER>
+      <P>
+        <S ID="S-134246">Some authors have previously addressed the limitation caused by decoupling word alignment models from grammar extraction.</S>
+        <S ID="S-134247">For instance <REF ID="R-25" RPTR="31">Venugopal et al. (2008)</REF> extract rules from n-best lists of alignments for a syntax-augmented hierarchical system.</S>
+        <S ID="S-134248">Alignment n-best lists are also used in <REF ID="R-15" RPTR="20">Liu et al. (2009)</REF> to create a structure called weighted alignment matrices that approximates word-to-word link posterior probabilities, from which phrases are extracted for a phrase-based system.</S>
+        <S ID="S-134249">Alignment posteriors have been used before for extracting phrases in non-hierarchical phrase-based translation (<REF ID="R-24" RPTR="29">Venugopal et al., 2003</REF>; <REF ID="R-14" RPTR="19">Kumar et al., 2007</REF>; <REF ID="R-09" RPTR="9">Deng and Byrne, 2008</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-134250">In order to simplify hierarchical phrase-based grammars and make translation feasible with relatively large parallel corpora, some authors discuss the need for various filters during rule extraction (<REF ID="R-05" RPTR="4">Chiang, 2007</REF>).</S>
+        <S ID="S-134251">In particular <REF ID="R-16" RPTR="22">Lopez (2008)</REF> enforces a minimum span of two words per nonterminal, Zollmann et al. (2008) use a minimum count threshold for all rules, and Iglesias et al. (2009) propose a finer-grained filtering strategy based on rule patterns.</S>
+        <S ID="S-134252">Other approaches include insisting that targetside rules are well-formed dependency trees (<REF ID="R-22" RPTR="27">Shen et al., 2008</REF>).</S>
+        <S ID="S-134253">We also note approaches to tighter coupling between translation grammars and alignments.</S>
+        <S ID="S-134254"><REF ID="R-17" RPTR="23">Marcu and Wong (2002)</REF> describe a joint-probability phrase-based model for alignment, but the approach is limited due to excessive complexity as Viterbi inference becomes NP-hard (<REF ID="R-08" RPTR="8">DeNero and Klein, 2008</REF>).</S>
+        <S ID="S-134255">More recently, Saers et al. (2009) report improvement on a phrase-based system where word alignment has been trained with an inversion transduction grammar (ITG) rather than IBM models.</S>
+        <S ID="S-134256"><REF ID="R-20" RPTR="26">Pauls et al. (2010)</REF> also use an ITG to directly align phrases to nodes in a string-to-tree model.</S>
+        <S ID="S-134257">Bayesian methods have been recently developed to induce a grammar directly from an unaligned parallel corpus (<REF ID="R-01" RPTR="0">Blunsom et al., 2008</REF>; <REF ID="R-02" RPTR="1">Blunsom et al., 2009</REF>).</S>
+        <S ID="S-134258">Finally, <REF ID="R-06" RPTR="7">Cmejrek et al. (2009)</REF> extract rules directly from bilingual chart parses of the parallel corpus without using word alignments.</S>
+        <S ID="S-134259">We take a different approach in that we aim to start with very strong word alignment models and use them to guide grammar extraction.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Rule Extraction from Alignment Posteriors</HEADER>
+      <P>
+        <S ID="S-134320">The goal of rule extraction is to generate a set of good-quality translation rules from a parallel corpus.</S>
+        <S ID="S-134321">Rules are of the form X&#8594;&#12296;&#947;,&#945;,&#8764;&#12297; , where &#947;,&#945; &#8712; {X &#8746; T} + are the source and target sides of the rule, T denotes the set of terminals (words) and &#8764; is a bijective function 1 relating source and target nonterminals X of each rule (<REF ID="R-05" RPTR="5">Chiang, 2007</REF>).</S>
+        <S ID="S-134322">For each &#947;, the probability over translations &#945; is set by relative frequency over the extracted examples from the corpus.</S>
+      </P>
+      <P>
+        <S ID="S-134323">We take a general approach to rule extraction, as described by the following procedure.</S>
+        <S ID="S-134324">For simplicity we discuss the extraction of regular phrases, that is, rules of the form X&#8594;&#12296;w,w&#12297;, where w &#8712; {T} + .</S>
+        <S ID="S-134325">Section 3.3 extends this procedure to rules with non-</S>
+      </P>
+      <P>
+        <S ID="S-134326">1 This function is defined if there are at least two nonterminals, and for clarity of presentation will be omitted in this paper</S>
+      </P>
+      <P>
+        <S ID="S-134327">terminal symbols.</S>
+      </P>
+      <P>
+        <S ID="S-134328">Given a sentence pair (f1 J,eI 1 ), the extraction algorithm traverses the source sentence and, for each sequence of terminals f j 2</S>
+      </P>
+      <P>
+        <S ID="S-134329">j 1</S>
+      </P>
+      <P>
+        <S ID="S-134330">, it considers all possible target-side sequences e i 2</S>
+      </P>
+      <P>
+        <S ID="S-134331">i1</S>
+      </P>
+      <P>
+        <S ID="S-134332">as translation candidates.</S>
+        <S ID="S-134333">Each target-side sequence that satisfies the alignment constraints C A is ranked by the function f R .</S>
+        <S ID="S-134334">For practical reasons, a set of selection criteria C S is then applied to these ranked candidates and defines the set of translations of the source sequence that are extracted as rules.</S>
+        <S ID="S-134335">Each extracted rule is assigned a count f C .</S>
+        <S ID="S-134336">In this section we will explore variations of this rule extraction procedure involving alternative definitions of the ranking and counting functions, f R and f C , based on probabilities over alignment models.</S>
+      </P>
+      <P>
+        <S ID="S-134337">Common practice (<REF ID="R-12" RPTR="14">Koehn et al., 2003</REF>) takes a set of word alignment links L and defines the alignment constraints C A so that there is a consistency between the links in the (f j 2</S>
+      </P>
+      <P>
+        <S ID="S-134338">j 1</S>
+      </P>
+      <P>
+        <S ID="S-134339">,e i 2</S>
+      </P>
+      <P>
+        <S ID="S-134340">i1</S>
+      </P>
+      <P>
+        <S ID="S-134341">) phrase pair.</S>
+        <S ID="S-134342">This is expressed by &#8704;(j,i) &#8712; L : (j &#8712; [j 1 ,j 2 ] &#8743;i &#8712; [i 1 ,i 2 ]) &#8744; (j &#8713; [j 1 ,j 2 ] &#8743; i &#8713; [i 1 ,i 2 ]).</S>
+        <S ID="S-134343">If these constraints are met, then alignment probabilities are ignored and f R = f C = 1.</S>
+        <S ID="S-134344">We call this extraction Viterbi-based, as the set of alignment links is generally obtained after applying a symmetrization heuristic to sourceto-target and target-to-source Viterbi alignments.</S>
+      </P>
+      <P>
+        <S ID="S-134345">In the following section we depart from this approach and apply novel functions to rank and count target-side translations according to their quality in the context of each parallel sentence, as defined by the word alignment models.</S>
+        <S ID="S-134346">We also depart from common practice in that we do not use a set of links as alignment constraints.</S>
+        <S ID="S-134347">We thus find an increase in the number of extracted rules, and consequently better relative frequency estimates over translations.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Ranking and Counting Functions</HEADER>
+        <P>
+          <S ID="S-134260">We describe two alternative approaches to modify the functions f R and f C so that they incorporate the probabilities provided by the alignment models.</S>
+        </P>
+        <P>
+          <S ID="S-134261">3.1.1 Word-to-word Alignment Posterior Probabilities</S>
+        </P>
+        <P>
+          <S ID="S-134262">Word-to-word alignment posterior probabilities p(l ji |f1 J,eI 1 ) express how likely it is that the words in source position j and target position i are aligned given a sentence pair.</S>
+          <S ID="S-134263">These posteriors can be efficiently computed for Model 1, Model 2 and HMM, as described in (<REF ID="R-04" RPTR="3">Brown et al., 1993</REF>; <REF ID="R-24" RPTR="30">Venugopal et al., 2003</REF>; <REF ID="R-09" RPTR="10">Deng and Byrne, 2008</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-134264">We will use these posteriors in functions to score phrase pairs.</S>
+          <S ID="S-134265">For a simple non-disjoint case (f j 2</S>
+        </P>
+        <P>
+          <S ID="S-134266">j 1</S>
+        </P>
+        <P>
+          <S ID="S-134267">,e i 2</S>
+        </P>
+        <P>
+          <S ID="S-134268">i1</S>
+        </P>
+        <P>
+          <S ID="S-134269">) we use: f R (f j 2</S>
+        </P>
+        <P>
+          <S ID="S-134270">j 1</S>
+        </P>
+        <P>
+          <S ID="S-134271">,e i 2</S>
+        </P>
+        <P>
+          <S ID="S-134272">i1</S>
+        </P>
+        <P>
+          <S ID="S-134273">) =</S>
+        </P>
+        <P>
+          <S ID="S-134274">j 2</S>
+        </P>
+        <P>
+          <S ID="S-134275">&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-134276">j=j 1</S>
+        </P>
+        <P>
+          <S ID="S-134277">i 2 &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-134278">p(l ji|fJ 1 ,eI 1 ) i</S>
+        </P>
+        <P>
+          <S ID="S-134279">i=i 2 &#8722; i 1 + 1</S>
+        </P>
+        <P>
+          <S ID="S-134280">(1)</S>
+        </P>
+        <P>
+          <S ID="S-134281">which is very similar to the score used for lexical features in many systems (<REF ID="R-13" RPTR="18">Koehn, 2010</REF>), with the link posteriors for the sentence pair playing the role of the Model 1 translation table.</S>
+        </P>
+        <P>
+          <S ID="S-134282">For a particular source phrase, Equation 1 is not a proper conditional probability distribution over all phrases in the target sentence.</S>
+          <S ID="S-134283">Therefore it cannot be used as such without further normalization.</S>
+          <S ID="S-134284">Indeed we find that this distribution is too sharp and overemphasises short phrases, so we use f C = 1.</S>
+          <S ID="S-134285">However, it does allow us to rank target phrases as possible translations.</S>
+          <S ID="S-134286">In contrast to the common extraction procedure described in the previous section, the ranking approach described here can lead to a much more exhaustive extraction unless selection criteria are applied.</S>
+          <S ID="S-134287">These we describe in Section 3.2.</S>
+        </P>
+        <P>
+          <S ID="S-134288">We note that Equation 1 can be computed using link posteriors provided by alignment models trained on either source-to-target or target-to-source translation directions.</S>
+        </P>
+        <P>
+          <S ID="S-134289">3.1.2 Phrase-to-phrase Alignment Posterior Probabilities</S>
+        </P>
+        <P>
+          <S ID="S-134290">Rather than limit ourselves to word-to-word link posteriors we can define alignment probability distributions over phrase alignments.</S>
+          <S ID="S-134291">We do this by defining the set of alignments A as A(j 1 ,j 2 ;i 1 ,i 2 ) = {a J 1 : a j &#8712; [i 1 ,i 2 ] iff j &#8712; [j 1 ,j 2 ]}, where a j is the random process that describes word-to-word alignments.</S>
+          <S ID="S-134292">These are the alignments from which the phrase pair (f j 2</S>
+        </P>
+        <P>
+          <S ID="S-134293">j 1</S>
+        </P>
+        <P>
+          <S ID="S-134294">,e i 2</S>
+        </P>
+        <P>
+          <S ID="S-134295">i1</S>
+        </P>
+        <P>
+          <S ID="S-134296">) would be extracted.</S>
+        </P>
+        <P>
+          <S ID="S-134297">The posterior probability of these alignments given the sentence pair is defined as follows:</S>
+        </P>
+        <P>
+          <S ID="S-134298">p(A|e I 1,f J 1 ) = &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-134299">a J 1 &#8712;A p(fJ 1 ,aJ 1 |eI 1 ) &#8721;a J1 p(fJ 1 ,aJ 1 |eI 1 ) (2)</S>
+        </P>
+        <P>
+          <S ID="S-134300">With IBM models 1 and 2, the numerator and denominator in Equation 2 can be computed in terms of posterior link probabilities (<REF ID="R-10" RPTR="12">Deng, 2005</REF>).</S>
+          <S ID="S-134301">With the HMM model, the denominator is computed using the forward algorithm while the numerator can be computed using a modified forward algorithm (<REF ID="R-10" RPTR="13">Deng, 2005</REF>).</S>
+          <S ID="S-134302">These phrase posteriors directly define a probability distribution over the alignments of translation candidates, so we use them both for ranking and scoring extracted rules, that is f R = f C = p.</S>
+          <S ID="S-134303">This approach assigns a fractional count to each extracted rule, which allows finer estimation of the forward and backward translation probability distributions.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Alignment Constraints and Selection Criteria</HEADER>
+        <P>
+          <S ID="S-134304">In order to keep this process computationally tractable, some extraction constraints are needed.</S>
+          <S ID="S-134305">In order to extract a phrase pair (f j 2</S>
+        </P>
+        <P>
+          <S ID="S-134306">j 1</S>
+        </P>
+        <P>
+          <S ID="S-134307">,e i 2</S>
+        </P>
+        <P>
+          <S ID="S-134308">i1</S>
+        </P>
+        <P>
+          <S ID="S-134309">), we define the following:</S>
+        </P>
+        <P>
+          <S ID="S-134310">&#8226; C A requires at least one pair of positions (j,i) : (j &#8712; [j 1 ,j 2 ] &#8743; i &#8712; [i 1 ,i 2 ]) with word-to-word link posterior probability p(l ji |f J 1 ,eI 1 ) &gt; 0.5, and that there is no pair of positions (j,i) : (j &#8712; [j 1 ,j 2 ]&#8743;i &#8713; [i 1 ,i 2 ])&#8744;(j &#8713; [j 1 ,j 2 ]&#8743;i &#8712; [i 1 ,i 2 ]) with p(l ji |f J 1 ,eI 1 ) &gt; 0.5</S>
+        </P>
+        <P>
+          <S ID="S-134311">&#8226; C S allows only the k best translation candidates to be extracted.</S>
+          <S ID="S-134312">We use k = 3 for regular phrases, and k = 2 for hierarchical rules.</S>
+        </P>
+        <P>
+          <S ID="S-134313">Note that we do not discard rules according to their scores f C at this point (unlike <REF ID="R-15" RPTR="21">Liu et al. (2009)</REF>), since we prefer to add all phrases from all sentence pairs before carrying out such filtering steps.</S>
+        </P>
+        <P>
+          <S ID="S-134314">Once all rules over the entire collection of parallel sentences have been extracted, we require each rule to occur at least n obs times and with a forward translation probability p(&#945;|&#947;) &gt; 0.01 to be used for translation.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Extraction of Rules with Nonterminals</HEADER>
+        <P>
+          <S ID="S-134315">Extending the procedure previously described to the case of more complex hierarchical rules including one or even two nonterminals is conceptually straightforward.</S>
+          <S ID="S-134316">It merely requires that we traverse the source and target sentences and consider possibly disjoint phrase pairs.</S>
+          <S ID="S-134317">Optionally, the alignment constraints can also be extended to apply on the nonterminal X.</S>
+        </P>
+        <P>
+          <S ID="S-134318">Equation 1 is then only modified in the limits of the product and summation, whereas Equation 2 remains unchanged, as long as the set of valid alignments A is redefined.</S>
+          <S ID="S-134319">For example, for a rule of the form X&#8594;&#12296;w X w,w X w&#12297;, we use A &#8801; A(j 1 ,j 2 ;j 3 ,j 4 ;i 1 ,i 2 ;i 3 ,i 4 ).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Hierarchical Translation Grammar Definition</HEADER>
+      <P>
+        <S ID="S-134360">In this section we define the hierarchical phrasebased synchronous grammars we use for translation experiments.</S>
+        <S ID="S-134361">Each grammar is defined by the type of hierarchical rules it contains.</S>
+        <S ID="S-134362">The rule type can be obtained by replacing every sequence of terminals by a single symbol &#8216;w&#8217;, thus ignoring the identity of the words, but capturing its generalized structure and the kind of reordering it encodes (this was defined as rule pattern in Iglesias et al. (2009)).</S>
+        <S ID="S-134363">A monotonic phrase-based translation grammar G 0 can be defined as shown in the left-most column of Table 1; it includes all regular phrases, represented by the rule type X&#8594;&#12296;w,w&#12297;, and the two glue</S>
+      </P>
+      <P>
+        <S ID="S-134364">(G 0) R 1 : S&#8594;&#12296;X,X&#12297; (G 0) R 2 : X&#8594;&#12296;s 2 s 3,t 2&#12297; (G 1) R 3 : X&#8594;&#12296;s 1 X,X t 3&#12297; (G 1) R 4 : X&#8594;&#12296;X s 4,t 1 X&#12297; (G 2) R 5 : X&#8594;&#12296;s 1 X,t 7 X&#12297; (G 3) R 6 : X&#8594;&#12296;s 1 X s 4,t 5 X t 6&#12297;</S>
+      </P>
+      <P>
+        <S ID="S-134365">rules that allow concatenation.</S>
+        <S ID="S-134366">Our approach is now simple: we extend this grammar by successively incorporating sets of hierarchical rules.</S>
+        <S ID="S-134367">The goal is to obtain a grammar with few rule types but which is capable of generating a rich set of translation candidates for a given input sentence.</S>
+      </P>
+      <P>
+        <S ID="S-134368">With this in mind, we define the following three grammars, also summarized in Table 1:</S>
+      </P>
+      <P>
+        <S ID="S-134369">&#8226; G 1 := G 0 &#8899;</S>
+      </P>
+      <P>
+        <S ID="S-134370">{ X&#8594;&#12296;w X,X w&#12297; , X&#8594;&#12296;X w,w X&#12297; }.</S>
+        <S ID="S-134371">This incorporates reordering capabilities with two rule types that place the unique nonterminal in an opposite position in each language; we call these &#8217;phrase swap rules&#8217;.</S>
+        <S ID="S-134372">Since all nonterminals are of the same category X, nested reordering is possible.</S>
+        <S ID="S-134373">However, this needs to happen consecutively, i.e. a swap must apply after a swap, or the rule is concatenated with the glue rule.</S>
+      </P>
+      <P>
+        <S ID="S-134374">&#8226; G 2 := G 1 &#8899; { X&#8594;&#12296;w X,w X&#12297; }.</S>
+        <S ID="S-134375">This</S>
+      </P>
+      <P>
+        <S ID="S-134376">adds monotonic concatenation capabilities to the previous translation grammar.</S>
+        <S ID="S-134377">The glue rule already allows rule concatenation.</S>
+        <S ID="S-134378">However, it does so at the S category, that is, it concatenates phrases and rules after they have been reordered, in order to complete a sentence.</S>
+        <S ID="S-134379">With this new rule type, G 2 allows phrase/rule concatenation before reordering with another hierarchical rule.</S>
+        <S ID="S-134380">Therefore, nested reordering does not require successive swaps anymore.</S>
+      </P>
+      <P>
+        <S ID="S-134381">&#8226; G 3 := G 2 &#8899; { X&#8594;&#12296;w X w,w X w&#12297; }.</S>
+        <S ID="S-134382">This</S>
+      </P>
+      <P>
+        <S ID="S-134383">adds single nonterminal rules with disjoint terminal sequences, which can encode a monotonic or reordered relationship between them, depending on what their alignment was in the parallel corpus.</S>
+        <S ID="S-134384">Although one could expect the movement captured by this phrase-disjoint rule type to be also present in G 2 (via two swaps or one concatenation plus one swap), the terminal sequences w may differ.</S>
+      </P>
+      <P>
+        <S ID="S-134385">Figure 1 shows an example set of rules indicating to which of the previous grammars each rule belongs, and shows three translation candidates as generated by grammars G 1 (left-most tree), G 2 (middle tree) and G 3 (right-most tree).</S>
+        <S ID="S-134386">Note that the middle tree cannot be generated with G 1 as it requires monotonic concatenation before reordering with rule R 4 .</S>
+      </P>
+      <P>
+        <S ID="S-134387">The more rule types a hierarchical grammar contains, the more different rule derivations and the greater the search space of alternative translation candidates.</S>
+        <S ID="S-134388">This is also connected to how many rules are extracted per rule type.</S>
+        <S ID="S-134389">Ideally we would like the grammar to be able to generate the correct translation of a given input sentence, without overgenerating too many other candidates, as that makes the translation task more difficult.</S>
+      </P>
+      <P>
+        <S ID="S-134390">We will make use of the parallel data in measuring the ability of a grammar to generate correct translations.</S>
+        <S ID="S-134391">By extracting rules from a parallel sentence, we translate them and observe whether the translation grammar is able to produce the parallel target translation.</S>
+        <S ID="S-134392">In Section 5.1 we evaluate this for a Chinese-to-English task.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Reducing Grammar Redundancy</HEADER>
+        <P>
+          <S ID="S-134348">Let us discuss grammar G 2 in more detail.</S>
+          <S ID="S-134349">As described in the previous section, the motivation for including rule type X&#8594;&#12296;w X,w X&#12297; is that the grammar be able to carry out monotonic concatenation before applying another hierarchical rule with reordering.</S>
+          <S ID="S-134350">This movement is permitted by this rule type, but the use of a single nonterminal category X also allows the grammar to apply the concatenation after reordering, that is, immediately before the glue rule is applied.</S>
+          <S ID="S-134351">This creates significant redundancy in rule derivations, as this rule type is allowed to act as a glue rule.</S>
+          <S ID="S-134352">For example, given an input sentence s 1 s 2 and the following simple grammar:</S>
+        </P>
+        <P>
+          <S ID="S-134353">R 0 : S&#8594;&#12296;X,X&#12297; R 1 : S&#8594;&#12296;S X,S X&#12297; R 2 : X&#8594;&#12296;s 1,t 1&#12297; R 3 : X&#8594;&#12296;s 2,t 2&#12297; R 4 : X&#8594;&#12296;s 1 X,t 1 X&#12297;</S>
+        </P>
+        <P>
+          <S ID="S-134354">two derivations are possible: R 2 ,R 0 ,R 3 ,R 1 and R 3 ,R 4 ,R 0 , and the translation result is identical.</S>
+        </P>
+        <P>
+          <S ID="S-134355">To avoid this situation we introduce a nonterminal M in the left-hand side of monotonic concatenation rules of G 2 .</S>
+          <S ID="S-134356">All rules are allowed to use nonterminals X and M in their right-hand side, except the glue rules, which can only take X.</S>
+          <S ID="S-134357">In the context of our example, R 4 is substituted by:</S>
+        </P>
+        <P>
+          <S ID="S-134358">R 4a : M&#8594;&#12296;s 1 X,t 1 X&#12297; R 4b : M&#8594;&#12296;s 1 M,t 1 M&#12297;</S>
+        </P>
+        <P>
+          <S ID="S-134359">so that only the first derivation is possible: R 2 ,R 0 ,R 3 ,R 1 , because applying R 3 ,R 4a yields a nonterminal M that cannot be taken by the glue rule R 0 .</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiments</HEADER>
+      <P>
+        <S ID="S-134466">We report experiments in Chinese-to-English translation.</S>
+        <S ID="S-134467">Our system is trained on a subset of the GALE 2008 evaluation parallel text; 2 this is approximately 50M words per language.</S>
+        <S ID="S-134468">We report translation results on a development set tune-nw and a test set test-nw1.</S>
+        <S ID="S-134469">These contain translations produced by the GALE program and portions of the newswire sections of MT02 through MT06.</S>
+        <S ID="S-134470">They contain 1,755 sentences and 1,671 sentences respectively.</S>
+        <S ID="S-134471">Results are also reported on a smaller held-</S>
+      </P>
+      <P>
+        <S ID="S-134472">2 See http://projects.ldc.upenn.edu/gale/data/catalog.html.</S>
+      </P>
+      <P>
+        <S ID="S-134473">We excluded the UN material and the LDC2002E18, LDC2004T08, LDC2007E08 and CUDonga collections.</S>
+      </P>
+      <P>
+        <S ID="S-134474">G0 G1 G2 G3</S>
+      </P>
+      <P>
+        <S ID="S-134475">V-st</S>
+      </P>
+      <P>
+        <S ID="S-134476">V-ts</S>
+      </P>
+      <P>
+        <S ID="S-134477">V-union</S>
+      </P>
+      <P>
+        <S ID="S-134478">V-gdf</S>
+      </P>
+      <P>
+        <S ID="S-134479">V-merge</S>
+      </P>
+      <P>
+        <S ID="S-134480">WP-st</S>
+      </P>
+      <P>
+        <S ID="S-134481">WP-ts</S>
+      </P>
+      <P>
+        <S ID="S-134482">WP-merge</S>
+      </P>
+      <P>
+        <S ID="S-134483">out test set test-nw2, containing 60% of the NIST newswire portion of MT06, that is, 369 sentences.</S>
+      </P>
+      <P>
+        <S ID="S-134484">The parallel texts for both language pairs are aligned using MTTK (<REF ID="R-09" RPTR="11">Deng and Byrne, 2008</REF>).</S>
+        <S ID="S-134485">For decoding we use HiFST, a lattice-based decoder implemented with Weighted Finite State Transducers (de Gispert et al., 2010).</S>
+        <S ID="S-134486">Likelihood-based search pruning is applied if the number of states in the lattice associated with each CYK grid cell exceeds 10,000, otherwise the entire search space is explored.</S>
+        <S ID="S-134487">The language model is a 4-gram language model estimated over the English side of the parallel text and the AFP and Xinhua portions of the English Gigaword Fourth Edition (LDC2009T13), interpolated with a zero-cutoff stupid-backoff (<REF ID="R-03" RPTR="2">Brants et al., 2007</REF>) 5-gram estimated using 6.6B words of English newswire text.</S>
+        <S ID="S-134488">In tuning the systems, standard MERT (<REF ID="R-19" RPTR="25">Och, 2003</REF>) iterative parameter estimation under IBM BLEU 3 is performed on the development sets.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Measuring Expressive Power</HEADER>
+        <P>
+          <S ID="S-134393">We measure the expressive power of the grammars described in the previous section by running the translation system in alignment mode (de Gispert et al., 2010) over the parallel corpus.</S>
+          <S ID="S-134394">Conceptually, this is equivalent to replacing the language model by the target sentence and seeing if the system is able to find any candidate.</S>
+          <S ID="S-134395">Here the weights assigned to the</S>
+        </P>
+        <P>
+          <S ID="S-134396">3 See ftp://jaguar.ncsl.nist.gov/mt/resources/mteval-v13.pl</S>
+        </P>
+        <P>
+          <S ID="S-134397">rules are irrelevant, as only the ability of the grammar to create a desired hypothesis is important.</S>
+          <S ID="S-134398">We compare the percentage of target sentences that can be successfully produced by grammars G 0 , G 1 , G 2 and G 3 for the following extraction methods:</S>
+        </P>
+        <P>
+          <S ID="S-134399">&#8226; Viterbi (V).</S>
+          <S ID="S-134400">This is the standard extraction method based on a set of alignment links.</S>
+          <S ID="S-134401">We distinguish four cases, depending on the model used to obtain the set of links: source-totarget (V-st), target-to-source (V-ts), and two common symmetrization strategies: union (Vunion) and grow-diag-final (V-gdf), described in (<REF ID="R-12" RPTR="15">Koehn et al., 2003</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-134402">&#8226; Word Posteriors (WP).</S>
+          <S ID="S-134403">The extraction method is based on word alignment posteriors described in Section 3.1.1.</S>
+          <S ID="S-134404">These rules can be obtained either from the posteriors of the sourceto-target (WP-st) or the target-to-source (WPts) alignment models.</S>
+          <S ID="S-134405">We apply the alignment constraints and selection criteria described in Section 3.2.</S>
+          <S ID="S-134406">We do not report alignment percentages when using phrase posteriors (as described in Section 3.1.2) as they are roughly identical to the WP case.</S>
+        </P>
+        <P>
+          <S ID="S-134407">&#8226; Finally, in both cases, we also report results when merging the extracted rules in both directions into a single rule set (V-merge and WPmerge).</S>
+        </P>
+        <P>
+          <S ID="S-134408">Figure 2 shows the results obtained for a random selection of 10,000 parallel corpus sentences.</S>
+          <S ID="S-134409">As expected, we can see that for any extraction method, the percentage of aligned sentences increases when switching from G 0 to G 1 , G 2 and G 3 .</S>
+          <S ID="S-134410">Posteriorbased extraction is shown to outperform standard methods based on a Viterbi set of alignments for nearly all grammars.</S>
+          <S ID="S-134411">The highest alignment percentages are obtained when merging rules obtained under models trained in each direction (WP-merge), approximately reaching 80% for grammar G 3 .</S>
+          <S ID="S-134412">The maximum rule span in alignment was allowed to be 15 words, so as to be similar to translation, where the maximum rule span is 10 words.</S>
+          <S ID="S-134413">Relaxing this in alignment to 30 words yields approximately 90% coverage for WP-merge under G 3 .</S>
+        </P>
+        <P>
+          <S ID="S-134414">We note that if alignment constraints C A and selection criteria C S were not applied, that is k = &#8734;, then alignment percentages would be 100% even for G 0 , but the extracted grammar would include many noisy rules with poor generalization power and would suffer from overgeneration.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Translation Results</HEADER>
+        <P>
+          <S ID="S-134415">In this section we investigate the translation performance of each hierarchical grammar, as defined by rules obtained from three rule extraction methods:</S>
+        </P>
+        <P>
+          <S ID="S-134416">&#8226; Viterbi union (V-union).</S>
+          <S ID="S-134417">Standard rule extraction from the union of the source-to-target and target-to-source alignment link sets.</S>
+        </P>
+        <P>
+          <S ID="S-134418">&#8226; Word Posteriors (WP-st).</S>
+          <S ID="S-134419">Extraction based on word posteriors as described in Section 3.1.1.</S>
+          <S ID="S-134420">The posteriors are provided by the source-to-target alignment model.</S>
+          <S ID="S-134421">Alignment constraints and selection criteria of Section 3.2 are applied, with n obs = 2.</S>
+        </P>
+        <P>
+          <S ID="S-134422">&#8226; Phrase Posteriors (PP-st).</S>
+          <S ID="S-134423">Extraction based on phrase alignment posteriors, as described in Section 3.1.2, with fractional counts proportional to the phrase probability under the source-to-target alignment model.</S>
+          <S ID="S-134424">Alignment constraints and selection criteria of Section 3.2 are applied, with n obs = 0.2.</S>
+        </P>
+        <P>
+          <S ID="S-134425">Table 2 reports the translation results, as well as the number of extracted rules in each case.</S>
+          <S ID="S-134426">It also shows the following decoding statistics as measured on the tune-nw set: decoding time in seconds per input word, and number of instances of search pruning (described in Section 5) per input word.</S>
+        </P>
+        <P>
+          <S ID="S-134427">As a contrast, we extract rules according to the heuristics introduced in (<REF ID="R-05" RPTR="6">Chiang, 2007</REF>) and apply the filters described in (Iglesias et al., 2009) to generate a standard hierarchical phrase-based grammar G H .</S>
+          <S ID="S-134428">This uses rules with up to two nonadjacent nonterminals, but excludes identical rule types such as X&#8594;&#12296;w X,w X&#12297; or X&#8594;&#12296;w X 1 w X 2 ,w X 1 w X 2 &#12297;, which were reported to cause computational difficulties without a clear improvement in translation (Iglesias et al., 2009).</S>
+        </P>
+        <P>
+          <S ID="S-134429">Grammar expressivity.</S>
+          <S ID="S-134430">As expected, for the standard extraction method (see rows entitled V-union), grammar G 1 is shown to underperform all other grammars due to its structural limitations.</S>
+          <S ID="S-134431">On the other hand, grammar G 2 obtains much better scores, nearly generating the same translation quality as the baseline grammar G H .</S>
+          <S ID="S-134432">Finally, G 3 does not prove able to outperform G 2 , which suggests that the phrase-disjoint rules with one nonterminal are redundant for the translation grammar.</S>
+          <S ID="S-134433">Rule extraction method.</S>
+          <S ID="S-134434">For all grammars, we find that the proposed extraction methods based on alignment posteriors outperform standard Viterbibased extraction, with improvements ranging from 0.5 to 1.1 BLEU points for test-nw1 (depending on the grammar) and from 1.0 to 1.5 for test-nw2.</S>
+          <S ID="S-134435">In all cases, the use of phrase posteriors PP is the best option.</S>
+          <S ID="S-134436">Interestingly, we find that G 2 extracted with</S>
+        </P>
+        <P>
+          <S ID="S-134437">WP and PP methods outperforms the more complex G H grammar as obtained from Viterbi alignments.</S>
+        </P>
+        <P>
+          <S ID="S-134438">Rule set statistics.</S>
+          <S ID="S-134439">For grammar G 2 evaluated on the tune-nw set, standard Viterbi-based extraction produces 0.7M rules, whereas the WP and PP extraction methods yield 1.1M and 1.2M rules respectively.</S>
+          <S ID="S-134440">We further analyse the sets of rules X&#8594;&#12296;&#947;,&#945;,&#8764;&#12297; in terms of the number of distinct source and target sequences &#947; and &#945; which are extracted.</S>
+          <S ID="S-134441">Viterbi extraction yields 82k distinct source sequences whereas the WP and PP methods yield 116k and 146k sequences, respectively.</S>
+          <S ID="S-134442">In terms of the average number of target sequences for each source sequence, Viterbi extraction yields an average of 8.7 while WP and PP yield 9.7 and 8.4 rules on average.</S>
+          <S ID="S-134443">This shows that method PP yields wider coverage but with sharper forward rule translation probability distributions than method WP, as the average number of translations per rule is determined by the p(&#945;|&#947;) &gt; 0.01 threshold mentioned in Section 3.2.</S>
+        </P>
+        <P>
+          <S ID="S-134444">Decoding time and pruning in search.</S>
+          <S ID="S-134445">In connection to the previous comments, we find an increased need for search pruning, and subsequently slower decoding speed, as the search space grows larger with methods WP and PP. A larger search space is created by the larger rule sets, which allows the system to generate new hypotheses of better quality.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Rule Concatenation in Grammar G 2</HEADER>
+        <P>
+          <S ID="S-134446">In Section 4.1 we described a strategy to reduce grammar redundancy by introducing an additional nonterminal M for monotonic concatenation rules.</S>
+          <S ID="S-134447">We find that without this distinction among nonterminals, search pruning and decoding time are increased by a factor of 1.5, and there is a slight degradation in BLEU (&#8764;0.2) as more search errors are introduced.</S>
+        </P>
+        <P>
+          <S ID="S-134448">Another relevant aspect of this grammar is the actual rule type selected for monotonic concatenation.</S>
+          <S ID="S-134449">We described using type X&#8594;&#12296;w X,w X&#12297; (concatenation on the right), but one could also include X&#8594;&#12296;X w,X w&#12297; (concatenation on the left), or both, for the same purpose.</S>
+          <S ID="S-134450">We evaluated the three alternatives and found that scores are identical when either including right or left concatenation types, but including both is harmful for performance, as the need to prune and decoding time increase by a fac-</S>
+        </P>
+        <P>
+          <S ID="S-134451">tor of 5 and 4, respectively, and we observe again a slight degradation in performance.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Symmetrizing Alignments of Parallel Text</HEADER>
+        <P>
+          <S ID="S-134452">In this section we investigate extraction from alignments (and posterior distributions) over parallel text which are generated using alignment models trained in the source-to-target (st) and target-to-source (ts) directions.</S>
+          <S ID="S-134453">Our motivation is that symmetrization strategies have been reported to be beneficial for Viterbi extraction methods (<REF ID="R-18" RPTR="24">Och and Ney, 2003</REF>; <REF ID="R-12" RPTR="16">Koehn et al., 2003</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-134454">Results are shown in Table 3 for grammar G 2 .</S>
+          <S ID="S-134455">We find that rules extracted under the source-to-target alignment models (V-st, WP-st and PP-st) consistently perform better than the V-ts, WP-ts and PPts cases.</S>
+          <S ID="S-134456">Also, for Viterbi extraction we find that the source-to-target V-st case performs better than any of the symmetrization strategies, which contradicts previous findings for non-hierarchical phrase-based systems(<REF ID="R-12" RPTR="17">Koehn et al., 2003</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-134457">We use the PP rule extraction method to extract two sets of rules, under the st and ts alignment models respectively.</S>
+          <S ID="S-134458">We now investigate two ways of merging these sets into a single grammar for translation.</S>
+          <S ID="S-134459">The first strategy is PP-merge and merges both rule sets by assigning to each rule the maximum count assigned by either alignment model.</S>
+          <S ID="S-134460">We then extend the previous strategy by adding three binary feature functions to the system, indicating whether the rule was extracted under the &#8217;st&#8217; model, the &#8217;ts&#8217; model or both.</S>
+          <S ID="S-134461">The motivation is that MERT can weight rules differently according to the alignment model they were extracted from.</S>
+          <S ID="S-134462">However, we do not find any improvement with either strategy.</S>
+        </P>
+        <P>
+          <S ID="S-134463">Finally, we use linearised lattice minimum Bayesrisk decoding (<REF ID="R-23" RPTR="28">Tromble et al., 2008</REF>; Blackwood et al., 2010) to combine translation lattices (de Gispert et al., 2010) as produced by rules extracted under each alignment direction (see rows named LMBR(V-st,V-ts) and LMBR(PP-st,PP-ts)).</S>
+          <S ID="S-134464">Gains are consistent when comparing this to applying LMBR to each of the best individual systems (rows named LMBR(V-st) and LMBR(PP-st)).</S>
+          <S ID="S-134465">Overall, the best-performing strategy is to extract two sets of translation rules under the phrase pair posteriors in each translation direction, and then to perform translation twice and merge the results.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusion</HEADER>
+      <P>
+        <S ID="S-134489">Rule extraction based on alignment posterior probabilities can generate larger rule sets.</S>
+        <S ID="S-134490">This results in grammars with more expressive power, as measured by the ability to align parallel sentences.</S>
+        <S ID="S-134491">Assigning counts equal to phrase posteriors produces better estimation of rule translation probabilities.</S>
+        <S ID="S-134492">This results in improved translation scores as the search space grows.</S>
+        <S ID="S-134493">This more exhaustive rule extraction method permits a grammar simplification, as expressed by the phrase movement allowed by its rules.</S>
+        <S ID="S-134494">In particular a simple grammar with rules of only one nonterminal is shown to outperform a more complex grammar built on rules extracted from Viterbi alignments.</S>
+        <S ID="S-134495">Finally, we find that the best way to exploit alignment models trained in each translation direction is to extract two rule sets based on alignment posteriors, translate the input independently with each rule set and combine translation output lattices.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-134496">This work was supported in part by the GALE program of the Defense Advanced Research Projects</S>
+    </P>
+    <P>
+      <S ID="S-134497">Agency, Contract No.</S>
+      <S ID="S-134498">HR0011- 06-C-0022.</S>
+    </P>
+    <P>
+      <S ID="S-134499">References</S>
+    </P>
+    <P>
+      <S ID="S-134500">Graeme Blackwood, Adri&#224; de Gispert, and William Byrne.</S>
+      <S ID="S-134501">2010.</S>
+      <S ID="S-134502">Efficient Path Counting Transducers for Minimum Bayes-Risk Decoding of Statistical Machine Translation Lattices.</S>
+      <S ID="S-134503">In Proceedings of ACL, Short Papers, pages 27&#8211;32.</S>
+      <S ID="S-134504">Phil Blunsom, Trevor Cohn, and Miles Osborne.</S>
+      <S ID="S-134505">2008.</S>
+      <S ID="S-134506">Bayesian Synchronous Grammar Induction.</S>
+      <S ID="S-134507">In Advances in Neural Information Processing Systems, volume 21, pages 161&#8211;168.</S>
+      <S ID="S-134508">Phil Blunsom, Trevor Cohn, Chris Dyer, and Miles Osborne.</S>
+      <S ID="S-134509">2009.</S>
+      <S ID="S-134510">A gibbs sampler for phrasal synchronous grammar induction.</S>
+      <S ID="S-134511">In Proceedings of the ACL, pages 782&#8211;790.</S>
+      <S ID="S-134512">Thorsten Brants, Ashok C. Popat, Peng Xu, Franz J. Och,</S>
+    </P>
+    <P>
+      <S ID="S-134513">and Jeffrey Dean.</S>
+      <S ID="S-134514">2007.</S>
+      <S ID="S-134515">Large language models in machine translation.</S>
+      <S ID="S-134516">In Proceedings of EMNLP-ACL, pages 858&#8211;867.</S>
+      <S ID="S-134517">P.</S>
+      <S ID="S-134518">Brown, S. Della Pietra, V. Della Pietra, and R. Mercer.</S>
+    </P>
+    <P>
+      <S ID="S-134519">1993.</S>
+      <S ID="S-134520">The mathematics of statistical machine translation: Parameter estimation.</S>
+      <S ID="S-134521">Computational Linguistics, 19(2):263&#8211;311.</S>
+      <S ID="S-134522">David Chiang.</S>
+      <S ID="S-134523">2007.</S>
+      <S ID="S-134524">Hierarchical phrase-based translation.</S>
+      <S ID="S-134525">Computational Linguistics, 33(2):201&#8211;228.</S>
+      <S ID="S-134526">Martin Cmejrek, Bowen Zhou, and Bing Xiang.</S>
+      <S ID="S-134527">2009.</S>
+    </P>
+    <P>
+      <S ID="S-134528">Enriching SCFG Rules Directly From Efficient Bilingual Chart Parsing.</S>
+      <S ID="S-134529">In Proceedings of IWSLT, pages 136&#8211;143.</S>
+      <S ID="S-134530">Adri&#224; de Gispert, Gonzalo Iglesias, Graeme Blackwood,</S>
+    </P>
+    <P>
+      <S ID="S-134531">Eduardo R. Banga, and William Byrne.</S>
+      <S ID="S-134532">2010.</S>
+      <S ID="S-134533">Hierarchical phrase-based translation with weighted finite state transducers and shallow-n grammars.</S>
+      <S ID="S-134534">Computational Linguistics, 36(3).</S>
+      <S ID="S-134535">John DeNero and Dan Klein.</S>
+      <S ID="S-134536">2008.</S>
+      <S ID="S-134537">The complexity of</S>
+    </P>
+    <P>
+      <S ID="S-134538">phrase alignment problems.</S>
+      <S ID="S-134539">In Proceedings of ACL- HLT, Short Papers, pages 25&#8211;28.</S>
+      <S ID="S-134540">Yonggang Deng and William Byrne.</S>
+      <S ID="S-134541">2008.</S>
+      <S ID="S-134542">HMM word</S>
+    </P>
+    <P>
+      <S ID="S-134543">and phrase alignment for statistical machine translation.</S>
+      <S ID="S-134544">IEEE Transactions on Audio, Speech, and Language Processing, 16(3):494&#8211;507.</S>
+      <S ID="S-134545">Yonggang Deng.</S>
+      <S ID="S-134546">2005.</S>
+      <S ID="S-134547">Bitext Alignment for Statistical Machine Translation.</S>
+      <S ID="S-134548">Ph.D.</S>
+      <S ID="S-134549">thesis, Johns Hopkins University.</S>
+      <S ID="S-134550">Gonzalo Iglesias, Adri&#224; de Gispert, Eduardo R. Banga,</S>
+    </P>
+    <P>
+      <S ID="S-134551">and William Byrne.</S>
+      <S ID="S-134552">2009.</S>
+      <S ID="S-134553">Rule filtering by pattern for efficient hierarchical translation.</S>
+      <S ID="S-134554">In Proceedings of the EACL, pages 380&#8211;388.</S>
+      <S ID="S-134555">Philipp Koehn, Franz J. Och, and Daniel Marcu.</S>
+      <S ID="S-134556">2003.</S>
+    </P>
+    <P>
+      <S ID="S-134557">Statistical phrase-based translation.</S>
+      <S ID="S-134558">In Proceedings of HLT/NAACL, pages 48&#8211;54.</S>
+    </P>
+    <P>
+      <S ID="S-134559">Philipp Koehn.</S>
+      <S ID="S-134560">2010.</S>
+      <S ID="S-134561">Statistical Machine Translation.</S>
+    </P>
+    <P>
+      <S ID="S-134562">Cambridge University Press.</S>
+      <S ID="S-134563">Shankar Kumar, Franz J. Och, and Wolfgang Macherey.</S>
+      <S ID="S-134564">2007.</S>
+      <S ID="S-134565">Improving word alignment with bridge languages.</S>
+      <S ID="S-134566">In Proceedings of EMNLP-CoNLL, pages 42&#8211; 50.</S>
+      <S ID="S-134567">Yang Liu, Tian Xia, Xinyan Xiao, and Qun Liu.</S>
+      <S ID="S-134568">2009.</S>
+      <S ID="S-134569">Weighted alignment matrices for statistical machine translation.</S>
+      <S ID="S-134570">In Proceedings of EMNLP, pages 1017&#8211; 1026.</S>
+      <S ID="S-134571">Adam Lopez.</S>
+      <S ID="S-134572">2008.</S>
+      <S ID="S-134573">Tera-scale translation models via</S>
+    </P>
+    <P>
+      <S ID="S-134574">pattern matching.</S>
+      <S ID="S-134575">In Proceedings of COLING, pages 505&#8211;512.</S>
+    </P>
+    <P>
+      <S ID="S-134576">Daniel Marcu and William Wong.</S>
+      <S ID="S-134577">2002.</S>
+      <S ID="S-134578">A phrase-based, joint probability model for statistical machine translation.</S>
+      <S ID="S-134579">In Proceedings of EMNLP, pages 133&#8211;139.</S>
+      <S ID="S-134580">Franz J. Och and Hermann Ney.</S>
+      <S ID="S-134581">2003.</S>
+      <S ID="S-134582">A systematic comparison of various statistical alignment models.</S>
+      <S ID="S-134583">Computational Linguistics, 29(1):19&#8211;51.</S>
+      <S ID="S-134584">Franz J. Och.</S>
+      <S ID="S-134585">2003.</S>
+      <S ID="S-134586">Minimum error rate training in statistical machine translation.</S>
+      <S ID="S-134587">In Proceedings of ACL, pages 160&#8211;167.</S>
+      <S ID="S-134588">Adam Pauls, Dan Klein, David Chiang, and Kevin</S>
+    </P>
+    <P>
+      <S ID="S-134589">Knight.</S>
+      <S ID="S-134590">2010.</S>
+      <S ID="S-134591">Unsupervised syntactic alignment with inversion transduction grammars.</S>
+      <S ID="S-134592">In Proceedings of the HLT-NAACL, pages 118&#8211;126.</S>
+      <S ID="S-134593">Markus Saers and Dekai Wu.</S>
+      <S ID="S-134594">2009.</S>
+      <S ID="S-134595">Improving phrasebased translation via word alignments from stochastic inversion transduction grammars.</S>
+      <S ID="S-134596">In Proceedings of the HLT-NAACL Workshop on Syntax and Structure in Statistical Translation, pages 28&#8211;36.</S>
+      <S ID="S-134597">Libin Shen, Jinxi Xu, and Ralph Weischedel.</S>
+      <S ID="S-134598">2008.</S>
+      <S ID="S-134599">A new string-to-dependency machine translation algorithm with a target dependency language model.</S>
+      <S ID="S-134600">In Proceedings of ACL-HLT, pages 577&#8211;585.</S>
+      <S ID="S-134601">Roy Tromble, Shankar Kumar, Franz J. Och, and Wolfgang Macherey.</S>
+      <S ID="S-134602">2008.</S>
+      <S ID="S-134603">Lattice Minimum Bayes-Risk decoding for statistical machine translation.</S>
+      <S ID="S-134604">In Proceedings of EMNLP, pages 620&#8211;629.</S>
+      <S ID="S-134605">Ashish Venugopal, Stephan Vogel, and Alex Waibel.</S>
+      <S ID="S-134606">2003.</S>
+      <S ID="S-134607">Effective phrase translation extraction from alignment models.</S>
+      <S ID="S-134608">In Proceedings of ACL, pages 319&#8211; 326.</S>
+      <S ID="S-134609">Ashish Venugopal, Andreas Zollmann, Noah A. Smith,</S>
+    </P>
+    <P>
+      <S ID="S-134610">and Stephan Vogel.</S>
+      <S ID="S-134611">2008.</S>
+      <S ID="S-134612">Wider pipelines: N-best alignments and parses in mt training.</S>
+      <S ID="S-134613">In Proceedings of AMTA, pages 192&#8211;201.</S>
+      <S ID="S-134614">Andreas Zollmann, Ashish Venugopal, Franz J. Och, and</S>
+    </P>
+    <P>
+      <S ID="S-134615">Jay Ponte.</S>
+      <S ID="S-134616">2008.</S>
+      <S ID="S-134617">A systematic comparison of phrasebased, hierarchical and syntax-augmented statistical MT.</S>
+      <S ID="S-134618">In Proceedings of COLING, pages 1145&#8211;1152.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Graeme Blackwood</RAUTHOR>
+      <REFTITLE>Efficient Path Counting Transducers for Minimum Bayes-Risk Decoding of Statistical Machine Translation Lattices.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Phil Blunsom</RAUTHOR>
+      <REFTITLE>Bayesian Synchronous Grammar Induction.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Phil Blunsom</RAUTHOR>
+      <REFTITLE>A gibbs sampler for phrasal synchronous grammar induction.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Thorsten Brants</RAUTHOR>
+      <REFTITLE>Large language models in machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>P Brown</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: Parameter estimation.</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Martin Cmejrek</RAUTHOR>
+      <REFTITLE>Enriching SCFG Rules Directly From Efficient Bilingual Chart Parsing.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Adri&#224; de Gispert</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation with weighted finite state transducers and shallow-n grammars.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>John DeNero</RAUTHOR>
+      <REFTITLE>The complexity of phrase alignment problems.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>HMM word and phrase alignment for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>Bitext Alignment for Statistical Machine Translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Gonzalo Iglesias</RAUTHOR>
+      <REFTITLE>Rule filtering by pattern for efficient hierarchical translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical Machine Translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Shankar Kumar</RAUTHOR>
+      <REFTITLE>Improving word alignment with bridge languages.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Weighted alignment matrices for statistical machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Adam Lopez</RAUTHOR>
+      <REFTITLE>Tera-scale translation models via pattern matching.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Daniel Marcu</RAUTHOR>
+      <REFTITLE>A phrase-based, joint probability model for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Adam Pauls</RAUTHOR>
+      <REFTITLE>Unsupervised syntactic alignment with inversion transduction grammars.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Markus Saers</RAUTHOR>
+      <REFTITLE>Improving phrasebased translation via word alignments from stochastic inversion transduction grammars.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Libin Shen</RAUTHOR>
+      <REFTITLE>A new string-to-dependency machine translation algorithm with a target dependency language model.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Roy Tromble</RAUTHOR>
+      <REFTITLE>Lattice Minimum Bayes-Risk decoding for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Ashish Venugopal</RAUTHOR>
+      <REFTITLE>Effective phrase translation extraction from alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Ashish Venugopal</RAUTHOR>
+      <REFTITLE>Wider pipelines: N-best alignments and parses in mt training.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

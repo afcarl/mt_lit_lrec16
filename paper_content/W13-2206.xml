@@ -1,0 +1,1965 @@
+<document>
+  <filename>W13-2206</filename>
+  <authors/>
+  <title>Feature Decay Algorithms for Fast Deployment of Accurate Statistical Machine Translation Systems</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>We use feature decay algorithms (FDA) for fast deployment of accurate statistical machine translation systems taking only about half a day for each translation direction. We develop parallel FDA for solving computational scalability problems caused by the abundance of training data for SMT models and LM models and still achieve SMT performance that is on par with using all of the training data or better. Parallel FDA runs separate FDA models on randomized subsets of the training data and combines the instance selections later. Parallel FDA can also be used for selecting the LM corpus based on the training set selected by parallel FDA. The high quality of the selected training data allows us to obtain very accurate translation outputs close to the top performing SMT systems. The relevancy of the selected LM corpus can reach up to 86% reduction in the number of OOV tokens and up to 74% reduction in the perplexity. We perform SMT experiments in all language pairs in the WMT13 translation task and obtain SMT performance close to the top systems using significantly less resources for training and development.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We use feature decay algorithms (FDA) for fast deployment of accurate statistical machine translation systems taking only about half a day for each translation direction.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We develop parallel FDA for solving computational scalability problems caused by the abundance of training data for SMT models and LM models and still achieve SMT performance that is on par with using all of the training data or better.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parallel FDA runs separate FDA models on randomized subsets of the training data and combines the instance selections later.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parallel FDA can also be used for selecting the LM corpus based on the training set selected by parallel FDA.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The high quality of the selected training data allows us to obtain very accurate translation outputs close to the top performing SMT systems.</text>
+              <doc_id>4</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>The relevancy of the selected LM corpus can reach up to 86% reduction in the number of OOV tokens and up to 74% reduction in the perplexity.</text>
+              <doc_id>5</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>We perform SMT experiments in all language pairs in the WMT13 translation task and obtain SMT performance close to the top systems using significantly less resources for training and development.</text>
+              <doc_id>6</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>Statistical machine translation (SMT) is a data intensive problem. If you have the translations for the source sentences you are translating in your training set or even portions of it, then the translation task becomes easier. If some tokens are not found in your training data then you cannot translate them and if some translated word do not appear in your language model (LM) corpus, then it becomes harder for the SMT engine to find their correct position in the translation.
+Current SMT systems also face problems caused by the proliferation of various parallel corpora available for building SMT systems. The training data for many of the language pairs in the translation task, part of the Workshop on Machine translation (WMT13) (Callison-Burch et al., 2013), have increased the size of the available parallel corpora for instance by web crawled corpora over the years. The increased size of the training material creates computational scalability problems when training SMT models and can increase the amount of noisy parallel sentences found. As the training set sizes increase, proper training set selection becomes more important.
+At the same time, when we are going to translate just a couple of thousand sentences, possibly belonging to the same target domain, it does not make sense to invest resources for training SMT models over tens of millions of sentences or even more. SMT models like Moses already have filtering mechanisms to create smaller parts of the built models that are relevant to the test set.
+In this paper, we develop parallel feature decay algorithms (FDA) for solving computational scalability problems caused by the abundance of training data for SMT models and LM models and still achieve SMT performance that is on par with using all of the training data or better. Parallel FDA runs separate FDA models on randomized subsets of the training data and combines the instance selections later. We perform SMT experiments in all language pairs of the WMT13 (Callison-Burch et al., 2013) and obtain SMT performance close to the baseline Moses (Koehn et al., 2007) system using less resources for training. With parallel FDA, we can solve not only the instance selection problem for training data but also instance selection for the LM training corpus, which allows us to train higher order n-gram language models and model the dependencies better. Parallel FDA improves the scalability of FDA
+and allows rapid prototyping of SMT systems for a given target domain or task. Parallel FDA can be very useful for MT in target domains with limited resources or in disaster and crisis situations (Lewis et al., 2011) where parallel corpora can be gathered by crawling and selected by parallel FDA. Parallel FDA also improves the computational requirements of FDA by selecting from smaller corpora and distributing the work load. The high quality of the selected training data allows us to obtain very accurate translation outputs close to the top performing SMT systems. The relevancy of the LM corpus selected can reach up to 86% reduction in the number of OOV tokens and up to 74% reduction in the perplexity.
+We organize our work as follows. We describe FDA and parallel FDA models in the next section. We also describe how we extend the FDA model for LM corpus selection. In section 3, we present our experimental results and in the last section, we summarize our contributions.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Statistical machine translation (SMT) is a data intensive problem.</text>
+              <doc_id>7</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>If you have the translations for the source sentences you are translating in your training set or even portions of it, then the translation task becomes easier.</text>
+              <doc_id>8</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>If some tokens are not found in your training data then you cannot translate them and if some translated word do not appear in your language model (LM) corpus, then it becomes harder for the SMT engine to find their correct position in the translation.</text>
+              <doc_id>9</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Current SMT systems also face problems caused by the proliferation of various parallel corpora available for building SMT systems.</text>
+              <doc_id>10</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The training data for many of the language pairs in the translation task, part of the Workshop on Machine translation (WMT13) (Callison-Burch et al., 2013), have increased the size of the available parallel corpora for instance by web crawled corpora over the years.</text>
+              <doc_id>11</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The increased size of the training material creates computational scalability problems when training SMT models and can increase the amount of noisy parallel sentences found.</text>
+              <doc_id>12</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>As the training set sizes increase, proper training set selection becomes more important.</text>
+              <doc_id>13</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>At the same time, when we are going to translate just a couple of thousand sentences, possibly belonging to the same target domain, it does not make sense to invest resources for training SMT models over tens of millions of sentences or even more.</text>
+              <doc_id>14</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>SMT models like Moses already have filtering mechanisms to create smaller parts of the built models that are relevant to the test set.</text>
+              <doc_id>15</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we develop parallel feature decay algorithms (FDA) for solving computational scalability problems caused by the abundance of training data for SMT models and LM models and still achieve SMT performance that is on par with using all of the training data or better.</text>
+              <doc_id>16</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parallel FDA runs separate FDA models on randomized subsets of the training data and combines the instance selections later.</text>
+              <doc_id>17</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We perform SMT experiments in all language pairs of the WMT13 (Callison-Burch et al., 2013) and obtain SMT performance close to the baseline Moses (Koehn et al., 2007) system using less resources for training.</text>
+              <doc_id>18</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>With parallel FDA, we can solve not only the instance selection problem for training data but also instance selection for the LM training corpus, which allows us to train higher order n-gram language models and model the dependencies better.</text>
+              <doc_id>19</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parallel FDA improves the scalability of FDA</text>
+              <doc_id>20</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>and allows rapid prototyping of SMT systems for a given target domain or task.</text>
+              <doc_id>21</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parallel FDA can be very useful for MT in target domains with limited resources or in disaster and crisis situations (Lewis et al., 2011) where parallel corpora can be gathered by crawling and selected by parallel FDA.</text>
+              <doc_id>22</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parallel FDA also improves the computational requirements of FDA by selecting from smaller corpora and distributing the work load.</text>
+              <doc_id>23</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The high quality of the selected training data allows us to obtain very accurate translation outputs close to the top performing SMT systems.</text>
+              <doc_id>24</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The relevancy of the LM corpus selected can reach up to 86% reduction in the number of OOV tokens and up to 74% reduction in the perplexity.</text>
+              <doc_id>25</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We organize our work as follows.</text>
+              <doc_id>26</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We describe FDA and parallel FDA models in the next section.</text>
+              <doc_id>27</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We also describe how we extend the FDA model for LM corpus selection.</text>
+              <doc_id>28</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In section 3, we present our experimental results and in the last section, we summarize our contributions.</text>
+              <doc_id>29</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Feature Decay Algorithms for Instance Selection</title>
+        <text>In this section, we describe the FDA algorithm, the parallel FDA model, and how FDA training instance selection algorithms can be used also for instance selection for language model corpora.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this section, we describe the FDA algorithm, the parallel FDA model, and how FDA training instance selection algorithms can be used also for instance selection for language model corpora.</text>
+              <doc_id>30</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 Feature Decay Algorithm (FDA)</title>
+            <text>Feature decay algorithms (Bi&#231;ici and Yuret, 2011a) increase the diversity of the training set by decaying the weights of n-gram features that have already been included. FDAs try to maximize the coverage of the target language features for the test set. Translation performance can improve as we include multiple possible translations for a given word, which increases the diversity of the training set. A target language feature that does not appear in the selected training instances will be difficult to produce regardless of the decoding algorithm (impossible for unigram features). FDA tries to find as many training instances as possible to increase the chances of covering the correct target language feature by reducing the weight of the included features after selecting each training instance. Algorithm 1 gives the pseudo-code for FDA. We improve FDA with improved scaling, where the score for each sentence is scaled proportional to the length of the sentence, which reduces the average length of the training instances.
+Algorithm 1: The Feature Decay Algorithm Input: Parallel training sentences U, test set features F, and desired number of training instances N.
+Data: A priority queue Q, sentence scores score, feature values fval.
+Output: Subset of the parallel sentences to be used as the training data L &#8838; U.
+1 foreach f &#8712; F do
+2 fval(f) &#8592; init(f, U)
+3 foreach S &#8712; U do
+&#8721;
+4 score(S) &#8592; 1 |S|
+fval(f) s
+f&#8712;features(S)
+5 enqueue(Q, S, score(S))
+6 while |L| &lt; N do
+7 S &#8592; dequeue(Q)
+8 score(S) &#8592; 1 |S| s
+&#8721;
+f&#8712;features(S)
+fval(f)
+The input to the algorithm consists of parallel training sentences, the number of desired training instances, and the source language features of the test set. The feature decay function (decay) is the most important part of the algorithm where feature weights are multiplied by 1/n where n is the count of the feature in the current training set. The initialization function (init) calculates the log of inverse document frequency (idf): init(f, U) = log(|U|/(1 + C(f, U))), where |U| is the sum of the number of features appearing in the training corpus and C(f, U) is the number of times feature f appear in U. Further experiments with the algorithm are given in (Bi&#231;ici and Yuret, 2011a). We improve FDA with a scaling factor that prefers shorter sentences defined as: |S| s , where s is the power of the source sentence length and we set it to 0.9 after optimizing it over the perplexity of the LM built over the selected corpus (further discussed in Section 2.3).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Feature decay algorithms (Bi&#231;ici and Yuret, 2011a) increase the diversity of the training set by decaying the weights of n-gram features that have already been included.</text>
+                  <doc_id>31</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>FDAs try to maximize the coverage of the target language features for the test set.</text>
+                  <doc_id>32</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Translation performance can improve as we include multiple possible translations for a given word, which increases the diversity of the training set.</text>
+                  <doc_id>33</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>A target language feature that does not appear in the selected training instances will be difficult to produce regardless of the decoding algorithm (impossible for unigram features).</text>
+                  <doc_id>34</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>FDA tries to find as many training instances as possible to increase the chances of covering the correct target language feature by reducing the weight of the included features after selecting each training instance.</text>
+                  <doc_id>35</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Algorithm 1 gives the pseudo-code for FDA.</text>
+                  <doc_id>36</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We improve FDA with improved scaling, where the score for each sentence is scaled proportional to the length of the sentence, which reduces the average length of the training instances.</text>
+                  <doc_id>37</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Algorithm 1: The Feature Decay Algorithm Input: Parallel training sentences U, test set features F, and desired number of training instances N.</text>
+                  <doc_id>38</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Data: A priority queue Q, sentence scores score, feature values fval.</text>
+                  <doc_id>39</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Output: Subset of the parallel sentences to be used as the training data L &#8838; U.</text>
+                  <doc_id>40</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 foreach f &#8712; F do</text>
+                  <doc_id>41</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 fval(f) &#8592; init(f, U)</text>
+                  <doc_id>42</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 foreach S &#8712; U do</text>
+                  <doc_id>43</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8721;</text>
+                  <doc_id>44</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 score(S) &#8592; 1 |S|</text>
+                  <doc_id>45</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>fval(f) s</text>
+                  <doc_id>46</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>f&#8712;features(S)</text>
+                  <doc_id>47</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5 enqueue(Q, S, score(S))</text>
+                  <doc_id>48</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6 while |L| &lt; N do</text>
+                  <doc_id>49</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>7 S &#8592; dequeue(Q)</text>
+                  <doc_id>50</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>8 score(S) &#8592; 1 |S| s</text>
+                  <doc_id>51</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8721;</text>
+                  <doc_id>52</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>f&#8712;features(S)</text>
+                  <doc_id>53</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>fval(f)</text>
+                  <doc_id>54</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The input to the algorithm consists of parallel training sentences, the number of desired training instances, and the source language features of the test set.</text>
+                  <doc_id>55</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The feature decay function (decay) is the most important part of the algorithm where feature weights are multiplied by 1/n where n is the count of the feature in the current training set.</text>
+                  <doc_id>56</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The initialization function (init) calculates the log of inverse document frequency (idf): init(f, U) = log(|U|/(1 + C(f, U))), where |U| is the sum of the number of features appearing in the training corpus and C(f, U) is the number of times feature f appear in U.</text>
+                  <doc_id>57</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Further experiments with the algorithm are given in (Bi&#231;ici and Yuret, 2011a).</text>
+                  <doc_id>58</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We improve FDA with a scaling factor that prefers shorter sentences defined as: |S| s , where s is the power of the source sentence length and we set it to 0.9 after optimizing it over the perplexity of the LM built over the selected corpus (further discussed in Section 2.3).</text>
+                  <doc_id>59</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 Parallel FDA Model</title>
+            <text>FDA model obtains a sorting over all of the available training corpus based on the weights of the features found on the test set. Each selected train-
+Algorithm 2: Parallel FDA Input: U, F, and N. Output: L &#8838; U.
+1 U &#8592; shuffle(U)
+2 U, M &#8592; split(U, N)
+3 L &#8592; {}
+4 S &#8592; {}
+5 foreach U i &#8712; U do
+6 L i , S i &#8592; FDA(U i , F, M)
+7 add(L, L i )
+8 add(S, S i )
+9 L &#8592; merge(L, S)
+ing instance effects which feature weights will be decayed and therefore can result in a different ordering of the instances if previous instance selections are altered. This makes it difficult to parallelize the FDA algorithm fully. Parallel FDA model first shuffles the parallel training sentences, U, and distributes them to multiple splits for running individual FDA models on them.
+The input to parallel FDA also consists of parallel training sentences, the number of desired training instances, and the source language features of the test set. The first step shuffles the parallel training sentences and the next step splits into equal parts and outputs the split files and the adjusted number of instances to select from each, M. Since we split into equal parts, we select equal number of sentences, M, from each split. Then we run FDA on each file to obtain sorted files, L, together with their scores, S. merge combines k sorted lists into one sorted list in O(Mk log k) where Mk is the total number of elements in all of the input lists. 1 The obtained L is the new training set to be used for SMT experiments. We compared the target 2-gram feature coverage of the training sets obtained with FDA and parallel FDA and found that parallel FDA achieves close performance.
+Parallel FDA improves the scalability of FDA and allows rapid prototyping of SMT systems for a given target domain or task. Parallel FDA also improves the computational requirements of FDA by selecting from smaller corpora and distributing the work load, which can be very useful for MT in disaster scenarios.
+1 (Cormen et al., 2009), question 6.5-9. Merging k sorted
+lists into one sorted list using a min-heap for k-way merging.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>FDA model obtains a sorting over all of the available training corpus based on the weights of the features found on the test set.</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Each selected train-</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Algorithm 2: Parallel FDA Input: U, F, and N.</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Output: L &#8838; U.</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 U &#8592; shuffle(U)</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 U, M &#8592; split(U, N)</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 L &#8592; {}</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 S &#8592; {}</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5 foreach U i &#8712; U do</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>6 L i , S i &#8592; FDA(U i , F, M)</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>7 add(L, L i )</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>8 add(S, S i )</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>9 L &#8592; merge(L, S)</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>ing instance effects which feature weights will be decayed and therefore can result in a different ordering of the instances if previous instance selections are altered.</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This makes it difficult to parallelize the FDA algorithm fully.</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Parallel FDA model first shuffles the parallel training sentences, U, and distributes them to multiple splits for running individual FDA models on them.</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The input to parallel FDA also consists of parallel training sentences, the number of desired training instances, and the source language features of the test set.</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The first step shuffles the parallel training sentences and the next step splits into equal parts and outputs the split files and the adjusted number of instances to select from each, M.</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since we split into equal parts, we select equal number of sentences, M, from each split.</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Then we run FDA on each file to obtain sorted files, L, together with their scores, S. merge combines k sorted lists into one sorted list in O(Mk log k) where Mk is the total number of elements in all of the input lists.</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>1 The obtained L is the new training set to be used for SMT experiments.</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We compared the target 2-gram feature coverage of the training sets obtained with FDA and parallel FDA and found that parallel FDA achieves close performance.</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Parallel FDA improves the scalability of FDA and allows rapid prototyping of SMT systems for a given target domain or task.</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Parallel FDA also improves the computational requirements of FDA by selecting from smaller corpora and distributing the work load, which can be very useful for MT in disaster scenarios.</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 (Cormen et al., 2009), question 6.5-9.</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Merging k sorted</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>lists into one sorted list using a min-heap for k-way merging.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>2.3 Instance Selection for the Language Model Corpus</title>
+            <text>The language model corpus is very important for improving the SMT performance since it helps finding the correct ordering among the translated tokens or phrases. Increased LM corpus size can increase the SMT performance where doubling the LM corpus can improve the BLEU (Papineni et al., 2002) by 0.5 (Koehn, 2006). However, although LM corpora resources are more abundant, training on large LM corpora also poses computational scalability problems and until 2012, LM corpora such as LDC Gigaword corpora were not fully utilized due to memory limitations of computers and even with large memory machines, the LM corpora is split into pieces, interpolated, and merged (Koehn and Haddow, 2012) or the LM order is decreased to use up to 4-grams (Markus et al., 2012) or low frequency n-gram counts are omitted and better smoothing techniques are developed (Yuret, 2008). Using only the given training data for building the LM is another option used for limiting the size of the corpus, which can also obtain the second best performance in Spanish-English translation task and in the top tier for German-English (Guzman et al., 2012; Callison-Burch et al., 2012). This can also indicate that prior knowledge of the test set domain and its similarity to the available parallel training data may be diminishing the gains in SMT performance through better language modeling or better domain adaptation.
+For solving the computational scalability problems, there is a need for properly selecting LM training data as well. We select LM corpus with parallel FDA based on this observation:
+No word not appearing in the training set can appear in the translation.
+It is impossible for an SMT system to translate a word unseen in the training corpus nor can it translate it with a word not found in the target side of the training set 2 . Thus we are only interested in correctly ordering the words appearing in the training corpus and collecting the sentences that contain them for building the LM. At the same time, we want to be able to model longer range dependencies more efficiently especially for morphologically rich languages (Yuret and Bi&#231;ici,
+2 Unless the translation is a verbatim copy of the source.
+2009). Therefore, a compact and more relevant LM corpus can be useful.
+Selecting the LM corpus is harder. First of all, we know which words should appear in the LM corpus but we do not know which phrases should be there since the translation model may reorder the translated words, find different translations, and generate different phrases. Thus, we use 1- gram features for LM corpus selection. At the same time, in contrast with selecting instances for the training set, we are less motivated to increase the diversity since we want predictive power on the most commonly observed patterns. Thus, we do not initialize feature weights with the idf score and instead, we use the inverse of the idf score for initialization, which is giving more importance to frequently occurring words in the training set. This way of LM corpus selection also allows us to obtain a more controlled language and helps us create translation outputs within the scope of the training corpus and the closely related LM corpus.
+We shuffle the LM corpus available before splitting and select from individual splits, to prevent extreme cases. We add the training set directly into the LM and also add the training set not selected into the pool of sentences that can be selected for the LM. The scaling parameter s is optimized over the perplexity of the training data with the LM built over the selected LM corpus.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The language model corpus is very important for improving the SMT performance since it helps finding the correct ordering among the translated tokens or phrases.</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Increased LM corpus size can increase the SMT performance where doubling the LM corpus can improve the BLEU (Papineni et al., 2002) by 0.5 (Koehn, 2006).</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, although LM corpora resources are more abundant, training on large LM corpora also poses computational scalability problems and until 2012, LM corpora such as LDC Gigaword corpora were not fully utilized due to memory limitations of computers and even with large memory machines, the LM corpora is split into pieces, interpolated, and merged (Koehn and Haddow, 2012) or the LM order is decreased to use up to 4-grams (Markus et al., 2012) or low frequency n-gram counts are omitted and better smoothing techniques are developed (Yuret, 2008).</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Using only the given training data for building the LM is another option used for limiting the size of the corpus, which can also obtain the second best performance in Spanish-English translation task and in the top tier for German-English (Guzman et al., 2012; Callison-Burch et al., 2012).</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This can also indicate that prior knowledge of the test set domain and its similarity to the available parallel training data may be diminishing the gains in SMT performance through better language modeling or better domain adaptation.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For solving the computational scalability problems, there is a need for properly selecting LM training data as well.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We select LM corpus with parallel FDA based on this observation:</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>No word not appearing in the training set can appear in the translation.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>It is impossible for an SMT system to translate a word unseen in the training corpus nor can it translate it with a word not found in the target side of the training set 2 .</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Thus we are only interested in correctly ordering the words appearing in the training corpus and collecting the sentences that contain them for building the LM.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At the same time, we want to be able to model longer range dependencies more efficiently especially for morphologically rich languages (Yuret and Bi&#231;ici,</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 Unless the translation is a verbatim copy of the source.</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2009).</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Therefore, a compact and more relevant LM corpus can be useful.</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Selecting the LM corpus is harder.</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>First of all, we know which words should appear in the LM corpus but we do not know which phrases should be there since the translation model may reorder the translated words, find different translations, and generate different phrases.</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Thus, we use 1- gram features for LM corpus selection.</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At the same time, in contrast with selecting instances for the training set, we are less motivated to increase the diversity since we want predictive power on the most commonly observed patterns.</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Thus, we do not initialize feature weights with the idf score and instead, we use the inverse of the idf score for initialization, which is giving more importance to frequently occurring words in the training set.</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This way of LM corpus selection also allows us to obtain a more controlled language and helps us create translation outputs within the scope of the training corpus and the closely related LM corpus.</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We shuffle the LM corpus available before splitting and select from individual splits, to prevent extreme cases.</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We add the training set directly into the LM and also add the training set not selected into the pool of sentences that can be selected for the LM.</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The scaling parameter s is optimized over the perplexity of the training data with the LM built over the selected LM corpus.</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Experiments</title>
+        <text>We experiment with all language pairs in both directions in the WMT13 translation task (Callison-Burch et al., 2013), which include English-German (en-de), English-Spanish (en-es), English-French (en-fr), English-Czech (en-cs), and English-Russian (en-ru). We develop translation models using the phrase-based Moses (Koehn et al., 2007) SMT system. We true-case all of the corpora, use 150-best lists during tuning, set the max-fertility of GIZA++ (Och and Ney, 2003) to a value between 8-10, use 70 word classes learned over 3 iterations with mkcls tool during GIZA++ training, and vary the language model order between 5 to 9 for all language pairs. The development set contains 3000 sentences randomly sampled from among all of the development sentences provided.
+Since we do not know the best training set size that will maximize the performance, we rely on previous SMT experiments (Bi&#231;ici and Yuret, 2011a; Bi&#231;ici and Yuret, 2011b) to select the proper training set size. We choose close to 15 million words and its corresponding number of sentences for each training corpus and 10 million sentences for each LM corpus not including the selected training set, which is added later. This corresponds to selecting roughly 15% of the training corpus for en-de and 35% for ru-en, and due to their larger size, 5% for en-es, 6% for cs-en, 2% for en-fr language pairs. The size of the LM corpus allows us to build higher order models. The statistics of the training data selected by the parallel FDA is given in Table 1. Note that the training set size for different translation directions differ slightly since we run a parallel FDA for each.
+cs / en de / en es / en fr / en ru / en words (#M) 186 / 215 92 / 99 409 / 359 1010 / 886 41 / 44 sents (#K) 867 631 841 998 709 words (#M) 13 / 15 16 / 17 23 / 21 26 / 22 16 / 18
+After selecting the training set, we select the LM corpora using the words in the target side of the training set as the features. For en, es, and fr, we have access to the LDC Gigaword corpora, from which we extract only the story type news and for en, we exclude the corpora from Xinhua News Agency (xin eng). The size of the LM corpora from LDC and the monolingual LM corpora provided by WMT13 are given in Table 2. For all target languages, we select 10M sentences with parallel FDA from the LM corpora and the remaining training sentences and add the selected training data to obtain the LM corpus. Thus the size of the LM corpora is 10M plus the number of sentences in the training set as given in Table 1.
+With FDA, we can solve not only the instance selection problem for the training data but also the instance selection problem for the LM training corpus and achieve close target 2-gram cover-
+age using about 5% of the available training data and 5% of the available LM corpus for instance for en. A smaller LM training corpus also allows us to train higher order n-gram language models and model the dependencies better and achieve lower perplexity as given in Table 5.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We experiment with all language pairs in both directions in the WMT13 translation task (Callison-Burch et al., 2013), which include English-German (en-de), English-Spanish (en-es), English-French (en-fr), English-Czech (en-cs), and English-Russian (en-ru).</text>
+              <doc_id>110</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We develop translation models using the phrase-based Moses (Koehn et al., 2007) SMT system.</text>
+              <doc_id>111</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We true-case all of the corpora, use 150-best lists during tuning, set the max-fertility of GIZA++ (Och and Ney, 2003) to a value between 8-10, use 70 word classes learned over 3 iterations with mkcls tool during GIZA++ training, and vary the language model order between 5 to 9 for all language pairs.</text>
+              <doc_id>112</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The development set contains 3000 sentences randomly sampled from among all of the development sentences provided.</text>
+              <doc_id>113</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Since we do not know the best training set size that will maximize the performance, we rely on previous SMT experiments (Bi&#231;ici and Yuret, 2011a; Bi&#231;ici and Yuret, 2011b) to select the proper training set size.</text>
+              <doc_id>114</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We choose close to 15 million words and its corresponding number of sentences for each training corpus and 10 million sentences for each LM corpus not including the selected training set, which is added later.</text>
+              <doc_id>115</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This corresponds to selecting roughly 15% of the training corpus for en-de and 35% for ru-en, and due to their larger size, 5% for en-es, 6% for cs-en, 2% for en-fr language pairs.</text>
+              <doc_id>116</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The size of the LM corpus allows us to build higher order models.</text>
+              <doc_id>117</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The statistics of the training data selected by the parallel FDA is given in Table 1.</text>
+              <doc_id>118</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Note that the training set size for different translation directions differ slightly since we run a parallel FDA for each.</text>
+              <doc_id>119</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>cs / en de / en es / en fr / en ru / en words (#M) 186 / 215 92 / 99 409 / 359 1010 / 886 41 / 44 sents (#K) 867 631 841 998 709 words (#M) 13 / 15 16 / 17 23 / 21 26 / 22 16 / 18</text>
+              <doc_id>120</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>After selecting the training set, we select the LM corpora using the words in the target side of the training set as the features.</text>
+              <doc_id>121</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For en, es, and fr, we have access to the LDC Gigaword corpora, from which we extract only the story type news and for en, we exclude the corpora from Xinhua News Agency (xin eng).</text>
+              <doc_id>122</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The size of the LM corpora from LDC and the monolingual LM corpora provided by WMT13 are given in Table 2.</text>
+              <doc_id>123</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For all target languages, we select 10M sentences with parallel FDA from the LM corpora and the remaining training sentences and add the selected training data to obtain the LM corpus.</text>
+              <doc_id>124</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Thus the size of the LM corpora is 10M plus the number of sentences in the training set as given in Table 1.</text>
+              <doc_id>125</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>With FDA, we can solve not only the instance selection problem for the training data but also the instance selection problem for the LM training corpus and achieve close target 2-gram cover-</text>
+              <doc_id>126</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>age using about 5% of the available training data and 5% of the available LM corpus for instance for en.</text>
+              <doc_id>127</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>A smaller LM training corpus also allows us to train higher order n-gram language models and model the dependencies better and achieve lower perplexity as given in Table 5.</text>
+              <doc_id>128</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 WMT13 Translation Task Results</title>
+            <text>We run a number of SMT experiments for each language pair varying the LM order used and obtain different results and sorted these based on the tokenized BLEU performance, BLEUc. The best BLEUc results obtained on the translation task together with the LM order used when obtaining the results are given in Table 3. We also list the top results from WMT13 (Callison-Burch et al., 2013) 3 , which use phrase-based Moses for comparison 4 and the BLEUc difference we obtain. For translation tasks with en as the target, higher order n- gram LM perform better whereas for translation tasks with en as the source, mostly 5-gram LM perform the best. We can obtain significant gains in BLEU (+0.0023) using higher order LMs.
+For all translation tasks except fr-en and en-fr, we are able to obtain very close results to the top Moses system output (0.0148 to 0.0266 BLEUc difference). This shows that we can obtain very accurate translation outputs yet use only a small portion of the training corpus available, significantly reducing the time required for training, development, and deployment of an SMT system for a given translation task. We are surprised by the lower performance in en-fr or fr-en translation tasks and the reason is, we believe, due to the inherent noise in the GigaFrEn training corpus 5 . FDA is an instance se-
+3 We use the results from matrix.statmt.org. 4 Phrase-based Moses systems usually rank in the top 3. 5 We even found control characters in the corpora.
+lection tool and it does not filter out target sentences that are noisy since FDA only looks at the source sentences when selecting training instance pairs. Noisy instances may be caused by a sentence alignment problem and one way to fix them is to measure the sentence alignment accuracy by using a similarity score over word distributions such as the Zipfian Word Vectors (Bi&#231;ici, 2008). Since noisy parallel corpora can decrease the performance, we also experimented with discarding the GigaFrEn corpus in the experiments. However, this decreased the results by 0.0003 BLEU in contrast to 0.004-0.01 BLEU gains reported in (Koehn and Haddow, 2012). Also, note that the BLEU results we obtained are lower than in (Koehn and Haddow, 2012), which may be an indication that our training set size was small for this task.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We run a number of SMT experiments for each language pair varying the LM order used and obtain different results and sorted these based on the tokenized BLEU performance, BLEUc.</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The best BLEUc results obtained on the translation task together with the LM order used when obtaining the results are given in Table 3.</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We also list the top results from WMT13 (Callison-Burch et al., 2013) 3 , which use phrase-based Moses for comparison 4 and the BLEUc difference we obtain.</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For translation tasks with en as the target, higher order n- gram LM perform better whereas for translation tasks with en as the source, mostly 5-gram LM perform the best.</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We can obtain significant gains in BLEU (+0.0023) using higher order LMs.</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For all translation tasks except fr-en and en-fr, we are able to obtain very close results to the top Moses system output (0.0148 to 0.0266 BLEUc difference).</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This shows that we can obtain very accurate translation outputs yet use only a small portion of the training corpus available, significantly reducing the time required for training, development, and deployment of an SMT system for a given translation task.</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We are surprised by the lower performance in en-fr or fr-en translation tasks and the reason is, we believe, due to the inherent noise in the GigaFrEn training corpus 5 .</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>FDA is an instance se-</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 We use the results from matrix.statmt.org.</text>
+                  <doc_id>138</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>4 Phrase-based Moses systems usually rank in the top 3.</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>5 We even found control characters in the corpora.</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>lection tool and it does not filter out target sentences that are noisy since FDA only looks at the source sentences when selecting training instance pairs.</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Noisy instances may be caused by a sentence alignment problem and one way to fix them is to measure the sentence alignment accuracy by using a similarity score over word distributions such as the Zipfian Word Vectors (Bi&#231;ici, 2008).</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since noisy parallel corpora can decrease the performance, we also experimented with discarding the GigaFrEn corpus in the experiments.</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, this decreased the results by 0.0003 BLEU in contrast to 0.004-0.01 BLEU gains reported in (Koehn and Haddow, 2012).</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Also, note that the BLEU results we obtained are lower than in (Koehn and Haddow, 2012), which may be an indication that our training set size was small for this task.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Training Corpus Quality</title>
+            <text>We measure the quality of the training corpus by the coverage of the target 2-gram features of the test set, which is found to correlate well with the BLEU performance achievable (Bi&#231;ici and Yuret, 2011a). Table 4 presents the source (scov) and target (tcov) 2-gram feature coverage of both the parallel training corpora (train) that we select from and the training sets obtained with parallel FDA. We show that we can obtain coverages close to using all of the available training corpora.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We measure the quality of the training corpus by the coverage of the target 2-gram features of the test set, which is found to correlate well with the BLEU performance achievable (Bi&#231;ici and Yuret, 2011a).</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 4 presents the source (scov) and target (tcov) 2-gram feature coverage of both the parallel training corpora (train) that we select from and the training sets obtained with parallel FDA.</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We show that we can obtain coverages close to using all of the available training corpora.</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>3.3 LM Corpus Quality</title>
+            <text>We compare the perplexity of the LM trained on all of the available training corpora for the de-en language pair versus the LM trained on the parallel FDA training corpus and the parallel FDA LM corpus. The number of OOV tokens become 2098, 2255, and 291 respectively for English and 2143, 2555, and 666 for German. To be able to compare the perplexities, we take the OOV tokens into consideration during calculations. Tokenized LM
+train
+FDA
+corpus has 247M tokens for en and 218M tokens for de. We assume that each OOV word in en or de contributes log(1/218M) to the log probability, which we round to &#8722;19. We also present results for the case when we handle OOV words better with a cost of &#8722;11 each in Table 5. Table 5 shows that we reduce the perplexity with a LM built on the training set selected with parallel FDA, which uses only 15% of the training data for de-en. More significantly, the LM build on the LM corpus selected by the parallel FDA is able to decrease both the number of OOV tokens and the perplexity and allows us to efficiently model higher order relationships as well. We reach up to 86% reduction in the number of OOV tokens and up to 74% reduction in the perplexity.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We compare the perplexity of the LM trained on all of the available training corpora for the de-en language pair versus the LM trained on the parallel FDA training corpus and the parallel FDA LM corpus.</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The number of OOV tokens become 2098, 2255, and 291 respectively for English and 2143, 2555, and 666 for German.</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To be able to compare the perplexities, we take the OOV tokens into consideration during calculations.</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Tokenized LM</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>train</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>FDA</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>corpus has 247M tokens for en and 218M tokens for de.</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We assume that each OOV word in en or de contributes log(1/218M) to the log probability, which we round to &#8722;19.</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We also present results for the case when we handle OOV words better with a cost of &#8722;11 each in Table 5.</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 5 shows that we reduce the perplexity with a LM built on the training set selected with parallel FDA, which uses only 15% of the training data for de-en.</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>More significantly, the LM build on the LM corpus selected by the parallel FDA is able to decrease both the number of OOV tokens and the perplexity and allows us to efficiently model higher order relationships as well.</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We reach up to 86% reduction in the number of OOV tokens and up to 74% reduction in the perplexity.</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>3.4 Computational Costs</title>
+            <text>In this section, we quantify how fast the overall system runs for a given language pair. The instance selection times are dependent on the number of training sentences available for the language pair for training set selection and for the target language for LM corpus selection. We give the average number of minutes it takes for the parallel FDA to finish selection for each direction and for each target language in Table 6.
+Once the training set and the LM corpus are ready, the training of the phrase-based SMT model Moses takes about 12 hours. Therefore, we are able to deploy an SMT system for the target translation task in about half a day and still obtain very accurate translation results.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In this section, we quantify how fast the overall system runs for a given language pair.</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The instance selection times are dependent on the number of training sentences available for the language pair for training set selection and for the target language for LM corpus selection.</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We give the average number of minutes it takes for the parallel FDA to finish selection for each direction and for each target language in Table 6.</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Once the training set and the LM corpus are ready, the training of the phrase-based SMT model Moses takes about 12 hours.</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Therefore, we are able to deploy an SMT system for the target translation task in about half a day and still obtain very accurate translation results.</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Contributions</title>
+        <text>We develop parallel FDA for solving computational scalability problems caused by the abundance of training data for SMT models and LM models and still achieve SMT performance that is on par with the top performing SMT systems. The high quality of the selected training data and the LM corpus allows us to obtain very accurate translation outputs while the selected the LM corpus results in up to 86% reduction in the number of OOV tokens and up to 74% reduction in the perplexity and allows us to model higher order dependencies. FDA and parallel FDA raise the bar of expectations from SMT translation outputs with highly accurate translations and lowering the bar to entry for SMT into new domains and tasks by allowing fast deployment of SMT systems in about half a day. Parallel FDA provides a new step towards rapid SMT system development in budgeted training scenarios and can be useful in developing machine translation systems in target domains with limited resources or in disaster and crisis situations where parallel corpora can be gathered by crawling and selected by parallel FDA. Parallel FDA is also allowing a shift from general purpose SMT systems towards task adaptive SMT solutions.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We develop parallel FDA for solving computational scalability problems caused by the abundance of training data for SMT models and LM models and still achieve SMT performance that is on par with the top performing SMT systems.</text>
+              <doc_id>166</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The high quality of the selected training data and the LM corpus allows us to obtain very accurate translation outputs while the selected the LM corpus results in up to 86% reduction in the number of OOV tokens and up to 74% reduction in the perplexity and allows us to model higher order dependencies.</text>
+              <doc_id>167</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>FDA and parallel FDA raise the bar of expectations from SMT translation outputs with highly accurate translations and lowering the bar to entry for SMT into new domains and tasks by allowing fast deployment of SMT systems in about half a day.</text>
+              <doc_id>168</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parallel FDA provides a new step towards rapid SMT system development in budgeted training scenarios and can be useful in developing machine translation systems in target domains with limited resources or in disaster and crisis situations where parallel corpora can be gathered by crawling and selected by parallel FDA.</text>
+              <doc_id>169</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parallel FDA is also allowing a shift from general purpose SMT systems towards task adaptive SMT solutions.</text>
+              <doc_id>170</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>5</index>
+        <title>83 Acknowledgments</title>
+        <text>This work is supported in part by SFI (07/CE/I1142) as part of the Centre for Next Generation Localisation (www.cngl.ie) at Dublin City University and in part by the European Commission through the QTLaunchPad FP7 project (No: 296347). We also thank the SFI/HEA Irish Centre for High-End Computing (ICHEC), Ko&#231; University, and Deniz Yuret for the provision of computational facilities and support.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>This work is supported in part by SFI (07/CE/I1142) as part of the Centre for Next Generation Localisation (www.cngl.ie) at Dublin City University and in part by the European Commission through the QTLaunchPad FP7 project (No: 296347).</text>
+              <doc_id>171</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We also thank the SFI/HEA Irish Centre for High-End Computing (ICHEC), Ko&#231; University, and Deniz Yuret for the provision of computational facilities and support.</text>
+              <doc_id>172</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 1: Comparison of the training data available and the selected training set by parallel FDA for each language pair. The size of the parallel cor- pora is given in millions (M) of words or thou- sands (K) of sentences.</caption>
+        <reference_text>In PAGE 4: ... The size of the LM cor- pus allows us to build higher order models. The statistics of the training data selected by the paral- lel FDA is given in  Table1 . Note that the training set size for different translation directions differ slightly since we run a parallel FDA for each....</reference_text>
+        <page_num>4</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>sents (#K)</cell>
+              <cell>867</cell>
+              <cell>631</cell>
+              <cell>841</cell>
+              <cell>998</cell>
+              <cell>709</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>words (#M)</cell>
+              <cell>13 / 15</cell>
+              <cell>16 / 17</cell>
+              <cell>23 / 21</cell>
+              <cell>26 / 22</cell>
+              <cell>16 / 18</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TET</source>
+        <caption>Table 2: The size of the LM corpora from LDC and the monolingual language model corpora provided in millions (M) of words.</caption>
+        <reference_text></reference_text>
+        <page_num>3</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>#M</cell>
+              <cell>cs</cell>
+              <cell>de</cell>
+              <cell>en</cell>
+              <cell>es</cell>
+              <cell>fr</cell>
+              <cell>ru</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>LDC</cell>
+              <cell>-</cell>
+              <cell>-</cell>
+              <cell>3402</cell>
+              <cell>949</cell>
+              <cell>773</cell>
+              <cell>-</cell>
+            </row>
+            <row>
+              <cell>Mono</cell>
+              <cell>388</cell>
+              <cell>842</cell>
+              <cell>1389</cell>
+              <cell>341</cell>
+              <cell>434</cell>
+              <cell>289</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TableSeer</source>
+        <caption>Table 3: Best BLEUc results obtained on the translation task together with the LM order used when obtaining the result compared with the best constrained Moses results in WMT12 and WMT13. The last row compares the BLEUc result with respect to using a different LM order.</caption>
+        <reference_text>In PAGE 5: ...1 WMT13 Translation Task Results We run a number of SMT experiments for each language pair varying the LM order used and ob- tain different results and sorted these based on the tokenized BLEU performance, BLEUc. The best BLEUc results obtained on the translation task to- gether with the LM order used when obtaining the results are given in  Table3 . We also list the top re- sults from WMT13 (Callison-Burch et al....</reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+              <cell>S &#8594; en</cell>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+              <cell></cell>
+              <cell>en &#8594; T</cell>
+              <cell></cell>
+              <cell></cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>cs-en</cell>
+              <cell>de-en</cell>
+              <cell>es-en</cell>
+              <cell>fr-en</cell>
+              <cell>ru-en</cell>
+              <cell>en-cs</cell>
+              <cell>en-de</cell>
+              <cell>en-es</cell>
+              <cell>en-fr</cell>
+              <cell>en-ru</cell>
+            </row>
+            <row>
+              <cell>WMT13</cell>
+              <cell>.2620</cell>
+              <cell>.2680</cell>
+              <cell>.3060</cell>
+              <cell>.3150</cell>
+              <cell>.2430</cell>
+              <cell>.1860</cell>
+              <cell>.2030</cell>
+              <cell>.3040</cell>
+              <cell>.3060</cell>
+              <cell>.1880</cell>
+            </row>
+            <row>
+              <cell>BLEUc</cell>
+              <cell>.2430</cell>
+              <cell>.2414</cell>
+              <cell>.2909</cell>
+              <cell>.2539</cell>
+              <cell>.2226</cell>
+              <cell>.1708</cell>
+              <cell>.1792</cell>
+              <cell>.2799</cell>
+              <cell>.2379</cell>
+              <cell>.1732</cell>
+            </row>
+            <row>
+              <cell>BLEUc diff</cell>
+              <cell>.0190</cell>
+              <cell>.0266</cell>
+              <cell>.0151</cell>
+              <cell>.0611</cell>
+              <cell>.0204</cell>
+              <cell>.0152</cell>
+              <cell>.0238</cell>
+              <cell>.0241</cell>
+              <cell>.0681</cell>
+              <cell>.0148</cell>
+            </row>
+            <row>
+              <cell>LM order</cell>
+              <cell>7</cell>
+              <cell>9</cell>
+              <cell>7</cell>
+              <cell>9</cell>
+              <cell>6</cell>
+              <cell>5</cell>
+              <cell>5</cell>
+              <cell>5</cell>
+              <cell>7</cell>
+              <cell>5</cell>
+            </row>
+            <row>
+              <cell>BLEUc, n</cell>
+              <cell>.2407, 5 .2396, 5 .2886, 8 .2532, 6 .2215, 9</cell>
+              <cell>.1698, 9</cell>
+              <cell>.1784, 9 .2794, 9 .2374, 9 .1719, 9</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TET</source>
+        <caption>Table 4: Source (scov) and target (tcov) 2-gram feature coverage comparison of the training corpora (train) with the training sets obtained with parallel FDA (FDA).</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>cs-en</cell>
+              <cell>de-en</cell>
+              <cell>es-en</cell>
+              <cell>fr-en</cell>
+              <cell>ru-en</cell>
+              <cell>en-cs</cell>
+              <cell>en-de</cell>
+              <cell>en-es</cell>
+              <cell>en-fr</cell>
+              <cell>en-ru</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>scov</cell>
+              <cell>.70</cell>
+              <cell>.74</cell>
+              <cell>.85</cell>
+              <cell>.83</cell>
+              <cell>.66</cell>
+              <cell>.82</cell>
+              <cell>.82</cell>
+              <cell>.84</cell>
+              <cell>.87</cell>
+              <cell>.78</cell>
+            </row>
+            <row>
+              <cell>tcov</cell>
+              <cell>.82</cell>
+              <cell>.82</cell>
+              <cell>.84</cell>
+              <cell>.87</cell>
+              <cell>.78</cell>
+              <cell>.70</cell>
+              <cell>.74</cell>
+              <cell>.85</cell>
+              <cell>.83</cell>
+              <cell>.66</cell>
+            </row>
+            <row>
+              <cell>scov</cell>
+              <cell>.70</cell>
+              <cell>.74</cell>
+              <cell>.85</cell>
+              <cell>.82</cell>
+              <cell>.66</cell>
+              <cell>.82</cell>
+              <cell>.82</cell>
+              <cell>.84</cell>
+              <cell>.84</cell>
+              <cell>.78</cell>
+            </row>
+            <row>
+              <cell>tcov</cell>
+              <cell>.74</cell>
+              <cell>.75</cell>
+              <cell>.77</cell>
+              <cell>.78</cell>
+              <cell>.75</cell>
+              <cell>.59</cell>
+              <cell>.67</cell>
+              <cell>.78</cell>
+              <cell>.76</cell>
+              <cell>.61</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>5</id>
+        <source>TET</source>
+        <caption>Table 5: Perplexity comparison of the LM built from the training corpus (train), parallel FDA selected training corpus (FDA), and the parallel FDA selected LM corpus (FDA LM).</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>log OOV = &#8722;19</cell>
+              <cell>log OOV = &#8722;11</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>ppl</cell>
+              <cell>train FDA FDA LM</cell>
+              <cell>train FDA FDA LM</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>3</cell>
+              <cell>763</cell>
+              <cell>774</cell>
+              <cell>203</cell>
+              <cell>431</cell>
+              <cell>419</cell>
+              <cell>187</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>4</cell>
+              <cell>728</cell>
+              <cell>754</cell>
+              <cell>192</cell>
+              <cell>412</cell>
+              <cell>409</cell>
+              <cell>178</cell>
+            </row>
+            <row>
+              <cell>en</cell>
+              <cell>5</cell>
+              <cell>725</cell>
+              <cell>753</cell>
+              <cell>191</cell>
+              <cell>410</cell>
+              <cell>408</cell>
+              <cell>176</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>6</cell>
+              <cell>724</cell>
+              <cell>753</cell>
+              <cell>190</cell>
+              <cell>409</cell>
+              <cell>408</cell>
+              <cell>176</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>7</cell>
+              <cell>724</cell>
+              <cell>753</cell>
+              <cell>190</cell>
+              <cell>409</cell>
+              <cell>408</cell>
+              <cell>176</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>3</cell>
+              <cell>1255 1449</cell>
+              <cell>412</cell>
+              <cell>693</cell>
+              <cell>713</cell>
+              <cell>343</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>4</cell>
+              <cell>1216 1428</cell>
+              <cell>398</cell>
+              <cell>671</cell>
+              <cell>703</cell>
+              <cell>331</cell>
+            </row>
+            <row>
+              <cell>de</cell>
+              <cell>5</cell>
+              <cell>1211 1427</cell>
+              <cell>394</cell>
+              <cell>668</cell>
+              <cell>702</cell>
+              <cell>327</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>6</cell>
+              <cell>1210 1427</cell>
+              <cell>393</cell>
+              <cell>668</cell>
+              <cell>702</cell>
+              <cell>326</cell>
+            </row>
+            <row>
+              <cell></cell>
+              <cell>7</cell>
+              <cell>1210 1427</cell>
+              <cell>392</cell>
+              <cell>668</cell>
+              <cell>702</cell>
+              <cell>326</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>6</id>
+        <source>TableSeer</source>
+        <caption>Table 6: The average time in the number of minutes for parallel FDA to select instances for the training set or for the LM corpus for language pairs en-fr and en-ru.</caption>
+        <reference_text>None</reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>time (minutes)</cell>
+              <cell>en-fr</cell>
+              <cell>en-ru</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Parallel FDA train</cell>
+              <cell>50</cell>
+              <cell>18</cell>
+            </row>
+            <row>
+              <cell>Parallel FDA LM</cell>
+              <cell>66</cell>
+              <cell>50</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Ergun Bi&#231;ici</author>
+          <author>Deniz Yuret</author>
+        </authors>
+        <title>Instance selection for machine translation using feature decay algorithms.</title>
+        <publication>In Proceedings of the Sixth Workshop on Statistical Machine Translation,</publication>
+        <pages>272--283</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Ergun Bi&#231;ici</author>
+          <author>Deniz Yuret</author>
+        </authors>
+        <title>RegMT system for machine translation, system combination, and evaluation.</title>
+        <publication>In Proceedings of the Sixth Workshop on Statistical Machine Translation,</publication>
+        <pages>323--329</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Ergun Bi&#231;ici</author>
+        </authors>
+        <title>Context-based sentence alignment in parallel corpora.</title>
+        <publication>In Proceedings of the 9th International Conference on Intelligent Text Processing and Computational Linguistics (CICLing 2008), LNCS,</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Chris Callison-Burch</author>
+          <author>Philipp Koehn</author>
+          <author>Christof Monz</author>
+          <author>Matt Post</author>
+          <author>Radu Soricut</author>
+          <author>Lucia Specia</author>
+        </authors>
+        <title>Findings of the 2012 workshop on statistical machine translation.</title>
+        <publication>In Proceedings of the Seventh Workshop on Statistical Machine Translation,</publication>
+        <pages>10--51</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>Chris Callison-Burch</author>
+          <author>Philipp Koehn</author>
+          <author>Christof Monz</author>
+          <author>Matt Post</author>
+          <author>Radu Soricut</author>
+          <author>Lucia Specia</author>
+        </authors>
+        <title>None</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2013</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Thomas H Cormen</author>
+          <author>Charles E Leiserson</author>
+          <author>L Ronald</author>
+        </authors>
+        <title>Findings of the 2013 workshop on statistical machine translation.</title>
+        <publication>In Proceedings of the Eighth Workshop on Statistical Machine Translation,</publication>
+        <pages>10--51</pages>
+        <date>None</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Rivest</author>
+          <author>Clifford Stein</author>
+        </authors>
+        <title>Introduction to Algorithms (3.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Francisco Guzman</author>
+          <author>Preslav Nakov</author>
+          <author>Ahmed Thabet</author>
+          <author>Stephan Vogel</author>
+        </authors>
+        <title>Qcri at wmt12: Experiments in spanish-english and german-english machine translation of news text.</title>
+        <publication>In Proceedings of the Seventh Workshop on Statistical Machine Translation,</publication>
+        <pages>298--303</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Barry Haddow</author>
+        </authors>
+        <title>Towards effective use of training data in statistical machine translation.</title>
+        <publication>In Proceedings of the Seventh Workshop on Statistical Machine Translation,</publication>
+        <pages>317--321</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Hieu Hoang</author>
+          <author>Alexandra Birch</author>
+          <author>Chris Callison-Burch</author>
+          <author>Marcello Federico</author>
+          <author>Nicola Bertoldi</author>
+          <author>Brooke Cowan</author>
+          <author>Wade Shen</author>
+        </authors>
+        <title>Moses: Open source toolkit for statistical machine translation.</title>
+        <publication>In Annual Meeting of the Assoc. for Computational Linguistics,</publication>
+        <pages>177--180</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>Statistical machine translation: the basic, the novel, and the speculative. Tutorial at EACL</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>William Lewis</author>
+          <author>Robert Munro</author>
+          <author>Stephan Vogel</author>
+        </authors>
+        <title>Crisis mt: Developing a cookbook for mt in crisis situations.</title>
+        <publication>In Proceedings of the Sixth Workshop on Statistical Machine Translation,</publication>
+        <pages>501--511</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Freitag Markus</author>
+          <author>Peitz Stephan</author>
+          <author>Huck Matthias</author>
+          <author>Ney Hermann</author>
+          <author>Niehues Jan</author>
+          <author>Herrmann Teresa</author>
+        </authors>
+        <title>Waibel Alex, Hai-son Le, Lavergne Thomas, Allauzen Alexandre,</title>
+        <publication>In Proceedings of the Seventh Workshop on Statistical Machine Translation,</publication>
+        <pages>322--329</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>A systematic comparison of various statistical alignment models.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Kishore Papineni</author>
+          <author>Salim Roukos</author>
+          <author>Todd Ward</author>
+          <author>WeiJing Zhu</author>
+        </authors>
+        <title>BLEU: a method for automatic evaluation of machine translation.</title>
+        <publication>In Proceedings of 40th Annual Meeting of the Association for Computational Linguistics,</publication>
+        <pages>311--318</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>Deniz Yuret</author>
+          <author>Ergun Bi&#231;ici</author>
+        </authors>
+        <title>Modeling morphologically rich languages using split words and unstructured dependencies.</title>
+        <publication>In Proceedings of the ACL-IJCNLP 2009 Conference Short Papers,</publication>
+        <pages>345--348</pages>
+        <date>2009</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53041</sentence_id>
+        <char_offset>26</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>0</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53068</sentence_id>
+        <char_offset>53</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>0</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53162</sentence_id>
+        <char_offset>121</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>0</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53162</sentence_id>
+        <char_offset>146</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>0</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53138</sentence_id>
+        <char_offset>180</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>1</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53041</sentence_id>
+        <char_offset>26</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>1</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53068</sentence_id>
+        <char_offset>53</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>1</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53162</sentence_id>
+        <char_offset>121</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>1</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53162</sentence_id>
+        <char_offset>146</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>1</reference_id>
+        <string>Bi&#231;ici and Yuret, 2011</string>
+        <sentence_id>53138</sentence_id>
+        <char_offset>180</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>2</reference_id>
+        <string>Bi&#231;ici, 2008</string>
+        <sentence_id>53134</sentence_id>
+        <char_offset>218</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>3</reference_id>
+        <string>Callison-Burch et al., 2012</string>
+        <sentence_id>53100</sentence_id>
+        <char_offset>262</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>4</reference_id>
+        <string>Callison-Burch et al., 2013</string>
+        <sentence_id>53022</sentence_id>
+        <char_offset>127</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>4</reference_id>
+        <string>Callison-Burch et al., 2013</string>
+        <sentence_id>53029</sentence_id>
+        <char_offset>63</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>4</reference_id>
+        <string>Callison-Burch et al., 2013</string>
+        <sentence_id>53158</sentence_id>
+        <char_offset>88</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>4</reference_id>
+        <string>Callison-Burch et al., 2013</string>
+        <sentence_id>53123</sentence_id>
+        <char_offset>41</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>7</reference_id>
+        <string>Guzman et al., 2012</string>
+        <sentence_id>53100</sentence_id>
+        <char_offset>241</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>8</reference_id>
+        <string>Koehn and Haddow, 2012</string>
+        <sentence_id>53099</sentence_id>
+        <char_offset>352</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>8</reference_id>
+        <string>Koehn and Haddow, 2012</string>
+        <sentence_id>53136</sentence_id>
+        <char_offset>101</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>8</reference_id>
+        <string>Koehn and Haddow, 2012</string>
+        <sentence_id>53137</sentence_id>
+        <char_offset>64</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>9</reference_id>
+        <string>Koehn et al., 2007</string>
+        <sentence_id>53029</sentence_id>
+        <char_offset>148</char_offset>
+      </citation>
+      <citation>
+        <id>21</id>
+        <reference_id>9</reference_id>
+        <string>Koehn et al., 2007</string>
+        <sentence_id>53159</sentence_id>
+        <char_offset>60</char_offset>
+      </citation>
+      <citation>
+        <id>22</id>
+        <reference_id>10</reference_id>
+        <string>Koehn, 2006</string>
+        <sentence_id>53098</sentence_id>
+        <char_offset>140</char_offset>
+      </citation>
+      <citation>
+        <id>23</id>
+        <reference_id>11</reference_id>
+        <string>Lewis et al., 2011</string>
+        <sentence_id>53033</sentence_id>
+        <char_offset>118</char_offset>
+      </citation>
+      <citation>
+        <id>24</id>
+        <reference_id>12</reference_id>
+        <string>Markus et al., 2012</string>
+        <sentence_id>53099</sentence_id>
+        <char_offset>427</char_offset>
+      </citation>
+      <citation>
+        <id>25</id>
+        <reference_id>13</reference_id>
+        <string>Och and Ney, 2003</string>
+        <sentence_id>53160</sentence_id>
+        <char_offset>100</char_offset>
+      </citation>
+      <citation>
+        <id>26</id>
+        <reference_id>14</reference_id>
+        <string>Papineni et al., 2002</string>
+        <sentence_id>53098</sentence_id>
+        <char_offset>109</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

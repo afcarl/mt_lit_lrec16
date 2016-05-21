@@ -1,0 +1,581 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Integrating N-best SMT Outputs into a TM System</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-2740">In this paper, we propose a novel framework to enrich Translation Memory (TM) systems with Statistical Machine Translation (SMT) outputs using ranking.</A-S>
+    <A-S ID="S-2741">In order to offer the human translators multiple choices, instead of only using the top SMT output and top TM hit, we merge the N-best output from the SMT system and the k-best hits with highest fuzzy match scores from the TM system.</A-S>
+    <A-S ID="S-2742">The merged list is then ranked according to the prospective post-editing effort and provided to the translators to aid their work.</A-S>
+    <A-S ID="S-2743">Experiments show that our ranked output achieve 0.8747 precision at top 1 and 0.8134 precision at top 5.</A-S>
+    <A-S ID="S-2744">Our framework facilitates a tight integration between SMT and TM, where full advantage is taken of TM while high quality SMT output is availed of to improve the productivity of human translators.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-2745">Translation Memories (TM) are databases that store translated segments.</S>
+        <S ID="S-2746">They are often used to assist translators and post-editors in a Computer Assisted Translation (CAT) environment by returning the most similar translated segments.</S>
+        <S ID="S-2747">Professional post-editors and translators have long been relying on TMs to avoid duplication of work in translation.</S>
+        <S ID="S-2748">With the rapid development in statistical machine translation (SMT), MT systems are beginning to generate acceptable translations, especially in domains where abundant parallel corpora exist.</S>
+        <S ID="S-2749">It is thus natural to ask if these translations can be utilized in some way to enhance TMs.</S>
+      </P>
+      <P>
+        <S ID="S-2750">However advances in MT are being adopted only slowly and sometimes somewhat reluctantly in professional localization and post-editing environments because of 1) the usefulness of the TM, 2) the investment and effort the company has put into TMs, and 3) the lack of robust SMT confidence estimation measures which are as reliable as fuzzy match scores (cf. Section 4.1.2) used in TMs.</S>
+        <S ID="S-2751">Currently the localization industry relies on TM fuzzy match scores to obtain both a good approximation of post-editing effort and an estimation of the overall translation cost.</S>
+      </P>
+      <P>
+        <S ID="S-2752">In a forthcoming paper, we propose a translation recommendation model to better integrate MT outputs into a TM system.</S>
+        <S ID="S-2753">Using a binary classifier, we only recommend an MT output to the TM-user when the classifier is highly confident that it is better than the TM output.</S>
+        <S ID="S-2754">In this framework, post-editors continue to work with the TM while benefiting from (better) SMT outputs; the assets in TMs are not wasted and TM fuzzy match scores can still be used to estimate (the upper bound of) post-editing labor.</S>
+      </P>
+      <P>
+        <S ID="S-2755">In the previous work, the binary predictor works on the 1-best output of the MT and TM systems, presenting either the one or the other to the post-editor.</S>
+        <S ID="S-2756">In this paper, we develop the idea further by moving from binary prediction to ranking.</S>
+        <S ID="S-2757">We use a ranking model to merge the k-best lists of the two systems, and produce a ranked merged</S>
+      </P>
+      <P>
+        <S ID="S-2758">Coling 2010: Poster Volume, pages 374&#8211;382, Beijing, August 2010</S>
+      </P>
+      <P>
+        <S ID="S-2759">list for post-editing.</S>
+        <S ID="S-2760">As the list is an enriched version of the TM&#8217;s k-best list, the TM related assets are better preserved and the cost estimation is still valid as an upper bound.</S>
+      </P>
+      <P>
+        <S ID="S-2761">More specifically, we recast SMT-TM integration as a ranking problem, where we apply the Ranking SVM technique to produce a ranked list of translations combining the k-best lists of both the MT and the TM systems.</S>
+        <S ID="S-2762">We use features independent of the MT and TM systems for ranking, so that outputs from MT and TM can have the same set of features.</S>
+        <S ID="S-2763">Ideally the translations should be ranked by their associated postediting efforts, but given the very limited amounts of human annotated data, we use an automatic MT evaluation metric, TER (<REF ID="R-15" RPTR="16">Snover et al., 2006</REF>), which is specifically designed to simulate postediting effort to train and test our ranking model.</S>
+      </P>
+      <P>
+        <S ID="S-2764">The rest of the paper is organized as follows: we first briefly introduce related research in Section 2, and review Ranking SVMs in Section 3.</S>
+        <S ID="S-2765">The formulation of the problem and experiments with the ranking models are presented in Sections 4 and 5.</S>
+        <S ID="S-2766">We analyze the post-editing effort approximated by the TER metric in Section 6.</S>
+        <S ID="S-2767">Section 7 concludes and points out avenues for future research.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related Work</HEADER>
+      <P>
+        <S ID="S-2768">There has been some work to help TM users to apply MT outputs more smoothly.</S>
+        <S ID="S-2769">One strand is to improve the MT confidence measures to better predict post-editing effort in order to obtain a quality estimation that has the potential to replace the fuzzy match score in the TM.</S>
+        <S ID="S-2770">To the best of our knowledge, the first paper in this area is (<REF ID="R-07" RPTR="6">Specia et al., 2009</REF><REF ID="R-08" RPTR="8">Specia et al., 2009</REF>a), which uses regression on both the automatic scores and scores assigned by posteditors.</S>
+        <S ID="S-2771">The method is improved in (<REF ID="R-07" RPTR="7">Specia et al., 2009</REF><REF ID="R-08" RPTR="9">Specia et al., 2009</REF>b), which applies Inductive Confidence Machines and a larger set of features to model post-editors&#8217; judgment of the translation quality between &#8216;good&#8217; and &#8216;bad&#8217;, or among three levels of post-editing effort.</S>
+        <S ID="S-2772">Another strand is to integrate high confidence MT outputs into the TM, so that the &#8216;good&#8217; TM entries will remain untouched.</S>
+        <S ID="S-2773">In our forthcoming paper, we recommend SMT outputs to a TM user when a binary classifier predicts that SMT outputs are more suitable for post-editing for a particular sentence.</S>
+      </P>
+      <P>
+        <S ID="S-2774">The research presented here continues the line of research in the second strand.</S>
+        <S ID="S-2775">The difference is that we do not limit ourselves to the 1-best output but try to produce a k-best output in a ranking model.</S>
+        <S ID="S-2776">The ranking scheme also enables us to show all TM hits to the user, and thus further protects the TM assets.</S>
+      </P>
+      <P>
+        <S ID="S-2777">There has also been work to improve SMT using the knowledge from the TM.</S>
+        <S ID="S-2778">In (<REF ID="R-14" RPTR="15">Simard and Isabelle, 2009</REF>), the SMT system can produce a better translation when there is an exact or close match in the corresponding TM.</S>
+        <S ID="S-2779">They use regression Support Vector Machines to model the quality of the TM segments.</S>
+        <S ID="S-2780">This is also related to our work in spirit, but our work is in the opposite direction, i.e. using SMT to enrich TM.</S>
+      </P>
+      <P>
+        <S ID="S-2781">Moreover, our ranking model is related to reranking (<REF ID="R-12" RPTR="13">Shen et al., 2004</REF>) in SMT as well.</S>
+        <S ID="S-2782">However, our method does not focus on producing better 1-best translation output for an SMT system, but on improving the overall quality of the k-best list that TM systems present to post-editors.</S>
+        <S ID="S-2783">Some features in our work are also different in nature to those used in MT reranking.</S>
+        <S ID="S-2784">For instance we cannot use N-best posterior scores as they do not make sense for the TM outputs.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 The Support Vector Machines</HEADER>
+      <P>
+        <S ID="S-2815"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 The SVM Classifier</HEADER>
+        <P>
+          <S ID="S-2785">Classical SVMs (<REF ID="R-00" RPTR="0">Cortes and Vapnik, 1995</REF>) are binary classifiers that classify an input instance based on decision rules which minimize the regularized error function in (Eq.</S>
+          <S ID="S-2786">1):</S>
+        </P>
+        <P>
+          <S ID="S-2787">min</S>
+        </P>
+        <P>
+          <S ID="S-2788">w,b,&#958;</S>
+        </P>
+        <P>
+          <S ID="S-2789">subject to:</S>
+        </P>
+        <P>
+          <S ID="S-2790">1 2 wT w + C l&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-2791">i=1</S>
+        </P>
+        <P>
+          <S ID="S-2792">&#958; i</S>
+        </P>
+        <P>
+          <S ID="S-2793">y i (w T x i + b) &#65533; 1 &#8722; &#958; i &#958; i &#65533; 0</S>
+        </P>
+        <P>
+          <S ID="S-2794">where (x i , y i ) &#8712; R n &#215; {1, &#8722;1} are l training instances.</S>
+          <S ID="S-2795">w is the weight vector, &#958; is the relaxation variable and C &gt; 0 is the penalty parameter.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Ranking SVM for SMT-TM Integration</HEADER>
+        <P>
+          <S ID="S-2796">The SVM classification algorithm is extended to the ranking case in (<REF ID="R-01" RPTR="1">Joachims, 2002</REF>).</S>
+          <S ID="S-2797">For a cer-</S>
+        </P>
+        <P>
+          <S ID="S-2798">(1)</S>
+        </P>
+        <P>
+          <S ID="S-2799">tain group of instances, the Ranking SVM aims at producing a ranking r that has the maximum Kendall&#8217;s &#964; coefficient with the the gold standard ranking r &#8727; .</S>
+        </P>
+        <P>
+          <S ID="S-2800">Kendall&#8217;s &#964; measures the relevance of two rankings: &#964;(r a , r b ) = P &#8722;Q P +Q , where P and Q are the amount of concordant and discordant pairs in r a and r b .</S>
+          <S ID="S-2801">In practice, this is done by building constraints to minimize the discordant pairs Q.</S>
+          <S ID="S-2802">Following the basic idea, we show how Ranking SVM can be applied to MT-TM integration as follows.</S>
+          <S ID="S-2803">Assume that for each source sentence s, we have a set of outputs from MT, M and a set of outputs from TM, T.</S>
+          <S ID="S-2804">If we have a ranking r(s) over translation outputs M &#8746; T where for each translation output d &#8712; M &#8746; T, (d i , d j ) &#8712; r(s) iff d i &lt; r(s) d j , we can rewrite the ranking constraints as optimization constraints in an SVM, as in Eq.</S>
+          <S ID="S-2805">(2).</S>
+        </P>
+        <P>
+          <S ID="S-2806">1 min</S>
+        </P>
+        <P>
+          <S ID="S-2807">w,b,&#958; 2 wT w + C &#8721; &#958;</S>
+        </P>
+        <P>
+          <S ID="S-2808">subject to: &#8704;(d i , d j ) &#8712; r(s 1 ) : w(&#934;(s 1 , d i ) &#8722; &#934;(s 1 , d j )) &#65533; 1 &#8722; &#958; i,j,1 ... &#8704;(d i , d j ) &#8712; r(s n ) : w(&#934;(s n , d i ) &#8722; &#934;(s n , d j )) &#65533; 1 &#8722; &#958; i,j,n &#958; i,j,k &#65533; 0 (2)</S>
+        </P>
+        <P>
+          <S ID="S-2809">where &#934;(s n , d i ) is a feature vector of translation output d i given source sentence s n .</S>
+          <S ID="S-2810">The Ranking SVM minimizes the discordant number of rankings with the gold standard according to Kendall&#8217;s &#964;.</S>
+          <S ID="S-2811">When the instances are not linearly separable, we use a mapping function &#981; to map the features x i (&#934;(s n , d i ) in the case of ranking) to high dimensional space, and solve the SVM with a kernel function K in where K(x i , x j ) = &#981;(x i ) T &#981;(x j ).</S>
+          <S ID="S-2812">We perform our experiments with the Radial Basis Function (RBF) kernel, as in Eq.</S>
+          <S ID="S-2813">(3).</S>
+        </P>
+        <P>
+          <S ID="S-2814">K(x i, x j) = exp(&#8722;&#947;||x i &#8722; x j|| 2 ), &#947; &gt; 0 (3)</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 The Ranking-based Integration Model</HEADER>
+      <P>
+        <S ID="S-2854">In this section we present the Ranking-based SMT-TM integration model in detail.</S>
+        <S ID="S-2855">We first introduce the k-best lists in MT (called N-best list) and TM systems (called m-best list in this section) and then move on to the problem formulation and the feature set.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 K-Best Lists in SMT and TM</HEADER>
+        <P>
+          <S ID="S-2816">4.1.1 The SMT N-best List</S>
+        </P>
+        <P>
+          <S ID="S-2817">The N-best list of the SMT system is generated during decoding according to the internal feature scores.</S>
+          <S ID="S-2818">The features include language and translation model probabilities, reordering model scores and a word penalty.</S>
+        </P>
+        <P>
+          <S ID="S-2819">4.1.2 The TM M-Best List and the Fuzzy Match Score</S>
+        </P>
+        <P>
+          <S ID="S-2820">The m-best list of the TM system is generated in descending fuzzy match score.</S>
+          <S ID="S-2821">The fuzzy match score (<REF ID="R-13" RPTR="14">Sikes, 2007</REF>) uses the similarity of the source sentences to predict a level to which a translation is reusable or editable.</S>
+        </P>
+        <P>
+          <S ID="S-2822">The calculation of fuzzy match scores is one of the core technologies in TM systems and varies among different vendors.</S>
+          <S ID="S-2823">We compute fuzzy match cost as the minimum Edit Distance (<REF ID="R-05" RPTR="4">Levenshtein, 1966</REF>) between the source and TM entry, normalized by the length of the source as in Eq.</S>
+          <S ID="S-2824">(4), as most of the current implementations are based on edit distance while allowing some additional flexible matching.</S>
+        </P>
+        <P>
+          <S ID="S-2825">F uzzyMatch(t) = min</S>
+        </P>
+        <P>
+          <S ID="S-2826">e</S>
+        </P>
+        <P>
+          <S ID="S-2827">EditDistance(s, e) Len(s)</S>
+        </P>
+        <P>
+          <S ID="S-2828">where s is the source side of the TM hit t, and e is the source side of an entry in the TM.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Problem Formulation</HEADER>
+        <P>
+          <S ID="S-2829">Ranking lists is a well-researched problem in the information retrieval community, and Ranking SVMs (<REF ID="R-01" RPTR="2">Joachims, 2002</REF>), which optimizes on the ranking correlation &#964; have already been applied successfully in machine translation evaluation (<REF ID="R-10" RPTR="11">Ye et al., 2007</REF>).</S>
+          <S ID="S-2830">We apply the same method here to rerank a merged list of MT and TM outputs.</S>
+        </P>
+        <P>
+          <S ID="S-2831">Formally given an MT-produced N-best list M = {m 1 , m 2 , ..., m n }, a TM-produced m-best list T = {t 1 , t 2 , ..., t m } for a input sentence s, we define the gold standard using the TER metric (<REF ID="R-15" RPTR="17">Snover et al., 2006</REF>): for each d &#8712; M &#8746; T, (d i , d j ) &#8712; r(s) iff T ER(d i ) &lt; T ER(d j ).</S>
+          <S ID="S-2832">We train and test a Ranking SVM using cross validation on a data set created according to this criterion.</S>
+          <S ID="S-2833">Ideally the gold standard would be created by human annotators.</S>
+          <S ID="S-2834">We choose to use TER</S>
+        </P>
+        <P>
+          <S ID="S-2835">(4)</S>
+        </P>
+        <P>
+          <S ID="S-2836">as large-scale annotation is not yet available for this task.</S>
+          <S ID="S-2837">Furthermore, TER has a high correlation with the HTER score (<REF ID="R-15" RPTR="18">Snover et al., 2006</REF>), which is the TER score using the post-edited MT output as a reference, and is used as an estimation of post-editing effort.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 The Feature Set</HEADER>
+        <P>
+          <S ID="S-2838">When building features for the Ranking SVM, we are limited to features that are independent of the MT and TM system.</S>
+          <S ID="S-2839">We experiment with systemindependent fluency and fidelity features below, which capture translation fluency and adequacy, respectively.</S>
+        </P>
+        <P>
+          <S ID="S-2840">4.3.1 Fluency Features</S>
+        </P>
+        <P>
+          <S ID="S-2841">Source-side Language Model Scores.</S>
+          <S ID="S-2842">We compute the LM probability and perplexity of the input source sentence on a language model trained on the source-side training data of the SMT system, which is also the TM database.</S>
+          <S ID="S-2843">The inputs that have lower perplexity on this language model are more similar to the data set on which the SMT system is built.</S>
+        </P>
+        <P>
+          <S ID="S-2844">Target-side Language Model Scores.</S>
+          <S ID="S-2845">We compute the LM probability and perplexity as a measure of the fluency of the translation.</S>
+        </P>
+        <P>
+          <S ID="S-2846">4.3.2 Fidelity Features</S>
+        </P>
+        <P>
+          <S ID="S-2847">The Pseudo-Source Fuzzy Match Score.</S>
+          <S ID="S-2848">We translate the output back to obtain a pseudo source sentence.</S>
+          <S ID="S-2849">We compute the fuzzy match score between the original source sentence and this pseudo-source.</S>
+          <S ID="S-2850">If the MT/TM performs well enough, these two sentences should be the same or very similar.</S>
+          <S ID="S-2851">Therefore the fuzzy match score here gives an estimation of the confidence level of the output.</S>
+        </P>
+        <P>
+          <S ID="S-2852">The IBM Model 1 Score.</S>
+          <S ID="S-2853">We compute the IBM Model 1 score in both directions to measure the correspondence between the source and target, as it serves as a rough estimation of how good a translation it is on the word level.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiments</HEADER>
+      <P>
+        <S ID="S-2925"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Experimental Settings</HEADER>
+        <P>
+          <S ID="S-2856">5.1.1 Data</S>
+        </P>
+        <P>
+          <S ID="S-2857">Our raw data set is an English&#8211;French translation memory with technical translation from a multi-national IT security company, consisting of 51K sentence pairs.</S>
+          <S ID="S-2858">We randomly select 43K to train an SMT system and translate the English side of the remaining 8K sentence pairs, which is used to run cross validation.</S>
+          <S ID="S-2859">Note that the 8K sentence pairs are from the same TM, so that we are able to create a gold standard by ranking the TER scores of the MT and TM outputs.</S>
+        </P>
+        <P>
+          <S ID="S-2860">Duplicated sentences are removed from the data set, as those will lead to an exact match in the TM system and will not be translated by translators.</S>
+          <S ID="S-2861">The average sentence length of the training set is 13.5 words and the size of the training set is comparable to the (larger) translation memories used in the industry.</S>
+        </P>
+        <P>
+          <S ID="S-2862">5.1.2 SMT and TM systems</S>
+        </P>
+        <P>
+          <S ID="S-2863">We use a standard log-linear PB-SMT model (<REF ID="R-06" RPTR="5">Och and Ney, 2002</REF>): GIZA++ implementation of IBM word alignment model 4, the phrase-extraction heuristics described in (Koehn et al., 2003), minimum-error-rate training (<REF ID="R-11" RPTR="12">Och, 2003</REF>), a 5-gram language model with Kneser-Ney smoothing trained with SRILM (<REF ID="R-09" RPTR="10">Stolcke, 2002</REF>) on the English side of the training data, and Moses (<REF ID="R-03" RPTR="3">Koehn et al., 2007</REF>) to decode.</S>
+          <S ID="S-2864">We train a system in the opposite direction using the same data to produce the pseudo-source sentences.</S>
+        </P>
+        <P>
+          <S ID="S-2865">We merge distinct 5-best lists from MT and TM systems to produce a new ranking.</S>
+          <S ID="S-2866">To create the distinct list for the SMT system, we search over a 100-best list and keep the top-5 distinct outputs.</S>
+          <S ID="S-2867">Our data set consists of mainly short sentences, leading to many duplications in the N-best output of the SMT decoder.</S>
+          <S ID="S-2868">In such cases, top- 5 distinct outputs are good representations of the SMT&#8217;s output.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Training, Tuning and Testing the Ranking SVM</HEADER>
+        <P>
+          <S ID="S-2869">We run training and prediction of the Ranking SVM in 4-fold cross validation.</S>
+          <S ID="S-2870">We use the</S>
+        </P>
+        <P>
+          <S ID="S-2871">SVMlight 1 toolkit to perform training and testing.</S>
+        </P>
+        <P>
+          <S ID="S-2872">When using the Ranking SVM with the RBF kernel, we have two free parameters to tune on: the cost parameter C in Eq.</S>
+          <S ID="S-2873">(1) and the radius parameter &#947; in Eq.</S>
+          <S ID="S-2874">(3).</S>
+          <S ID="S-2875">We optimize C and &#947; using a brute-force grid search before running cross-validation and maximize precision at top-5, with an inner 3-fold cross validation on the (outer) Fold-1 training set.</S>
+          <S ID="S-2876">We search within the range [2 &#8722;6 , 2 9 ], the step size is 2 on the exponent.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 The Gold Standard</HEADER>
+        <P>
+          <S ID="S-2877">Gold Standard % 100%</S>
+        </P>
+        <P>
+          <S ID="S-2878">80%</S>
+        </P>
+        <P>
+          <S ID="S-2879">60%</S>
+        </P>
+        <P>
+          <S ID="S-2880">40%</S>
+        </P>
+        <P>
+          <S ID="S-2881">20%</S>
+        </P>
+        <P>
+          <S ID="S-2882">0%</S>
+        </P>
+        <P>
+          <S ID="S-2883">Figure 1 shows the composition of translations in the gold standard.</S>
+          <S ID="S-2884">Each source sentence is associated with a list of translations from two sources, i.e. MT output and TM matches.</S>
+          <S ID="S-2885">This list of translations is ranked from best to worst according TER scores.</S>
+          <S ID="S-2886">The figure shows that over 80% of the translations are from the MT system if we only consider the top-1 translation.</S>
+          <S ID="S-2887">As the number of top translations we consider increases, more TM matches can be seen.</S>
+          <S ID="S-2888">On the one hand, this does show a large gap in quality between MT output and TM matches; on the other hand, however, it also reveals that we will have to ensure two objectives in ranking: the first is to rank the 80% MT translations higher and the second is to keep the 20% &#8216;good&#8217; TM hits in the Top-5.</S>
+          <S ID="S-2889">We design our evaluation metrics accordingly.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Evaluation Metrics</HEADER>
+        <P>
+          <S ID="S-2890">The aim of this research is to provide post-editors with translations that in many cases are easier to</S>
+        </P>
+        <P>
+          <S ID="S-2891">1 http://svmlight.joachims.org/</S>
+        </P>
+        <P>
+          <S ID="S-2892">edit than the original TM output.</S>
+          <S ID="S-2893">As we formulate this as a ranking problem, it is natural to measure the quality of the ranking output by the number of better translations that are ranked high.</S>
+          <S ID="S-2894">Sometimes the top TM output is the easiest to edit; in such a case we need to ensure that this translation has a high rank, otherwise the system performance will degrade.</S>
+          <S ID="S-2895">Based on this observation, we introduce the idea of relevant translations, and our evaluation metrics: PREC@k and HIT@k.</S>
+        </P>
+        <P>
+          <S ID="S-2896">Relevant Translations.</S>
+          <S ID="S-2897">We borrow the idea of relevence from the IR community to define the idea of translations worth ranking high.</S>
+          <S ID="S-2898">For a source sentence s which has a top TM hit t, we define an MT/TM output m as relevant, if T ER(m) &#8804; T ER(t).</S>
+          <S ID="S-2899">According to the definition, relevant translations should need no more post-edits than the original top hit from the TM system.</S>
+          <S ID="S-2900">Clearly the top TM hit is always relevant.</S>
+        </P>
+        <P>
+          <S ID="S-2901">PREC@k.</S>
+          <S ID="S-2902">We calculate the precision (PREC@k) of the ranking for evaluation.</S>
+          <S ID="S-2903">Assuming that there are n relevant translations in the top k list for a source sentence s, we have PREC@k= n/k for s.</S>
+          <S ID="S-2904">We test PREC@k, for k = 1...10, in order to evaluate the overall quality of the ranking.</S>
+        </P>
+        <P>
+          <S ID="S-2905">HIT@k.</S>
+          <S ID="S-2906">We also estimate the probability of having one of the relevant translations in the top k, denoted as HIT@k.</S>
+          <S ID="S-2907">For a source sentence s, HIT@k equals to 1 if there is at least one relevant translation in top k, and 0 otherwise.</S>
+          <S ID="S-2908">This measures the quality of the best translation in top k, which is the translation the post-editor will find and work on if she reads till the kth place in the list.</S>
+          <S ID="S-2909">HIT@k equals to 1.0 at the end of the list.</S>
+        </P>
+        <P>
+          <S ID="S-2910">We report the mean PREC@k and HIT@k for all s with the 0.95 confidence interval.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.5 Experimental Results</HEADER>
+        <P>
+          <S ID="S-2911">In Table 1 we report PREC@k and HIT@k for k = 1..10.</S>
+          <S ID="S-2912">The ranking receives 0.8747 PREC@1, which means that most of the top ranked translations have at least the same quality as the top TM output.</S>
+          <S ID="S-2913">We notice that precision remains above 0.8 till k = 5, leading us to conclude that most of the relevant translations are ranked in the top-5 positions in the list.</S>
+        </P>
+        <P>
+          <S ID="S-2914">Using the HIT@k scores we can further confirm this argument.</S>
+          <S ID="S-2915">The HIT@k score grows steadily from 0.8747 to 0.9941 for k = 1...6, so most often there will be at least one relevant translation in top-6 for the post-editor to work with.</S>
+          <S ID="S-2916">After that room for improvement becomes very small.</S>
+        </P>
+        <P>
+          <S ID="S-2917">In sum, both of the PREC@k scores and the HIT@k scores show that the ranking model effectively integrates the two translation sources (MT and TM) into one merged k-best list, and ranks the relevant translations higher.</S>
+        </P>
+        <P>
+          <S ID="S-2918">To measure whether the ranking model is effective compared to pure MT or TM outputs, we report the PREC@k of those outputs in Table 2.</S>
+          <S ID="S-2919">The k-best output used in this table is ranked by the MT or TM system, without being ranked by our model.</S>
+          <S ID="S-2920">We see the ranked outputs consistently outperform the MT outputs for all k = 1...5 w.r.t.</S>
+          <S ID="S-2921">precision at a significant level, indicating that our system preserves some high quality hits from the TM.</S>
+        </P>
+        <P>
+          <S ID="S-2922">The TM outputs alone are generally of much lower quality than the MT and Ranked outputs, as is shown by the precision scores for k = 2...5.</S>
+          <S ID="S-2923">But TM translations obtain 1.0 PREC@1 according to the definition of the PREC calculation.</S>
+          <S ID="S-2924">Note that it does not mean that those outputs will need less post-editing (cf. Section 6.1), but rather indicates that each one of these outputs meet the lowest acceptable criterion to be relevant.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Analysis of Post-Editing Effort</HEADER>
+      <P>
+        <S ID="S-2960">A natural question follows the PREC and HIT numbers: after reading the ranked k-best list, will the post-editors edit less than they would have to if they did not have access to the list?</S>
+        <S ID="S-2961">This question would be best answered by human post-editors in a large-scale experimental setting.</S>
+        <S ID="S-2962">As we have not yet conducted a manual post-editing experiment, we try to measure the post-editing effort implied by our model with the edit statistics captured by the TER metric, sorted into four types: Insertion, Substitution, Deletion and Shift.</S>
+        <S ID="S-2963">We report the average number of edits incurred along with the 0.95 confidence interval.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Top-1 Edit Statistics</HEADER>
+        <P>
+          <S ID="S-2926">We report the results on the 1-best output of TM, MT and our ranking system in Table 3.</S>
+        </P>
+        <P>
+          <S ID="S-2927">In the single best results, it is easy to see that the 1-best output from the MT system requires the least post-editing effort.</S>
+          <S ID="S-2928">This is not surprising given the distribution of the gold standard in Section 5.3, where most MT outputs are of better quality than the TM hits.</S>
+        </P>
+        <P>
+          <S ID="S-2929">Moreover, since TM translations are generally of much lower quality as is indicated by the numbers in Table 3 (e.g. 2x as many substitutions and 3x as many deletions compared to MT), unjustly including very few of them in the ranking output will increase loss in the edit statistics.</S>
+          <S ID="S-2930">This explains why the ranking model has better ranking precision in Tables 1 and 2, but seems to incur more edit efforts.</S>
+          <S ID="S-2931">However, in practice posteditors can neglect an obvious &#8216;bad&#8217; translation very quickly.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Top-k Edit Statistics</HEADER>
+        <P>
+          <S ID="S-2932">We report edit statistics of the Top-3 and Top-5 outputs in Tables 4 and 5, respectively.</S>
+          <S ID="S-2933">For each system we report two sets of statistics: the Beststatistics calculated on the best output (according</S>
+        </P>
+        <P>
+          <S ID="S-2934">to TER score) in the list, and the Mean- statistics calculated on the whole Top-k list.</S>
+        </P>
+        <P>
+          <S ID="S-2935">The Mean- numbers allow us to have a general overview of the ranking quality, but it is strongly influenced by the poor TM hits that can easily be neglected in practice.</S>
+          <S ID="S-2936">To control the impact of those TM hits, we rely on the Best- numbers to estimate the edits performed on the translations that are more likely to be used by post-editors.</S>
+          <S ID="S-2937">In Table 4, the ranking output&#8217;s edit statistics is closer to the MT output than the Top-1 case in Table 3.</S>
+          <S ID="S-2938">Table 5 continues this tendency, in which the Best-in-Top5 Ranking output requires marginally less Substitution and Deletion operations and significantly less Insertion and Shift operations (starred) than its MT counterpart.</S>
+          <S ID="S-2939">This shows that when more of the list is explored, the advantage of the ranking model &#8211; utilizing multiple translation sources &#8211; begins to compensate for the possible large number of edits required by poor TM hits and finally leads to reduced postediting effort.</S>
+          <S ID="S-2940">There are several explanations to why the relative performance of the ranking model improves when k increases, as compared to other models.</S>
+          <S ID="S-2941">The most obvious explanation is that a single poor translation is less likely to hurt edit statistics on a k-best list with large k, if most of the translations in the k-best list are of good quality.</S>
+          <S ID="S-2942">We see from Tables 1 and 2 that the ranking output is of better quality than the MT and TM outputs w.r.t.</S>
+          <S ID="S-2943">precision.</S>
+          <S ID="S-2944">For a larger k, the small number of incorrectly ranked translations are less likely to be chosen as the Best- translation and hold back the Best- numbers.</S>
+        </P>
+        <P>
+          <S ID="S-2945">A further reason is related to our ranking model which optimizes on Kendall&#8217;s &#964; score.</S>
+          <S ID="S-2946">Accordingly the output might not be optimal when we evaluate the Top-1 output, but will behave better when we evaluate on the list.</S>
+          <S ID="S-2947">This is also in accordance with our aim, which is to enrich the TM with MT outputs and help the post-editor, instead of choosing the translation for the post-editor.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.3 Comparing the MT, TM and Ranking Outputs</HEADER>
+        <P>
+          <S ID="S-2948">One of the interesting findings from Tables 3 and 4 is that according to the TER edit statistics, the MT outputs generally need a smaller number of edits than the TM and Ranking outputs.</S>
+          <S ID="S-2949">This certainly confirms the necessity to integrate MT into today&#8217;s TM systems.</S>
+        </P>
+        <P>
+          <S ID="S-2950">However, this fact should not lead to the conclusion that TMs should be replaced by MT completely.</S>
+          <S ID="S-2951">First of all, all of our experiments exclude exact TM matches, as those translations will simply be reused and not translated.</S>
+          <S ID="S-2952">While this is a realistic setting in the translation industry, it removes all sentences for which the TM works best from our evaluations.</S>
+          <S ID="S-2953">Furthermore, Table 5 shows that the Best-in- Top5 Ranking output performs better than the MT outputs, hence there are TM outputs that lead to smaller number of edits.</S>
+          <S ID="S-2954">As k increases, the ranking model is able to better utilize these outputs.</S>
+          <S ID="S-2955">Finally, in this task we concentrate on ranking useful translations higher, but we are not interested in how useless translations are ranked.</S>
+          <S ID="S-2956">Ranking SVM optimizes on the ranking of the whole list, which is slightly different from what we actually require.</S>
+          <S ID="S-2957">One option is to use other optimization techniques that can make use of this property to get better Top-k edit statistics for a smaller k.</S>
+          <S ID="S-2958">Another option is obviously to perform regression directly on the number of edits instead of modeling on the ranking.</S>
+          <S ID="S-2959">We plan to explore these ideas in future work.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusions and Future Work</HEADER>
+      <P>
+        <S ID="S-2964">In this paper we present a novel ranking-based model to integrate SMT into a TM system, in order to facilitate the work of post-editors.</S>
+        <S ID="S-2965">In such</S>
+      </P>
+      <P>
+        <S ID="S-2966">a model, the user of the TM will be presented with an augmented k-best list, consisting of translations from both the TM and the MT systems, and ranked according to ascending prospective postediting effort.</S>
+        <S ID="S-2967">From the post-editors&#8217; point of view, the TM remains intact.</S>
+        <S ID="S-2968">And unlike in the binary translation recommendation, where only one translation recommendation is provided, the ranking model offers k-best post-editing candidates, enabling the user to use more resources when translating.</S>
+        <S ID="S-2969">As we do not actually throw away any translation produced from the TM, the assets represented by the TM are preserved and the related estimation of the upper bound cost is still valid.</S>
+        <S ID="S-2970">We extract system independent features from the MT and TM outputs and use Ranking SVMs to train the ranking model, which outperforms both the TM&#8217;s and MT&#8217;s k-best list w.r.t.</S>
+        <S ID="S-2971">precision at k, for all ks.</S>
+        <S ID="S-2972">We also analyze the edit statistics of the integrated k-best output using the TER edit statistics.</S>
+        <S ID="S-2973">Our ranking model results in slightly increased number of edits compared to the MT output (apparently held back by a small number of poor TM outputs that are ranked high) for a smaller k, but requires less edits than both the MT and the TM output for a larger k.</S>
+        <S ID="S-2974">This work can be extended in a number of ways.</S>
+        <S ID="S-2975">Most importantly, We plan to conduct a user study to validate the effectiveness of the method and to gather HTER scores to train a better ranking model.</S>
+        <S ID="S-2976">Furthermore, we will try to experiment with learning models that can further reduce the number of edit operations on the top ranked translations.</S>
+        <S ID="S-2977">We also plan to improve the adaptability of this method and apply it beyond a specific domain and language pair.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-2978">This research is supported by the Science Foundation Ireland (Grant 07/CE/I1142) as part of the Centre for Next Generation Localisation (www.cngl.ie) at Dublin City University.</S>
+      <S ID="S-2979">We thank Symantec for providing the TM database and the anonymous reviewers for their insightful comments.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Corinna Cortes</RAUTHOR>
+      <REFTITLE>Supportvector networks.</REFTITLE>
+      <DATE>1995</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Thorsten Joachims</RAUTHOR>
+      <REFTITLE>Optimizing search engines using clickthrough data. In</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Franz Josef Och Philipp</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Moses</RAUTHOR>
+      <REFTITLE>Open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Vladimir Iosifovich Levenshtein</RAUTHOR>
+      <REFTITLE>Binary codes capable of correcting deletions, insertions, and reversals.</REFTITLE>
+      <DATE>1966</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Discriminative training and maximum entropy models for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Lucia Specia</RAUTHOR>
+      <REFTITLE>Estimating the sentence-level quality of machine translation systems.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Lucia Specia</RAUTHOR>
+      <REFTITLE>Improving the confidence of machine translation quality estimates.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>SRILM-an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Yang Ye</RAUTHOR>
+      <REFTITLE>Sentence level machine translation evaluation as a ranking.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Libin Shen</RAUTHOR>
+      <REFTITLE>Discriminative reranking for machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Richard Sikes</RAUTHOR>
+      <REFTITLE>Fuzzy matching in theory and practice.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Michel Simard</RAUTHOR>
+      <REFTITLE>Phrasebased machine translation in a computer-assisted translation environment.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Matthew Snover</RAUTHOR>
+      <REFTITLE>A study of translation edit rate with targeted human annotation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

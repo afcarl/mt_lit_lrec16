@@ -1,0 +1,640 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>ILLC-UvA translation system for EMNLP-WMT 2011</TITLE>
+  <AUTHORS>
+    <AUTHOR>Maxim Khalilov</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-47951">In this paper we describe the Institute for Logic, Language and Computation (University of Amsterdam) phrase-based statistical machine translation system for Englishto-German translation proposed within the EMNLP-WMT 2011 shared task.</A-S>
+    <A-S ID="S-47952">The main novelty of the submitted system is a syntaxdriven pre-translation reordering algorithm implemented as source string permutation via transfer of the source-side syntax tree.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-47953">For the WMT 2011 shared task, ILLC-UvA submitted two translations (primary and secondary) for the English-to-German translation task.</S>
+        <S ID="S-47954">This year, we directed our research toward addressing the word order problem for statistical machine translation (SMT) and discover its impact on output translation quality.</S>
+        <S ID="S-47955">We reorder the words of a sentence of the source language with respect to the word order of the target language and a given source-side parse tree.</S>
+        <S ID="S-47956">The difference from the baseline Moses-based translation system lies in the pre-translation step, in which we introduce a discriminative source string permutation model based on probabilistic parse tree transduction.</S>
+      </P>
+      <P>
+        <S ID="S-47957">The idea here is to permute the order of the source words in such a way that the resulting permutation allows as monotone a translation process as possible is not new.</S>
+        <S ID="S-47958">This approach to enhance SMT by using a reordering step prior to translation has proved to be successful in improving translation quality for many translation tasks, see (<REF ID="R-04" RPTR="8">Genzel, 2010</REF>; <REF ID="R-01" RPTR="3">Costa-juss&#224; and Fonollosa, 2006</REF>; <REF ID="R-00" RPTR="0">Collins et al., 2005</REF>), for example.</S>
+      </P>
+      <P>
+        <S ID="S-47959">The general problem of source-side reordering is that the number of permutations is factorial in n, and learning a sequence of transductions for explaining a source permutation can be computationally rather challenging.</S>
+        <S ID="S-47960">We propose to address this problem by defining the source-side permutation process as the learning problem of how to transfer a given source parse tree into a parse tree that minimizes the divergence from target word order.</S>
+      </P>
+      <P>
+        <S ID="S-47961">Our reordering system is inspired by the direction taken in (<REF ID="R-17" RPTR="23">Tromble and Eisner, 2009</REF>), but differs in defining the space of permutations, using local probabilistic tree transductions, as well as in the learning objective aiming at scoring permutations based on a log-linear interpolation of a local syntax-based model with a global string-based (language) model.</S>
+      </P>
+      <P>
+        <S ID="S-47962">The reordering (novel) and translation (standard) components are described in the following sections.</S>
+        <S ID="S-47963">The rest of this paper is structured as follows.</S>
+        <S ID="S-47964">After a brief description of the phrase-based translation system in Section 2, we present the architecture and details of our reordering system (Section 3), Section 4 reviews related work, Section 5 reports the experimental setup, details the submissions and discusses the results, while Section 6 concludes the article.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Baseline system</HEADER>
+      <P>
+        <S ID="S-47981"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Statistical machine translation</HEADER>
+        <P>
+          <S ID="S-47965">In SMT the translation problem is formulated as selecting the target translation t with the highest probability from a set of target hypothesis sentences for</S>
+        </P>
+        <P>
+          <S ID="S-47966">the source sentence s: &#710;t = arg max { p(t|s) } = arg max { p(s|t) &#183; p(t) }.</S>
+        </P>
+        <P>
+          <S ID="S-47967">t</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Phrase-based translation</HEADER>
+        <P>
+          <S ID="S-47968">While first systems following this approach performed translation on the word level, modern stateof-the-art phrase-based SMT systems (<REF ID="R-10" RPTR="14">Och and Ney, 2002</REF>; Koehn et al., 2003) start-out from a wordaligned parallel corpus working with (in principle) arbitrarily large phrase pairs (also called blocks) acquired from word-aligned parallel data under a simple definition of translational equivalence (<REF ID="R-23" RPTR="30">Zens et al., 2002</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-47969">The conditional probabilities of one phrase given its counterpart is estimated as the relative frequency ratio of the phrases in the multiset of phrase-pairs extracted from the parallel corpus and are interpolated log-linearly together with a set of other model estimates:</S>
+        </P>
+        <P>
+          <S ID="S-47970">&#234; I 1 = arg max</S>
+        </P>
+        <P>
+          <S ID="S-47971">e I 1</S>
+        </P>
+        <P>
+          <S ID="S-47972">{ &#8721; M }</S>
+        </P>
+        <P>
+          <S ID="S-47973">&#955; m h m (e I 1, f1 J )</S>
+        </P>
+        <P>
+          <S ID="S-47974">m=1</S>
+        </P>
+        <P>
+          <S ID="S-47975">t</S>
+        </P>
+        <P>
+          <S ID="S-47976">(1)</S>
+        </P>
+        <P>
+          <S ID="S-47977">where a feature function h m refer to a system model, and the corresponding &#955; m refers to the relative weight given to this model.</S>
+        </P>
+        <P>
+          <S ID="S-47978">A phrase-based system employs feature functions for a phrase pair translation model, a language model, a reordering model, and a model to score translation hypothesis according to length.</S>
+          <S ID="S-47979">The weights &#955; m are optimized for system performance (<REF ID="R-12" RPTR="16">Och, 2003</REF>) as measured by BLEU (<REF ID="R-13" RPTR="18">Papineni et al., 2002</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-47980">Apart from the novel syntax-based reordering model, we consider two reordering methods that are widely used in phrase-based systems: a simple distance-based reordering and a lexicalized blockoriented data-driven reordering model (<REF ID="R-16" RPTR="21">Tillman, 2004</REF>).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Architecture of the reordering system</HEADER>
+      <P>
+        <S ID="S-48080">We approach the word order challenge by including syntactic information in a pre-translation reordering framework.</S>
+        <S ID="S-48081">This section details the general idea of our approach and details the reordering model that was used in English-to-German experiments.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Pre-translation reordering framework</HEADER>
+        <P>
+          <S ID="S-47982">Given a word-aligned parallel corpus, we define the source string permutation as the task of learning to unfold the crossing alignments between sentence pairs in the parallel corpus.</S>
+          <S ID="S-47983">Let be given a sourcetarget sentence pair s &#8594; t with word alignment set a between their words.</S>
+          <S ID="S-47984">Unfolding the crossing instances in a should lead to as monotone an alignment a &#8242; as possible between a permutation s &#8242; of s and the target string t. Conducting such a &#8220;monotonization&#8221; on the parallel corpus gives two parallel corpora: (1) a source-to-permutation parallel corpus (s &#8594; s &#8242; ) and (2) a source permutation-totarget parallel corpus (s &#8242; &#8594; t).</S>
+          <S ID="S-47985">The latter corpus is word-aligned automatically again and used for training a phrase-based translation system, while the former corpus is used for training our model for pretranslation source permutation via parse tree transductions.</S>
+          <S ID="S-47986">In itself, the problem of permuting the source string to unfold the crossing alignments is computationally intractable (see (<REF ID="R-17" RPTR="24">Tromble and Eisner, 2009</REF>)).</S>
+          <S ID="S-47987">However, different kinds of constraints can be made on unfolding the crossing alignments in a.</S>
+          <S ID="S-47988">A common approach in hierarchical SMT is to assume that the source string has a binary parse tree, and the set of eligible permutations is defined by binary ITG transductions on this tree.</S>
+          <S ID="S-47989">This defines permutations that can be obtained only by at most inverting pairs of children under nodes of the source tree.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Conditional tree reordering model</HEADER>
+        <P>
+          <S ID="S-47990">Given a parallel corpus with string pairs s &#8594; t with word alignment a, the source strings s are parsed, leading to a single parse tree &#964; s per source string.</S>
+          <S ID="S-47991">We create a source permuted parallel corpus s &#8594; s &#8242; by unfolding the crossing alignments in a without/with syntactic tree to provide constraints on the unfolding.</S>
+        </P>
+        <P>
+          <S ID="S-47992">Our model aims at learning from the source permuted parallel corpus s &#8594; s &#8242; a probabilistic optimization arg max &#960;(s) P (&#960;(s) | s, &#964; s ).</S>
+          <S ID="S-47993">We assume that the set of permutations {&#960;(s)} is defined through a finite set of local transductions over the tree &#964; s .</S>
+          <S ID="S-47994">Hence, we view the permutations leading from s to s &#8242; as a sequence of local tree transduc-</S>
+        </P>
+        <P>
+          <S ID="S-47995">tions &#964; s</S>
+        </P>
+        <P>
+          <S ID="S-47996">&#8242; 0</S>
+        </P>
+        <P>
+          <S ID="S-47997">&#8594; .</S>
+          <S ID="S-47998">.</S>
+          <S ID="S-47999">.</S>
+          <S ID="S-48000">&#8594; &#964; s</S>
+        </P>
+        <P>
+          <S ID="S-48001">&#8242;n , where s&#8242; 0 = s and s&#8242; n = s &#8242; ,</S>
+        </P>
+        <P>
+          <S ID="S-48002">is defined using a and each transduction &#964; &#8242; s</S>
+        </P>
+        <P>
+          <S ID="S-48003">&#8594; &#964; &#8242;</S>
+        </P>
+        <P>
+          <S ID="S-48004">i&#8722;1 s i</S>
+        </P>
+        <P>
+          <S ID="S-48005">tree transduction operation that at most permutes the children of a single node in &#964; s</S>
+        </P>
+        <P>
+          <S ID="S-48006">&#8242; i&#8722;1</S>
+        </P>
+        <P>
+          <S ID="S-48007">as defined next.</S>
+        </P>
+        <P>
+          <S ID="S-48008">A local transduction &#964; &#8242; s &#8594; &#964; &#8242;</S>
+        </P>
+        <P>
+          <S ID="S-48009">i&#8722;1 s</S>
+        </P>
+        <P>
+          <S ID="S-48010">is modelled by</S>
+        </P>
+        <P>
+          <S ID="S-48011">i</S>
+        </P>
+        <P>
+          <S ID="S-48012">an operation that applies to a single node with address x in &#964; s</S>
+        </P>
+        <P>
+          <S ID="S-48013">&#8242; i&#8722;1</S>
+        </P>
+        <P>
+          <S ID="S-48014">, labeled N x , and may permute the ordered sequence of children &#945; x dominated by node x.</S>
+          <S ID="S-48015">This constitutes a direct generalization of the ITG binary inversion transduction operation.</S>
+          <S ID="S-48016">We assign a conditional probability to each such local transduction:</S>
+        </P>
+        <P>
+          <S ID="S-48017">P (&#964; &#8242; s | &#964; &#8242;</S>
+        </P>
+        <P>
+          <S ID="S-48018">i s</S>
+        </P>
+        <P>
+          <S ID="S-48019">) &#8776; P (&#960;(&#945; x ) | N x &#8594; &#945; x , C x ) (2)</S>
+        </P>
+        <P>
+          <S ID="S-48020">i&#8722;1</S>
+        </P>
+        <P>
+          <S ID="S-48021">where &#960;(&#945; x ) is a permutation of &#945; x (the ordered sequence of node labels under x) and C x is a local tree context of node x in tree &#964; &#8242; s</S>
+        </P>
+        <P>
+          <S ID="S-48022">.</S>
+          <S ID="S-48023">One wrin-</S>
+        </P>
+        <P>
+          <S ID="S-48024">i&#8722;1</S>
+        </P>
+        <P>
+          <S ID="S-48025">kle in this definition is that the number of possible permutations of &#945; x is factorial in the length of &#945; x .</S>
+          <S ID="S-48026">Fortunately, the source permuted training data exhibits only a fraction of possible permutations even for longer &#945; x sequences.</S>
+          <S ID="S-48027">Furthermore, by conditioning the probability on local context, the general applicability of the permutation is restrained.</S>
+        </P>
+        <P>
+          <S ID="S-48028">In principle, if we would disregard the computational cost, we could define the probability of the sequence of local tree transductions &#964; s</S>
+        </P>
+        <P>
+          <S ID="S-48029">&#8242; 0</S>
+        </P>
+        <P>
+          <S ID="S-48030">&#8594; .</S>
+          <S ID="S-48031">.</S>
+          <S ID="S-48032">.</S>
+          <S ID="S-48033">&#8594; &#964; s</S>
+        </P>
+        <P>
+          <S ID="S-48034">&#8242; n</S>
+        </P>
+        <P>
+          <S ID="S-48035">as</S>
+        </P>
+        <P>
+          <S ID="S-48036">P (&#964; &#8242; s &#8594; .</S>
+          <S ID="S-48037">.</S>
+          <S ID="S-48038">.</S>
+          <S ID="S-48039">&#8594; &#964;</S>
+        </P>
+        <P>
+          <S ID="S-48040">0 s &#8242; n ) = n &#8719;</S>
+        </P>
+        <P>
+          <S ID="S-48041">i=1</S>
+        </P>
+        <P>
+          <S ID="S-48042">P (&#964; &#8242; s | &#964; &#8242;</S>
+        </P>
+        <P>
+          <S ID="S-48043">i s</S>
+        </P>
+        <P>
+          <S ID="S-48044">) (3)</S>
+        </P>
+        <P>
+          <S ID="S-48045">i&#8722;1</S>
+        </P>
+        <P>
+          <S ID="S-48046">The problem of calculating the most likely permutation under this kind of transduction probability is intractable because every local transduction conditions on local context of an intermediate tree 1 .</S>
+          <S ID="S-48047">Hence, we disregard this formulation and in practice we take a pragmatic approach and greedily select at every intermediate point &#964; &#8242; s</S>
+        </P>
+        <P>
+          <S ID="S-48048">&#8594; &#964; &#8242;</S>
+        </P>
+        <P>
+          <S ID="S-48049">i&#8722;1 s</S>
+        </P>
+        <P>
+          <S ID="S-48050">the single most</S>
+        </P>
+        <P>
+          <S ID="S-48051">i</S>
+        </P>
+        <P>
+          <S ID="S-48052">likely local transduction that can be conducted on any node of the current intermediate tree &#964; s</S>
+        </P>
+        <P>
+          <S ID="S-48053">&#8242; i&#8722;1</S>
+        </P>
+        <P>
+          <S ID="S-48054">.</S>
+          <S ID="S-48055">The</S>
+        </P>
+        <P>
+          <S ID="S-48056">1 Note that a single transduction step on the current tree</S>
+        </P>
+        <P>
+          <S ID="S-48057">&#964; &#8242; s leads to a forest of trees &#964; &#8242;</S>
+        </P>
+        <P>
+          <S ID="S-48058">i&#8722;1 s</S>
+        </P>
+        <P>
+          <S ID="S-48059">because there can be multiple alternative transduction rules.</S>
+          <S ID="S-48060">Hence, this kind of a model</S>
+        </P>
+        <P>
+          <S ID="S-48061">i</S>
+        </P>
+        <P>
+          <S ID="S-48062">demands optimization over many possible sequences of trees, which can be packed into a sequence of parse-forests with transduction links between them.</S>
+        </P>
+        <P>
+          <S ID="S-48063">individual steps are made more effective by interpolating the term in Equation 2 with string probability ratios:</S>
+        </P>
+        <P>
+          <S ID="S-48064">(</S>
+        </P>
+        <P>
+          <S ID="S-48065">&#8242;</S>
+        </P>
+        <P>
+          <S ID="S-48066">P (s i&#8722;1 P (&#960;(&#945; x ) | N x &#8594; &#945; x , C x ) &#215; ) ) P (s &#8242; i ) (4)</S>
+        </P>
+        <P>
+          <S ID="S-48067">The rationale behind this interpolation is that our source permutation approach aims at finding the optimal permutation s &#8242; of s that can serve as input for a subsequent translation model.</S>
+          <S ID="S-48068">Hence, we aim at tree transductions that are syntactically motivated that also lead to improved string permutations.</S>
+          <S ID="S-48069">In this sense, the tree transduction definitions can be seen as an efficient and syntactically informed way to define the space of possible permutations.</S>
+        </P>
+        <P>
+          <S ID="S-48070">We estimate the string probabilities P (s &#8242; i ) using 5-gram language models trained on the s &#8242; side of the source permuted parallel corpus s &#8594; s &#8242; .</S>
+          <S ID="S-48071">We estimate the conditional probability P (&#960;(&#945; x ) | N x &#8594; &#945; x , C x ) using a Maximum-Entropy framework, where feature functions are defined to capture the permutation as a class, the node label N x and its head POS tag, the child sequence &#945; x together with the corresponding sequence of head POS tags and other features corresponding to different contextual information.</S>
+        </P>
+        <P>
+          <S ID="S-48072">We were particularly interested in those linguistic features that motivate reordering phenomena from the syntactic and linguistic perspective.</S>
+          <S ID="S-48073">The features that were used for training the permutation system are extracted for every internal node of the source tree that has more than one child:</S>
+        </P>
+        <P>
+          <S ID="S-48074">&#8226; Local tree topology.</S>
+          <S ID="S-48075">Sub-tree instances that include parent node and the ordered sequence of child node labels.</S>
+        </P>
+        <P>
+          <S ID="S-48076">&#8226; Dependency features.</S>
+          <S ID="S-48077">Features that determine the POS tag of the head word of the current node, together with the sequence of POS tags of the head words of its child nodes.</S>
+        </P>
+        <P>
+          <S ID="S-48078">&#8226; Syntactic features.</S>
+          <S ID="S-48079">Two binary features from this class describe: (1) whether the parent node is a child of the node annotated with the same syntactic category, (2) whether the parent node is a descendant of a node annotated with the same syntactic category.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Related work</HEADER>
+      <P>
+        <S ID="S-48082">The integration of linguistic syntax into SMT systems offers a potential solution to reordering problem.</S>
+        <S ID="S-48083">For example, syntax is successfully integrated into hierarchical SMT (Zollmann and Venugopal, 2006).</S>
+        <S ID="S-48084">In (<REF ID="R-22" RPTR="29">Yamada and Knight, 2001</REF>), a set of treestring channel operations is defined over the parse tree nodes, while reordering is modeled by permutations of children nodes.</S>
+        <S ID="S-48085">Similarly, the tree-to-string syntax-based transduction approach offers a complete translation framework (<REF ID="R-03" RPTR="7">Galley et al., 2006</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-48086">The idea of augmenting SMT by a reordering step prior to translation has often been shown to improve translation quality.</S>
+        <S ID="S-48087">Clause restructuring performed with hand-crafted reordering rules for German-to- English and Chinese-to-English tasks are presented in (<REF ID="R-00" RPTR="1">Collins et al., 2005</REF>) and (Wang et al., 2007), respectively.</S>
+        <S ID="S-48088">In (<REF ID="R-20" RPTR="27">Xia and McCord, 2004</REF>; <REF ID="R-06" RPTR="10">Khalilov, 2009</REF>) word reordering is addressed by exploiting syntactic representations of source and target texts.</S>
+      </P>
+      <P>
+        <S ID="S-48089">In (<REF ID="R-01" RPTR="4">Costa-juss&#224; and Fonollosa, 2006</REF>) source and target word order harmonization is done using wellestablished SMT techniques and without the use of syntactic knowledge.</S>
+        <S ID="S-48090">Other reordering models operate provide the decoder with multiple word orders.</S>
+        <S ID="S-48091">For example, the MaxEnt reordering model described in (<REF ID="R-21" RPTR="28">Xiong et al., 2006</REF>) provides a hierarchical phrasal reordering system integrated within a CKY-style decoder.</S>
+        <S ID="S-48092">In (Galley and <REF ID="R-02" RPTR="6">Manning, 2008</REF>) the authors present an extension of the famous MSD model (<REF ID="R-16" RPTR="22">Tillman, 2004</REF>) able to handle longdistance word-block permutations.</S>
+        <S ID="S-48093">Coming up-todate, in (<REF ID="R-14" RPTR="19">PVS, 2010</REF>) an effective application of data mining techniques to syntax-driven source reordering for MT is presented.</S>
+      </P>
+      <P>
+        <S ID="S-48094">Different syntax-based reordering systems can be found in (<REF ID="R-04" RPTR="9">Genzel, 2010</REF>).</S>
+        <S ID="S-48095">In this system, reordering rules capable to capture many important word order transformations are automatically learned and applied in the preprocessing step.</S>
+      </P>
+      <P>
+        <S ID="S-48096">Recently, Tromble and Eisner (<REF ID="R-17" RPTR="25">Tromble and Eisner, 2009</REF>) define source permutation as the wordordering learning problem; the model works with a preference matrix for word pairs, expressing preference for their two alternative orders, and a corresponding weight matrix that is fit to the parallel data.</S>
+        <S ID="S-48097">The huge space of permutations is then structured using a binary synchronous context-free grammar (Binary ITG) with O(n 3 ) parsing complexity, and the permutation score is calculated recursively over the tree at every node as the accumulation of the relative differences between the word-pair scores taken from the preference matrix.</S>
+        <S ID="S-48098">Application to German-to-English translation exhibits some performance improvement.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiments and submissions</HEADER>
+      <P>
+        <S ID="S-48157">Design, architecture and configuration of the translation system that we used in experimentation coincides with the Moses-based translation system (Baseline system) described in details on the WMT 2011 web page 2 .</S>
+      </P>
+      <P>
+        <S ID="S-48158">This section details the experiments carried out to evaluate the proposed reordering model, experimental set-up and data.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Data</HEADER>
+        <P>
+          <S ID="S-48099">In our experiments we used EuroParl v6.0 German- English parallel corpus provided by the organizers of the evaluation campaign.</S>
+        </P>
+        <P>
+          <S ID="S-48100">A detailed statistics of the training, development, internal (test int.</S>
+          <S ID="S-48101">) and official (test of.</S>
+          <S ID="S-48102">) test datasets can be found in Table 1.</S>
+          <S ID="S-48103">The development corpus coincides with the 2009 test set and for internal testing we used the test data proposed to the participants of WMT 2010.</S>
+        </P>
+        <P>
+          <S ID="S-48104">&#8221;ASL&#8220; stands for average sentence length.</S>
+          <S ID="S-48105">All the sets were provided with one reference translation.</S>
+        </P>
+        <P>
+          <S ID="S-48106">Data Sent.</S>
+          <S ID="S-48107">Words Voc.</S>
+          <S ID="S-48108">ASL</S>
+        </P>
+        <P>
+          <S ID="S-48109">Apart from the German portion of the EuroParl parallel corpus, two additional monolingual corpora from news domain (the News Commentary corpus (NC) and the News Crawl Corpus 2011 (NS)) were</S>
+        </P>
+        <P>
+          <S ID="S-48110">html</S>
+        </P>
+        <P>
+          <S ID="S-48111">2 http://www.statmt.org/wmt11/baseline.</S>
+        </P>
+        <P>
+          <S ID="S-48112">used to train a language model for German.</S>
+          <S ID="S-48113">The characteristics of these datasets can be found in Table 2.</S>
+          <S ID="S-48114">Notice that the data were not de-duplicated.</S>
+        </P>
+        <P>
+          <S ID="S-48115">Data Sent.</S>
+          <S ID="S-48116">Words Voc.</S>
+          <S ID="S-48117">ASL</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Experimental setup</HEADER>
+        <P>
+          <S ID="S-48118">Moses toolkit (<REF ID="R-09" RPTR="12">Koehn et al., 2007</REF>) in its standard setting was used to build the SMT systems:</S>
+        </P>
+        <P>
+          <S ID="S-48119">&#8226; GIZA++/mkcls (<REF ID="R-12" RPTR="17">Och, 2003</REF>; <REF ID="R-11" RPTR="15">Och, 1999</REF>) for word alignment.</S>
+        </P>
+        <P>
+          <S ID="S-48120">&#8226; SRI LM (<REF ID="R-15" RPTR="20">Stolcke, 2002</REF>) for language modeling.</S>
+          <S ID="S-48121">A 3-gram target language model was estimated and smoothed with modified Kneser- Ney discounting.</S>
+        </P>
+        <P>
+          <S ID="S-48122">&#8226; MOSES (<REF ID="R-09" RPTR="13">Koehn et al., 2007</REF>) to build an unfactored translation system.</S>
+        </P>
+        <P>
+          <S ID="S-48123">&#8226; the Stanford parser (<REF ID="R-07" RPTR="11">Klein and Manning, 2003</REF>) was used as a source-side parsing engine 3 .</S>
+        </P>
+        <P>
+          <S ID="S-48124">&#8226; For maximum entropy modeling we used the maxent toolkit 4 .</S>
+        </P>
+        <P>
+          <S ID="S-48125">The discriminative syntactic reordering model is applied to reorder training, development, and test corpora.</S>
+          <S ID="S-48126">A Moses-based translation system (corpus realignment included 5 ) is then trained using the reordered input.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Internal results and submissions</HEADER>
+        <P>
+          <S ID="S-48127">The outputs of two translation system were submitted.</S>
+          <S ID="S-48128">First, we piled up all feature functions into a single model as described in Section 3.</S>
+          <S ID="S-48129">It was our &#8220;secondary&#8221; submission.</S>
+          <S ID="S-48130">However, our experience tells</S>
+        </P>
+        <P>
+          <S ID="S-48131">3 The parser was trained on the English treebank set provided</S>
+        </P>
+        <P>
+          <S ID="S-48132">with 14 syntactic categories and 48 POS tags.</S>
+          <S ID="S-48133">4 http://homepages.inf.ed.ac.uk/lzhang10/</S>
+        </P>
+        <P>
+          <S ID="S-48134">maxent_toolkit.html 5 Some studies show that word re-alignment of a monotonized corpus gives better results than unfolding of alignment crossings (<REF ID="R-01" RPTR="5">Costa-juss&#224; and Fonollosa, 2006</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-48135">that the system performance can increase if the set of patterns is split into partial classes conditioned on the current node label (Khalilov and Sima&#8217;an, 2010).</S>
+          <S ID="S-48136">Hence, we trained three separate MaxEnt models for the categories with potentially high reordering requirements, namely NP , SENT and SBAR(Q).</S>
+          <S ID="S-48137">It was defines as our &#8220;primary&#8221; submission.</S>
+        </P>
+        <P>
+          <S ID="S-48138">The ranking of submission was done according to the results shown on internal testing, shown in Table 3.</S>
+        </P>
+        <P>
+          <S ID="S-48139">System BLEU dev BLEU test NIST test</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Official results and discussion</HEADER>
+        <P>
+          <S ID="S-48140">Unfortunately, the results of our participation this year were discouraging.</S>
+          <S ID="S-48141">The primary submission was ranked 30th (12.6 uncased BLEU-4) and the secondary 31th (11.2) out of 32 submitted systems.</S>
+        </P>
+        <P>
+          <S ID="S-48142">It turned out that our preliminary idea to extrapolate the positive results of English-to-Dutch translation reported in (Khalilov and Sima&#8217;an, 2010) to the WMT English-to-German translation task was not right.</S>
+          <S ID="S-48143">Analyzing the reasons of negative results during the post-evaluation period, we discovered that translation into German differs from English-to-Dutch task in many cases.</S>
+          <S ID="S-48144">In contrast to English-to-Dutch translation, the difference in terms of automatic scores between the internal baseline system (without external reordering) and the system enhanced with the pre-translation reordering is minimal.</S>
+          <S ID="S-48145">It turns out that translating into German is more complex in general and discriminative reordering is more advantageous for English-to-Dutch than for Englishto-German translation.</S>
+        </P>
+        <P>
+          <S ID="S-48146">A negative aspect influencing is the way how the rules are extracted and applied according to our approach.</S>
+          <S ID="S-48147">Syntax-driven reordering, as described in this paper, involves large contextual information applied cumulatively.</S>
+          <S ID="S-48148">Under conditions of scarce data, alignment and parsing errors, it introduces noise to the reordering system and distorts the feature prob-</S>
+        </P>
+        <P>
+          <S ID="S-48149">ability space.</S>
+          <S ID="S-48150">At the same time, many reorderings can be performed more efficiently based on fixed (hand-crafted) rules (as it is done in (<REF ID="R-00" RPTR="2">Collins et al., 2005</REF>)).</S>
+          <S ID="S-48151">A possible remedy to this problem is to combine automatically extracted features with fixed (hand-crafted) rules.</S>
+          <S ID="S-48152">Our last claims are supported by the observations described in (<REF ID="R-18" RPTR="26">Visweswariah et al., 2010</REF>).</S>
+          <S ID="S-48153">During post-evaluation period we analyzed the reasons why the system performance has slightly improved when separate MaxEnt models are applied.</S>
+          <S ID="S-48154">The outline of reordered nodes for each of syntactic categories considered (SEN T , SBAR(Q) and NP ) can be found in Table 4 (the size of the corpus is 1.7 M of sentences).</S>
+        </P>
+        <P>
+          <S ID="S-48155">It is seen that the reorderings for NP nodes is higher than for SEN T and SBAR(Q) categories.</S>
+          <S ID="S-48156">While SENT and SBAR(Q) reorderings work analogously for Dutch and German, our intuition is that German has more features that play a role in reordering of NP structures than Dutch and there is a need of more specific features to model NP permutations in an accurate way.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusions</HEADER>
+      <P>
+        <S ID="S-48159">This paper presents the ILLC-UvA translation system for English-to-German translation task proposed to the participants of the EMNLP-WMT 2011 evaluation campaign.</S>
+        <S ID="S-48160">The novel feature that we present this year is a source reordering model in which the reordering decisions are conditioned on the features from the source parse tree.</S>
+        <S ID="S-48161">Our system has not managed to outperform the majority of the participating systems, possibly due to its generic approach to reordering.</S>
+        <S ID="S-48162">We plan to investigate why our approach works well for Englishto-Dutch and less well for the English-to-German translation in order to discover more generic ways for learning discriminative reordering rules.</S>
+        <S ID="S-48163">One possible explanation of the bad results is a high sparseness of automatically extracted rules that does not allow for sufficient generalization of reordering instances.</S>
+      </P>
+      <P>
+        <S ID="S-48164">In the future, we plan (1) to perform deeper analysis of the dissimilarity between English-to-Dutch and English-to-German translations from SMT perspective, and (2) to investigate linguisticallymotivated ideas to extend our model such that we can bring about some improvement to English-to- German translation.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-48165"></S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>M Collins</RAUTHOR>
+      <REFTITLE>Clause restructuring for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>M R Costa-juss&#224;</RAUTHOR>
+      <REFTITLE>Statistical machine reordering.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>D Manning</RAUTHOR>
+      <REFTITLE>A simple and effective hierarchical phrase reordering model.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>M Galley</RAUTHOR>
+      <REFTITLE>Scalable inference and training of context-rich syntactic translation models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>D Genzel</RAUTHOR>
+      <REFTITLE>Aumotatically learning source-side reordering rules for large scale machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>M Khalilov</RAUTHOR>
+      <REFTITLE>A discriminative syntactic model for source permutation via tree transduction.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>M Khalilov</RAUTHOR>
+      <REFTITLE>New statistical and syntactic models for machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>D Klein</RAUTHOR>
+      <REFTITLE>Accurate unlexicalized parsing.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>F Och Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>H Hoang Koehn</RAUTHOR>
+      <REFTITLE>Moses: open-source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>F Och</RAUTHOR>
+      <REFTITLE>Discriminative training and maximum entropy models for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>F Och</RAUTHOR>
+      <REFTITLE>An efficient method for determining bilingual word classes.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>F Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>K Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>A PVS</RAUTHOR>
+      <REFTITLE>A data mining approach to learn reorder rules for SMT.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>A Stolcke</RAUTHOR>
+      <REFTITLE>SRILM: an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>C Tillman</RAUTHOR>
+      <REFTITLE>A unigram orientation model for statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>R Tromble</RAUTHOR>
+      <REFTITLE>Learning linear ordering problems for better translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>K Visweswariah</RAUTHOR>
+      <REFTITLE>Syntax based reordering with automatically derived rules for improved statistical machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Koehn</RAUTHOR>
+      <REFTITLE>Chinese syntactic reordering for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>F Xia</RAUTHOR>
+      <REFTITLE>Improving a statistical MT system with automatically learned rewrite patterns.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>D Xiong</RAUTHOR>
+      <REFTITLE>Maximum entropy based phrase reordering model for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>K Yamada</RAUTHOR>
+      <REFTITLE>A syntax-based statistical translation model.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>R Zens</RAUTHOR>
+      <REFTITLE>Phrase-based statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

@@ -1,0 +1,334 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Faster MT Decoding through Pervasive Laziness</TITLE>
+  <AUTHORS>
+    <AUTHOR>Michael Pust</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-22980">Syntax-based MT systems have proven effective&#8212;the models are compelling and show good room for improvement.</A-S>
+    <A-S ID="S-22981">However, decoding involves a slow search.</A-S>
+    <A-S ID="S-22982">We present a new lazy-search method that obtains significant speedups over a strong baseline, with no loss in Bleu.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-22983">Syntax-based string-to-tree MT systems have proven effective&#8212;the models are compelling and show good room for improvement.</S>
+        <S ID="S-22984">However, slow decoding hinders research, as most experiments involve heavy parameter tuning, which involves heavy decoding.</S>
+        <S ID="S-22985">In this paper, we present a new method to improve decoding performance, obtaining a significant speedup over a strong baseline with no loss in Bleu.</S>
+        <S ID="S-22986">In scenarios where fast decoding is more important than optimal Bleu, we obtain better Bleu for the same time investment.</S>
+        <S ID="S-22987">Our baseline is a full-scale syntax-based MT system with 245m tree-transducer rules of the kind described in (<REF ID="R-01" RPTR="7">Galley et al., 2004</REF>), 192 English non-terminal symbols, an integrated 5-gram language model (LM), and a decoder that uses state-of-the-art cube pruning (<REF ID="R-00" RPTR="1">Chiang, 2007</REF>).</S>
+        <S ID="S-22988">A sample translation rule is:</S>
+      </P>
+      <P>
+        <S ID="S-22989">S(x0:NP x1:VP) &#8596; x1:VP x0:NP</S>
+      </P>
+      <P>
+        <S ID="S-22990">In CKY string-to-tree decoding, we attack spans of the input string from shortest to longest.</S>
+        <S ID="S-22991">We populate each span with a set of edges.</S>
+        <S ID="S-22992">An edge contains a English non-terminal (NT) symbol (NP, VP, etc), border words for LM combination, pointers to child edges, and a score.</S>
+        <S ID="S-22993">The score is a sum of (1) the left-child edge score, (2) the right-child edge score, (3) the score of the translation rule that combined them, and (4) the target-string LM score.</S>
+        <S ID="S-22994">In this paper, we are only concerned with what happens when constructing edges for a single span [i,j].</S>
+        <S ID="S-22995">The naive algorithm works like this:</S>
+      </P>
+      <P>
+        <S ID="S-22996">for each split point k for each edge A in span [i,k] for each edge B in span [k,j] for each rule R with RHS = A B create new edge for span [i,j] delete all but 1000-best edges The last step provides a necessary beam.</S>
+        <S ID="S-22997">Without it, edges proliferate beyond available memory and time.</S>
+        <S ID="S-22998">But even with the beam, the naive algorithm fails, because enumerating all &lt;A,B,R&gt; triples at each span is too time consuming.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Cube Pruning</HEADER>
+      <P>
+        <S ID="S-22999">Cube pruning (<REF ID="R-00" RPTR="2">Chiang, 2007</REF>) solves this problem by lazily enumerating triples.</S>
+        <S ID="S-23000">To work, cube pruning requires that certain orderings be continually maintained at all spans.</S>
+        <S ID="S-23001">First, rules are grouped by RHS into rule sets (eg, all the NP-VP rules are in a set), and the members of a given set are sorted by rule score.</S>
+        <S ID="S-23002">Second, edges in a span are grouped by NT into edge sets (eg, all the NP edges are in an edge set), ordered by edge score.</S>
+        <S ID="S-23003">Consider the sub-problem of building new [i,j] edges by combining (just) the NP edges over [i,k] with (just) the VP edges over [k,j], using the available NP-VP rules.</S>
+        <S ID="S-23004">Rather than enumerate all triples, cube pruning sets up a 3-dimensional cube structure whose individually-sorted axes are the NP left edges, the VP right edges, and the NP-VP rules.</S>
+        <S ID="S-23005">Because the corner of the cube (best NP left-edge, best VP right-edge, best NP-VP rule) is likely the best edge in the cube, at beam size 1, we would simply return this edge and terminate, without checking other triples.</S>
+        <S ID="S-23006">We say &#8220;likely&#8221; because the corner position does not take into account the LM portion of the score.</S>
+        <S ID="S-23007">1</S>
+      </P>
+      <P>
+        <S ID="S-23008">After we take the corner and post a new edge from it, we identify its 3 neighbors in the cube.</S>
+        <S ID="S-23009">We com-</S>
+      </P>
+      <P>
+        <S ID="S-23010">1 We also employ LM rule and edge forward-heuristics as in</S>
+      </P>
+      <P>
+        <S ID="S-23011">(<REF ID="R-00" RPTR="3">Chiang, 2007</REF>), which improve the sorting.</S>
+      </P>
+      <P>
+        <S ID="S-23012">pute their full scores (including LM portion) and push them onto a priority queue (PQ).</S>
+        <S ID="S-23013">We then pop an item from the PQ, post another new edge, and push the item&#8217;s neighbors onto the PQ.</S>
+        <S ID="S-23014">Note that this PQ grows in size over time.</S>
+        <S ID="S-23015">In this way, we explore the best portion of the cube without enumerating all its contents.</S>
+        <S ID="S-23016">Here is the algorithm:</S>
+      </P>
+      <P>
+        <S ID="S-23017">push(corner, make-edge(corner)) onto PQ for i = 1 to 1000</S>
+      </P>
+      <P>
+        <S ID="S-23018">pop(position, edge) from top of PQ post edge to chart for each n in neighbors(position) push(n, make-edge(n)) onto PQ if PQ is empty, break from for-loop</S>
+      </P>
+      <P>
+        <S ID="S-23019">The function make-edge completely scores an edge (including LM score) before inserting it into the PQ.</S>
+        <S ID="S-23020">Note that in practice, we execute the loop up to 10k times, to get 1000 edges that are distinct in their NTs and border words.</S>
+      </P>
+      <P>
+        <S ID="S-23021">In reality, we have to construct many cubes, one for each combinable left and right edge set for a given split point, plus all the cubes for all the other split points.</S>
+        <S ID="S-23022">So we maintain a PQ-of-PQs whose elements are cubes.</S>
+      </P>
+      <P>
+        <S ID="S-23023">create each cube, pushing its fully-scored corner onto the cube&#8217;s PQ push cubes themselves onto a PQ-of-PQs for i = 1 to 1000:</S>
+      </P>
+      <P>
+        <S ID="S-23024">pop a cube C from the PQ-of-PQs pop an item from C post edge to chart retrieve neighbors, score &amp; push them onto C push C back onto the PQ-of-PQs</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Lazy Lists</HEADER>
+      <P>
+        <S ID="S-23025">When we meter the cube pruning algorithm, we find that over 80% of the time goes to building the initial queue of cubes, including deriving a corner edge for each cube&#8212;only a small fraction is spent deriving additional edges via exploring the cubes.</S>
+        <S ID="S-23026">For spans of length 10 or greater, we find that we have to create more than 1000 cubes, i.e., more than the number of edges we wish to explore.</S>
+      </P>
+      <P>
+        <S ID="S-23027">Our idea, then, is to create the cubes themselves lazily.</S>
+        <S ID="S-23028">To describe our algorithm, we exploit an abstract data structure called a lazy list (aka generator, stream, pipe, or iterator), which supports three operations:</S>
+      </P>
+      <P>
+        <S ID="S-23029">next(list): pops the front item from a list peek(list): returns the score of the front item empty(list): returns true if the list is empty</S>
+      </P>
+      <P>
+        <S ID="S-23030">A cube is a lazy list (of edges).</S>
+        <S ID="S-23031">For our purposes, a lazy list can be implemented with a PQ or something else&#8212;we no longer care how the list is populated or maintained, or even whether there are a finite number of elements.</S>
+        <S ID="S-23032">Instead of explicitly enumerating all cubes for a span, we aim to produce a lazy list of cubes.</S>
+        <S ID="S-23033">Assume for the moment that such a lazy list exists&#8212;we show how to create it in the next section&#8212;and call it L. Let us also say that cubes come off L in order of their top edges&#8217; scores.</S>
+        <S ID="S-23034">To get our first edge, we let C = next(L), and then we call next(C).</S>
+        <S ID="S-23035">Now a question arises: do we pop the next-best edge off C, or do we investigate the next cube in L?</S>
+        <S ID="S-23036">We can decide by calling peek(peek(L)).</S>
+        <S ID="S-23037">If we choose to pop the next cube (and then its top edge), then we face another (this time three-way) decision.</S>
+        <S ID="S-23038">Bookkeeping is therefore required if we are to continue to emit edges in a good order.</S>
+        <S ID="S-23039">We manage the complexity through the abstraction of a lazy list of lazy lists, to which we routinely apply a single, key operation called merge-lists.</S>
+        <S ID="S-23040">This operation converts a lazy list of lazy lists of X&#8217;s into a simple lazy list of X&#8217;s.</S>
+        <S ID="S-23041">X can be anything: edges, integers, lists, lazy lists, etc.</S>
+      </P>
+      <P>
+        <S ID="S-23042">Figure 1 gives the generic merge-lists algorithm.</S>
+        <S ID="S-23043">The yield function suspends computation and returns to the caller.</S>
+        <S ID="S-23044">peek() lets the caller see what is yielded, next() returns what is yielded and resumes the loop, and empty() tells if the loop is still active.</S>
+      </P>
+      <P>
+        <S ID="S-23045">We are now free to construct any nested &#8220;list of lists of lists ... of lists of X&#8221; (all lazy) and reduce it stepwise and automatically to a single lazy list.</S>
+        <S ID="S-23046">Standard cube pruning (Section 2) provides a simple example: if L is a list of cubes, and each cube is a lazy list of edges, then merge-lists(L) returns us a lazy list of edges (M), which is exactly what the decoder wants.</S>
+        <S ID="S-23047">The decoder can populate a new span by simply making 1000 calls to next(M).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Pervasive Laziness</HEADER>
+      <P>
+        <S ID="S-23048">Now we describe how to generate cubes lazily.</S>
+        <S ID="S-23049">As with standard cube pruning, we need to maintain a</S>
+      </P>
+      <P>
+        <S ID="S-23050">merge-lists(L):</S>
+      </P>
+      <P>
+        <S ID="S-23051">(L is a lazy list of lazy lists) 1. set up an empty PQ of lists,</S>
+      </P>
+      <P>
+        <S ID="S-23052">prioritized by peek(list) 2. push next(L) onto PQ 3. pop list L2 off PQ 4. yield pop(L2) 5. if !empty(L2) and peek(L2) is worse than</S>
+      </P>
+      <P>
+        <S ID="S-23053">peek(peek(L)), then push next(L) onto PQ 6. if !empty(L2), then push L2 onto PQ 7. go to step 3</S>
+      </P>
+      <P>
+        <S ID="S-23054">small amount of ordering information among edges in a span, which we exploit in constructing higherlevel spans.</S>
+        <S ID="S-23055">Previously, we required that all NP edges be ordered by score, the same for VP edges, etc.</S>
+        <S ID="S-23056">Now we additionally order whole edge sets (groups of edges sharing an NT) with respect to each other, eg, NP &gt; VP &gt; RB &gt; etc.</S>
+        <S ID="S-23057">These are ordered by the top-scoring edges in each set.</S>
+      </P>
+      <P>
+        <S ID="S-23058">Ideally, we would pop cubes off our lazy list in order of their top edges.</S>
+        <S ID="S-23059">Recall that the PQ-of-PQs in standard cube pruning works this way.</S>
+        <S ID="S-23060">We cannot guarantee this anymore, so we approximate it.</S>
+      </P>
+      <P>
+        <S ID="S-23061">Consider first a single edge set from [i,k], eg, all the NP edges.</S>
+        <S ID="S-23062">We build a lazy list of cubes that all have a left-NP.</S>
+        <S ID="S-23063">Because edge sets from [k,j] are ordered with respect to each other, we may find that it is the VP edge set that contains the best edge in [k,j].</S>
+        <S ID="S-23064">Pulling in all NP-VP rules, we can now postulate a &#8220;best cube,&#8221; which generates edges out of left- NPs and right-VPs.</S>
+        <S ID="S-23065">We can either continue making edge from this cube, or we can ask for a &#8220;secondbest cube&#8221; by moving to the next edge set of [k,j], which might contain all the right-PP edges.</S>
+        <S ID="S-23066">Thus, we have a lazy list of left-NP cubes.</S>
+        <S ID="S-23067">Its ordering is approximate&#8212;cubes come off in such a way that their top edges go from best to worst, but only considering the left and right child scores, not the rule scores.</S>
+        <S ID="S-23068">This is the same idea followed by standard cube pruning when it ignores internal LM scores.</S>
+      </P>
+      <P>
+        <S ID="S-23069">We next create similar lazy lists for all the other [i,k] edge sets (not just NP).</S>
+        <S ID="S-23070">We combine these lists into a higher-level lazy list, whose elements pop off according to the ordering of edge sets in [i,k].</S>
+        <S ID="S-23071">This structure contains all edges that can be produced</S>
+      </P>
+      <P>
+        <S ID="S-23072">&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23073">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23074">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23075">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23076">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23077">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23078">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23079">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23080">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23081">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533; &#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23082">&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23083">&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23084">&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533; &#65533;&#65533;&#65533;</S>
+      </P>
+      <P>
+        <S ID="S-23085">from split point k.</S>
+        <S ID="S-23086">We call merge-lists recursively on the structure, leaving us with a single lazy list M of edges.</S>
+        <S ID="S-23087">The decoder can now make 1000 calls to next(M) to populate the new span.</S>
+      </P>
+      <P>
+        <S ID="S-23088">Edges from other split points, however, must compete on an equal basis for those 1000 slots.</S>
+        <S ID="S-23089">We therefore produce a separate lazy list for each of the j &#8722; i &#8722; 1 split points and combine these into an even higher-level list.</S>
+        <S ID="S-23090">Lacking an ordering criterion among split points, we presently make the top list a non-lazy one via the PQ-of-PQs structure.</S>
+        <S ID="S-23091">Figure 2 shows how our lists are organized.</S>
+      </P>
+      <P>
+        <S ID="S-23092">The quality of our 1000-best edges can be improved.</S>
+        <S ID="S-23093">When we organize the higher-level lists by left edge-sets, we give prominence to the best left edge-set (eg, NP) over others (eg, VP).</S>
+        <S ID="S-23094">If the left span is relatively short, the contribution of the left NP to the total score of the new edge is small, so this prominence is misplaced.</S>
+        <S ID="S-23095">Therefore, we repeat the above process with the higher-level lists organized by right span instead of left.</S>
+        <S ID="S-23096">We merge the right-oriented and left-oriented structures, making sure that duplicates are avoided.</S>
+        <S ID="S-23097">Related Work.</S>
+        <S ID="S-23098">Huang and <REF ID="R-00" RPTR="0">Chiang (2007)</REF> de-</S>
+      </P>
+      <P>
+        <S ID="S-23099">model cost</S>
+      </P>
+      <P>
+        <S ID="S-23100">bleu</S>
+      </P>
+      <P>
+        <S ID="S-23101">45000</S>
+      </P>
+      <P>
+        <S ID="S-23102">44000</S>
+      </P>
+      <P>
+        <S ID="S-23103">lazy cube generation exhaustive cube generation 53</S>
+      </P>
+      <P>
+        <S ID="S-23104">52.8</S>
+      </P>
+      <P>
+        <S ID="S-23105">52.6</S>
+      </P>
+      <P>
+        <S ID="S-23106">52.4</S>
+      </P>
+      <P>
+        <S ID="S-23107">43000</S>
+      </P>
+      <P>
+        <S ID="S-23108">42000</S>
+      </P>
+      <P>
+        <S ID="S-23109">52.2</S>
+      </P>
+      <P>
+        <S ID="S-23110">51.8</S>
+      </P>
+      <P>
+        <S ID="S-23111">51.6 lazy cube generation exhaustive cube generation</S>
+      </P>
+      <P>
+        <S ID="S-23112">51.4</S>
+      </P>
+      <P>
+        <S ID="S-23113">5x10 8 1x10 9 1.5x10 9 2x10 9 2.5x10 9 3x10 9</S>
+      </P>
+      <P>
+        <S ID="S-23114">edges created</S>
+      </P>
+      <P>
+        <S ID="S-23115">51.2 20000 40000 60000 80000</S>
+      </P>
+      <P>
+        <S ID="S-23116">decode time (seconds)</S>
+      </P>
+      <P>
+        <S ID="S-23117">scribe a variation of cube pruning called cube growing, and they apply it to a source-tree to targetstring translator.</S>
+        <S ID="S-23118">It is a two pass approach, where a context-free parser is used to build a source forest, and a top down lazy forest expansion is used to integrate a language model.</S>
+        <S ID="S-23119">The expansion recursively calls cubes top-down, in depth first order.</S>
+        <S ID="S-23120">The context-free forest controls which cubes are built, and acts as a heuristic to minimize the number of items returned from each cube necessary to generate k-best derivations at the top.</S>
+      </P>
+      <P>
+        <S ID="S-23121">It is not clear that a decoder such as ours, without the source-tree constraint, would benefit from this method, as building a context-free forest consistent with future language model integration via cubes is expensive on its own.</S>
+        <S ID="S-23122">However, we see potential integration of both methods in two places: First, the merge-lists algorithm can be used to lazily process any nested for-loops&#8212;including vanilla CKY&#8212; provided the iterands of the loops can be prioritized.</S>
+        <S ID="S-23123">This could speed up the creation of a first-pass context-free forest.</S>
+        <S ID="S-23124">Second, the cubes themselves could be prioritized in a manner similar to what we describe, using the context-free forest to prioritize cube generation rather than antecedent edges in the chart (since those do not exist yet).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Results</HEADER>
+      <P>
+        <S ID="S-23125">We compare our method with standard cube pruning (<REF ID="R-00" RPTR="4">Chiang, 2007</REF>) on a full-scale Arabic/English syntax-based MT system with an integrated 5-gram LM.</S>
+        <S ID="S-23126">We report on 500 test sentences of lengths 15- 35.</S>
+        <S ID="S-23127">There are three variables of interest: runtime, model cost (summed across all sentences), and IBM Bleu.</S>
+        <S ID="S-23128">By varying the beam sizes (up to 1350), we obtain curves that plot edges-produced versus model-cost, shown in Figure 3.</S>
+        <S ID="S-23129">Figure 4 plots Bleu score against time.</S>
+        <S ID="S-23130">We see that we have improved the way our decoder searches, by teaching it to explore fewer edges, without sacrificing its ability to find low-cost edges.</S>
+        <S ID="S-23131">This leads to faster decoding without loss in translation accuracy.</S>
+        <S ID="S-23132">Taken together with cube pruning (<REF ID="R-00" RPTR="5">Chiang, 2007</REF>), k-best tree extraction (Huang and Chiang, 2005), and cube growing (Huang and <REF ID="R-00" RPTR="6">Chiang, 2007</REF>), these results provide evidence that lazy techniques may penetrate deeper yet into MT decoding and other NLP search problems.</S>
+        <S ID="S-23133">We would like to thank J. Graehl and D. Chiang for thoughts and discussions.</S>
+        <S ID="S-23134">This work was partially supported under DARPA GALE, Contract No.</S>
+        <S ID="S-23135">HR0011-06-C-0022.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>D Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>M Galley</RAUTHOR>
+      <REFTITLE>What&#8217;s in a translation rule. In</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>L Huang</RAUTHOR>
+      <REFTITLE>Better k-best parsing.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

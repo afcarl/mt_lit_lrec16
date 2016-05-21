@@ -1,0 +1,497 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>A Semi-Supervised Batch-Mode Active Learning Strategy for Improved Statistical Machine Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>Sankaranarayanan Ananthakrishnan</AUTHOR>
+    <AUTHOR>Rohit Prasad</AUTHOR>
+    <AUTHOR>David Stallard</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-43963">The availability of substantial, in-domain parallel corpora is critical for the development of high-performance statistical machine translation (SMT) systems.</A-S>
+    <A-S ID="S-43964">Such corpora, however, are expensive to produce due to the labor intensive nature of manual translation.</A-S>
+    <A-S ID="S-43965">We propose to alleviate this problem with a novel, semisupervised, batch-mode active learning strategy that attempts to maximize indomain coverage by selecting sentences, which represent a balance between domain match, translation difficulty, and batch diversity.</A-S>
+    <A-S ID="S-43966">Simulation experiments on an English-to-Pashto translation task show that the proposed strategy not only outperforms the random selection baseline, but also traditional active learning techniques based on dissimilarity to existing training data.</A-S>
+    <A-S ID="S-43967">Our approach achieves a relative improvement of 45.9% in BLEU over the seed baseline, while the closest competitor gained only 24.8% with the same number of selected sentences.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-43968">Rapid development of statistical machine translation (SMT) systems for resource-poor language pairs is a problem of significant interest to the research community in academia, industry, and government.</S>
+        <S ID="S-43969">Tight turn-around schedules, budget restrictions, and scarcity of human translators preclude the production of large parallel corpora, which form the backbone of SMT systems.</S>
+      </P>
+      <P>
+        <S ID="S-43970">Given these constraints, the focus is on making the best possible use of available resources.</S>
+        <S ID="S-43971">This usually involves some form of prioritized data collection.</S>
+        <S ID="S-43972">In other words, one would like to construct the smallest possible parallel training corpus that achieves a desired level of performance on unseen test data.</S>
+        <S ID="S-43973">Within an active learning framework, this can be cast as a data selection problem.</S>
+        <S ID="S-43974">The goal is to choose, for manual translation, the most informative instances from a large pool of source language sentences.</S>
+        <S ID="S-43975">The resulting sentence pairs, in combination with any existing in-domain seed parallel corpus, are expected to provide a significantly higher performance gain than a na&#239;ve random selection strategy.</S>
+        <S ID="S-43976">This process is repeated until a certain level of performance is attained.</S>
+      </P>
+      <P>
+        <S ID="S-43977">Previous work on active learning for SMT has focused on unsupervised dissimilarity measures for sentence selection.</S>
+        <S ID="S-43978"><REF ID="R-02" RPTR="2">Eck et al. (2005)</REF> describe a selection strategy that attempts to maximize coverage by choosing sentences with the highest proportion of previously unseen n-grams.</S>
+        <S ID="S-43979">However, if the pool is not completely in-domain, this strategy may select irrelevant sentences, whose translations are unlikely to improve performance on an in-domain test set.</S>
+        <S ID="S-43980">They also propose a technique, based on TF-IDF, to de-emphasize sentences similar to those that have already been selected.</S>
+        <S ID="S-43981">However, this strategy is bootstrapped by random initial choices that do not necessarily favor sentences that are difficult to translate.</S>
+        <S ID="S-43982">Finally, they work exclusively with the source language and do not use any SMT-derived features to guide selection.</S>
+      </P>
+      <P>
+        <S ID="S-43983"><REF ID="R-04" RPTR="4">Haffari et al. (2009)</REF> propose a number of features, such as similarity to the seed corpus, translation probability, relative frequencies of n-grams and &#8220;phrases&#8221; in the seed vs. pool data, etc., for active learning.</S>
+        <S ID="S-43984">While many of their experiments use the above features independently to compare their relative efficacy, one of their experiments attempts to predict a rank, as a linear combination of these features, for each candidate sentence.</S>
+        <S ID="S-43985">The top-ranked sentences are chosen for manual translation.</S>
+        <S ID="S-43986">The latter strategy is particularly relevant to this paper, because the goal of our active</S>
+      </P>
+      <P>
+        <S ID="S-43987">learning strategy is not to compare features, but to learn the trade-off between various characteristics of the candidate sentences that potentially maximizes translation improvement.</S>
+      </P>
+      <P>
+        <S ID="S-43988">The parameters of the linear ranking model proposed by <REF ID="R-04" RPTR="5">Haffari et al. (2009)</REF> are trained using two held-out development sets D 1 and D 2 - the model attempts to learn the ordering of D 1 that incrementally maximizes translation performance on D 2 .</S>
+        <S ID="S-43989">Besides the need for multiple parallel corpora and the computationally intensive nature of incrementally retraining an SMT system, their approach suffers from another major deficiency.</S>
+        <S ID="S-43990">It requires that the pool have the same distributional characteristics as the development sets used to train the ranking model.</S>
+        <S ID="S-43991">Additionally, they select all sentences that constitute a batch in a single operation following the ranking procedure.</S>
+        <S ID="S-43992">Since similar or identical sentences in the pool will typically meet the selection criteria simultaneously, this can have the undesired effect of choosing redundant batches with low diversity.</S>
+        <S ID="S-43993">This results in under-utilization of human translation resources.</S>
+        <S ID="S-43994">In this paper, we propose a novel batch-mode active learning strategy that ameliorates the above issues.</S>
+        <S ID="S-43995">Our semi-supervised learning approach combines a parallel ranking strategy with several features, including domain representativeness, translation confidence, and batch diversity.</S>
+        <S ID="S-43996">The proposed approach includes a greedy, incremental batch selection strategy, which encourages diversity and reduces redundancy.</S>
+        <S ID="S-43997">The following sections detail our active learning approach, including the experimental setup and simulation results that clearly demonstrate its effectiveness.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Active Learning Paradigm</HEADER>
+      <P>
+        <S ID="S-43998">Active learning has been studied extensively in the context of multi-class labeling problems, and theoretically optimal selection strategies have been identified for simple classification tasks with metric features (<REF ID="R-03" RPTR="3">Freund et al., 1997</REF>).</S>
+        <S ID="S-43999">However, natural language applications such as SMT present a significantly higher level of complexity.</S>
+        <S ID="S-44000">For instance, SMT model parameters (translation rules, language model n-grams, etc.) are not fixed in number or type, and vary depending on the training instances.</S>
+        <S ID="S-44001">This gives rise to the concept of domain.</S>
+        <S ID="S-44002">Even large quantities of out-of-domain training data usually do not improve translation performance.</S>
+        <S ID="S-44003">As we will see, this causes simple active selection techniques based on dissimilarity or translation difficulty to be ineffective, because they tend to favor out-of-domain sentences.</S>
+        <S ID="S-44004">Our proposed active learning strategy is motivated by the idea that the chosen sentences should maximize coverage, and by extension, translation performance on an unseen test set.</S>
+        <S ID="S-44005">It should pick sentences that represent the target domain, while simultaneously enriching the training data with hitherto unseen, difficult-to-translate constructs that are likely to improve performance on a test set.</S>
+        <S ID="S-44006">We refer to the former as representativeness and to the latter as difficulty.</S>
+        <S ID="S-44007">Since it is computationally prohibitive to retrain an SMT system for individual translation pairs, a batch of sentences is usually selected at each iteration.</S>
+        <S ID="S-44008">We desire that each batch be sufficiently diverse; this increases the number of concepts (phrase pairs, translation rules, etc.) that can be learned from manual translations of a selected batch.</S>
+        <S ID="S-44009">Thus, our active learning strategy attempts, at each iteration, to select a batch of mutually diverse source sentences, which, while introducing new concepts, shares at least some commonality with the target domain.</S>
+        <S ID="S-44010">This is done in a completely statistical, data-driven fashion.</S>
+        <S ID="S-44011">In designing this active learning paradigm, we make the following assumptions.</S>
+      </P>
+      <P>
+        <S ID="S-44012">&#8226; A small seed parallel corpus S is available for training an initial SMT system.</S>
+        <S ID="S-44013">This may range from a few hundred to a few thousand sentence pairs.</S>
+      </P>
+      <P>
+        <S ID="S-44014">&#8226; Sentences must be selected from a large pool P.</S>
+        <S ID="S-44015">This may be an arbitrary collection of inand out-of-domain source language sentences.</S>
+        <S ID="S-44016">Some measure of redundancy is permitted and expected, i.e. some sentences may be identical or very similar to others.</S>
+      </P>
+      <P>
+        <S ID="S-44017">&#8226; A development set D is available to tune the SMT system and train the selection algorithm.</S>
+        <S ID="S-44018">An unseen test set T is used to evaluate it.</S>
+      </P>
+      <P>
+        <S ID="S-44019">&#8226; The seed, development, and test sets are derived from the target domain distribution.</S>
+      </P>
+      <P>
+        <S ID="S-44020">To re-iterate, we do not assume or require the pool to have the same domain distribution as the seed, development, and test sets.</S>
+        <S ID="S-44021">This reflects a real-world scenario, where the pool may be drawn from multiple sources (e.g. targeted collections, newswire text, web, etc.).</S>
+        <S ID="S-44022">This is a key departure from existing work on active learning for SMT.</S>
+      </P>
+      <P>
+        <S ID="S-44023">Monolingual pool</S>
+      </P>
+      <P>
+        <S ID="S-44024">Seed corpus Pool training Devel.</S>
+        <S ID="S-44025">set</S>
+      </P>
+      <P>
+        <S ID="S-44026">SMT system Domain match</S>
+      </P>
+      <P>
+        <S ID="S-44027">C1</S>
+      </P>
+      <P>
+        <S ID="S-44028">Trans.</S>
+        <S ID="S-44029">difficulty Preferred order</S>
+      </P>
+      <P>
+        <S ID="S-44030">C2</S>
+      </P>
+      <P>
+        <S ID="S-44031">Diversity</S>
+      </P>
+      <P>
+        <S ID="S-44032">Input features MLP Classifiers Classifier targets</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Active Learning Architecture</HEADER>
+      <P>
+        <S ID="S-44115">Figure 1 illustrates the proposed active learning architecture in the form of a high-level flowdiagram.</S>
+        <S ID="S-44116">We begin by randomly sampling a small fraction of the large monolingual pool P to create a pool training set P T , which is used to train the learner.</S>
+        <S ID="S-44117">The remainder, which we call the pool evaluation setP E , is set aside for active selection.</S>
+        <S ID="S-44118">We also train an initial phrase-based SMT system (<REF ID="R-05" RPTR="6">Koehn et al., 2003</REF>) with the available seed corpus.</S>
+        <S ID="S-44119">The pool training setP T , in conjunction with the seed corpus S, initial SMT system, and heldout development setD, is used to derive a number of input features as well as target labels for training two parallel classifiers.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Preferred Ordering</HEADER>
+        <P>
+          <S ID="S-44033">The learner must be able to map input features to an ordering of the pool sentences that attempts to maximize coverage on an unseen test set.</S>
+          <S ID="S-44034">We teach it to do this by providing it with an ordering of P T that incrementally maximizes source coverage onD.</S>
+          <S ID="S-44035">This preferred ordering algorithm incrementally maps sentences inP T to a ordered set O T by picking, at each iteration, the sentence with the highest coverage criterion with respect to D, and inserting it at the current position within O T .</S>
+          <S ID="S-44036">The coverage criterion is based on content-word n-gram overlap with D, discounted by constructs already observed in S and higher-ranked sentences in O T , as illustrated in Algorithm 1.</S>
+          <S ID="S-44037">Our hypothesis is that sentences, which maximally improve coverage, likely lead to bigger gains in translation performance as well.</S>
+        </P>
+        <P>
+          <S ID="S-44038">The O(|P T | 2 ) complexity of this algorithm is one reason we restrict P T to a few thousand sentences.</S>
+          <S ID="S-44039">Another reason not to order the entire pool and simply select the top-ranked sentences, is that batches thus constructed would overfit the development set on which the ordering is based, and not generalize well to an unseen test set.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Ranker Features</HEADER>
+        <P>
+          <S ID="S-44040">Each candidate sentence in the pool is represented by a vector of features, which fall under one of the three categories, viz.</S>
+          <S ID="S-44041">representativeness, difficulty, and diversity.</S>
+          <S ID="S-44042">We refer to the first two as context-independent, because they can be computed independently for each sentence.</S>
+          <S ID="S-44043">Diversity is a context-dependent feature and must be evaluated in the context of an ordering of sentences.</S>
+        </P>
+        <P>
+          <S ID="S-44044">Algorithm 1 Preferred ordering O T &#8592; () S g &#8592; count(g) &#8704;g &#8712; ngr(S) D g &#8592; count(g) &#8704;g &#8712; ngr(D) fork = 1 to|P T | do P U &#8592; P T &#8722;O T</S>
+        </P>
+        <P>
+          <S ID="S-44045">y &#8727; &#8592; argmax</S>
+        </P>
+        <P>
+          <S ID="S-44046">y&#8712;P U</S>
+        </P>
+        <P>
+          <S ID="S-44047">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-44048">g&#8712;ngr(y)</S>
+        </P>
+        <P>
+          <S ID="S-44049">y g &#215;D g &#215;n S g +1</S>
+        </P>
+        <P>
+          <S ID="S-44050">O T (k) &#8592; y &#8727; S g &#8592; S g +y &#8727; g &#8704;g &#8712; ngr(y &#8727; ) end for return O T</S>
+        </P>
+        <P>
+          <S ID="S-44051">3.2.1 Domain Representativeness Domain representativeness features gauge the degree of similarity between a candidate pool sentence and the seed training data.</S>
+          <S ID="S-44052">We quantify this using an n-gram overlap measure between candidate sentence x and the seed corpus S defined by Equation 1.</S>
+        </P>
+        <P>
+          <S ID="S-44053">sim(x,S) =</S>
+        </P>
+        <P>
+          <S ID="S-44054">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-44055">g&#8712;ngr(x)</S>
+        </P>
+        <P>
+          <S ID="S-44056">x g &#215; min(Sn g ,C n)</S>
+        </P>
+        <P>
+          <S ID="S-44057">C n &#8721; (1)</S>
+        </P>
+        <P>
+          <S ID="S-44058">x g</S>
+        </P>
+        <P>
+          <S ID="S-44059">g&#8712;ngr(x)</S>
+        </P>
+        <P>
+          <S ID="S-44060">x g is the number of times n-gram g occurs in x, S g the number of times it occurs in the seed corpus, n its length in words, and C n the count of n-grams of length n in S.</S>
+          <S ID="S-44061">Longer n-grams that occur frequently in the seed receive high similarity scores, and vice-versa.</S>
+          <S ID="S-44062">In evaluating this feature, we only consider n-grams up to length five that contain least one content word.</S>
+          <S ID="S-44063">Another simple domain similarity feature we use is sentence length.</S>
+          <S ID="S-44064">Sentences in conversational domains are typically short, while those in web and newswire domains run longer.</S>
+        </P>
+        <P>
+          <S ID="S-44065">3.2.2 Translation Difficulty All else being equal, the selection strategy should favor sentences that the existing SMT system finds difficult to translate.</S>
+          <S ID="S-44066">To this end, we estimate a confidence score for each SMT hypothesis, using a discriminative classification framework reminiscent of <REF ID="R-00" RPTR="0">Blatz et al. (2004)</REF>.</S>
+          <S ID="S-44067">Confidence estimation is treated as a binary classification problem, where each hypothesized word is labeled &#8220;correct&#8221; or &#8220;incorrect&#8221;.</S>
+          <S ID="S-44068">Word-level reference labels for training the classifier are obtained from Translation Edit Rate (TER) analysis, which produces the lowest-cost alignment between the hypotheses and the gold-standard references (Snover et al., 2006).</S>
+          <S ID="S-44069">A hypothesized word is &#8220;correct&#8221; if it aligns to itself in this alignment, and &#8220;incorrect&#8221; otherwise.</S>
+          <S ID="S-44070">We derive features for confidence estimation from the phrase derivations used by the decoder in generating the hypotheses.</S>
+          <S ID="S-44071">For each target word, we look up the corresponding source phrase that produced it, and use this information to compute a number of features from the translation phrase table and target language model (LM).</S>
+          <S ID="S-44072">These include the in-context LM probability of the target word, the forward and reverse phrase translation probabilities, the maximum forward and reverse word-level lexical translation probabilities, number of competing target phrases in which the target word occurs, etc.</S>
+          <S ID="S-44073">In all, we use 11 word-level features (independent of the active learning features) to train the classifier in conjunction with the abovementioned binary reference labels.</S>
+          <S ID="S-44074">A logistic regression model is used to directly estimate the posterior probability of the binary word label.</S>
+          <S ID="S-44075">Thus, our confidence score is essentially the probability of the word being &#8220;incorrect&#8221;.</S>
+          <S ID="S-44076">Sentence-level confidence is computed as the geometric average of word-level posteriors.</S>
+          <S ID="S-44077">Confidence estimation models are trained on the held-out development set.</S>
+        </P>
+        <P>
+          <S ID="S-44078">We employ two additional measures of translation difficulty for active learning: (a) the number of &#8220;unknown&#8221; words in target hypotheses caused by untranslatable source words, and (b) the average length of source phrases in the 1-best SMT decoder derivations.</S>
+        </P>
+        <P>
+          <S ID="S-44079">3.2.3 Batch Diversity Batch diversity is evaluated in the context of an explicit ordering of the candidate sentences.</S>
+          <S ID="S-44080">In general, sentences that are substantially similar to those above them in a ranked list have low diversity, and vice-versa.</S>
+          <S ID="S-44081">We use content-word n-gram overlap to measure similarity with previous sentences, per Equation 2.</S>
+          <S ID="S-44082">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-44083">n&#215;B g</S>
+        </P>
+        <P>
+          <S ID="S-44084">d(b | B) = 1.0&#8722; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-44085">g&#8712;ngr(b)</S>
+        </P>
+        <P>
+          <S ID="S-44086">g&#8712;ngr(b)</S>
+        </P>
+        <P>
+          <S ID="S-44087">n&#215;max(B g ,1.0) (2)</S>
+        </P>
+        <P>
+          <S ID="S-44088">B represents the set of sentences ranked higher than the candidate b, for which we wish to evaluate diversity.</S>
+          <S ID="S-44089">B g is the number of times n-gram g</S>
+        </P>
+        <P>
+          <S ID="S-44090">occurs in B.</S>
+          <S ID="S-44091">Longer, previously unseen n-grams serve to boost diversity.</S>
+          <S ID="S-44092">The first sentence in a given ordering is always assigned unit diversity.</S>
+          <S ID="S-44093">The coverage criterion used by the preferred ordering algorithm in Section 3.1 ensures good correspondence between the rank of a sentence and its diversity, i.e. higher-ranked in-domain sentences have higher diversity, and vice-versa.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Training the Learner</HEADER>
+        <P>
+          <S ID="S-44094">The active learner is trained on the pool training set P T .</S>
+          <S ID="S-44095">The seed training corpus S serves as the basis for extracting domain similarity features for each sentence in this set.</S>
+          <S ID="S-44096">Translation difficulty features are evaluated by decoding sentences in P T with the seed SMT system.</S>
+          <S ID="S-44097">Finally, we compute diversity for each sentence inP T based on its preferred order O T according to Equation 2.</S>
+          <S ID="S-44098">Learning is semi-supervised as it does not require translation references for either P T or D.</S>
+        </P>
+        <P>
+          <S ID="S-44099">Traditional ranking algorithms such as PRank (<REF ID="R-01" RPTR="1">Crammer and Singer, 2001</REF>) work best when the number of ranks is much smaller than the sample size; more than one sample can be assigned the same rank.</S>
+          <S ID="S-44100">In the active learning problem, however, each sample is associated with a unique rank.</S>
+          <S ID="S-44101">Moreover, the dynamic range of ranks in O T is significantly smaller than that in P E , to which the ranking model is applied, resulting in a mismatch between training and evaluation conditions.</S>
+        </P>
+        <P>
+          <S ID="S-44102">We overcome these issues by re-casting the ranking problem as a binary classification task.</S>
+          <S ID="S-44103">The top 10% sentences in O T are assigned a &#8220;select&#8221; label, while the remaining are assigned a contrary &#8220;do-not-select&#8221; label.</S>
+          <S ID="S-44104">The input features are mapped to class posterior probabilities using multi-layer perceptron (MLP) classifiers.</S>
+          <S ID="S-44105">The use of posteriors allows us to assign a unique rank to each candidate sentence.</S>
+          <S ID="S-44106">The best candidate sentence is the one to which the classifier assigns the highest posterior probability for the &#8220;select&#8221; label.</S>
+          <S ID="S-44107">We use one hidden layer with eight sigmoidactivated nodes in this implementation.</S>
+          <S ID="S-44108">Note that we actually train two MLP classifiers with different sets of input features as shown in Figure 1.</S>
+          <S ID="S-44109">Classifier C 1 is trained using only the context-independent features, whereas C 2 is trained with the full set of features including batch diversity.</S>
+          <S ID="S-44110">These classifiers are used to implement an incremental, greedy selection algorithm with parallel ranking, as explained below.</S>
+        </P>
+        <P>
+          <S ID="S-44111">Algorithm 2 Incremental greedy selection B &#8592; () fork = 1 toN do P ci &#8592; {x &#8712; P E | d(x | B) = 1.0} P cd &#8592; {x &#8712; P E | d(x | B) &lt; 1.0} C &#8592; C 1 (f ci (P ci ))&#8746;C 2 (f cd (P cd ,B)) b k &#8592; argmax</S>
+        </P>
+        <P>
+          <S ID="S-44112">x&#8712;P E</S>
+        </P>
+        <P>
+          <S ID="S-44113">C(x)</S>
+        </P>
+        <P>
+          <S ID="S-44114">P E &#8592; P E &#8722;{b k } end for return B</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Incremental Greedy Selection</HEADER>
+      <P>
+        <S ID="S-44133">Traditional rank-and-select batch construction approaches choose constituent sentences independently, and therefore cannot ensure that the chosen sentences are sufficiently diverse.</S>
+        <S ID="S-44134">Our strategy implements a greedy selection algorithm that constructs each batch iteratively; the decision b k (the sentence to fill the k th position in a batch) depends on all previous decisions b 1 ,&#183;&#183;&#183; ,b k&#8722;1 .</S>
+        <S ID="S-44135">This allows de-emphasizing sentences similar to those that have already been placed in the batch, while favoring samples containing previously unseen constructs.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Parallel Ranking</HEADER>
+        <P>
+          <S ID="S-44120">We begin with an empty batch B, to which sentences from the pool evaluation set P E must be added.</S>
+          <S ID="S-44121">We then partition the sentences in P E in two mutually-exclusive groups P cd and P ci .</S>
+          <S ID="S-44122">The former contains candidates that share at least one content-word n-gram with any existing sentences in B, while the latter consists of sentences that do not share any overlap with them.</S>
+          <S ID="S-44123">Note that B is empty to start with; thus, P cd is empty and P ci = P E at the beginning of the first iteration of selection.</S>
+          <S ID="S-44124">The diversity feature is computed for each sentence in P cd based on existing selections in B, while the context-independent features are evaluated for sentences in both partitions.</S>
+        </P>
+        <P>
+          <S ID="S-44125">Next, we apply C 1 to P ci and C 2 to P cd and independently obtain posterior probabilities for the &#8220;select&#8221; label for both partitions.</S>
+          <S ID="S-44126">We take the union of class posteriors from both partitions and select the sentence with the highest probability of the &#8220;select&#8221; label to fill the next slot b k , corresponding to iteration k, in the batch.</S>
+          <S ID="S-44127">The selected sentence is subsequently removed from P E .</S>
+          <S ID="S-44128">The above parallel ranking technique (Algorithm 2) is applied iteratively until the batch</S>
+        </P>
+        <P>
+          <S ID="S-44129">reaches a pre-determined size N.</S>
+          <S ID="S-44130">At iteration k, the remaining sentences in P E are partitioned based on overlap with previous selections b 1 ,&#183;&#183;&#183; ,b k&#8722;1 and ranked based on the union of posterior probabilities generated by the corresponding classifiers.</S>
+          <S ID="S-44131">This ensures that sentences substantially similar to those that have already been selected receive a low diversity score, and are suitably de-emphasized.</S>
+          <S ID="S-44132">Depending on the characteristics of the pool, batches constructed by this algorithm are likely more diverse than a simple rank-and-select approach.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experimental Setup and Results</HEADER>
+      <P>
+        <S ID="S-44178">We demonstrate the effectiveness of the proposed sentence selection algorithm by performing a set of simulation experiments in the context of an English-to-Pashto (E2P) translation task.</S>
+        <S ID="S-44179">We simulate a low-resource condition by using a very small number of training sentence pairs, sampled from the collection, to bootstrap a phrase-based SMT system.</S>
+        <S ID="S-44180">The remainder of this parallel corpus is set aside as the pool.</S>
+      </P>
+      <P>
+        <S ID="S-44181">At each iteration, the selection algorithm picks a fixed-size batch of source sentences from the pool.</S>
+        <S ID="S-44182">The seed training data are augmented with the chosen source sentences and their translations.</S>
+        <S ID="S-44183">A new set of translation models is then estimated and used to decode the test set.</S>
+        <S ID="S-44184">We track SMT performance across several iterations and compare the proposed algorithm to a random selection baseline as well as other common selection strategies.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Data Configuration</HEADER>
+        <P>
+          <S ID="S-44136">Our English-Pashto data originates from a twoway collection of spoken dialogues, and thus consists of two parallel sub-corpora: a directional E2P corpus and a directional Pashto-to-English (P2E) corpus.</S>
+          <S ID="S-44137">Each sub-corpus has its own independent training, development, and test partitions.</S>
+          <S ID="S-44138">The directional E2P training, development, and test sets consist of 33.9k, 2.4k, and 1.1k sentence pairs, respectively.</S>
+          <S ID="S-44139">The directional P2E training set consists of 76.5k sentence pairs.</S>
+        </P>
+        <P>
+          <S ID="S-44140">We obtain a seed training corpus for the simulation experiments by randomly sampling 1,000 sentence pairs from the directional E2P training partition.</S>
+          <S ID="S-44141">The remainder of this set, and the entire reversed directional P2E training partition are combined to create the pool (109.4k sentence pairs).</S>
+          <S ID="S-44142">In the past, we have observed that the reversed directional P2E data gives very little performance gain in the E2P direction even though its vocabulary is similar, and can be considered &#8220;out-of-domain&#8221; as far as the E2P translation task is concerned.</S>
+          <S ID="S-44143">Thus, our pool consists of 30% in-domain and 70% outof-domain sentence pairs, making for a challenging active learning problem.</S>
+          <S ID="S-44144">A pool training set of 10k source sentences is sampled from this collection, leaving us with 99.4k candidate sentences.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Selection Strategies</HEADER>
+        <P>
+          <S ID="S-44145">We implement the following strategies for sentence selection.</S>
+          <S ID="S-44146">In all cases, we use a fixed-size batch of 200 sentences per iteration.</S>
+        </P>
+        <P>
+          <S ID="S-44147">&#8226; Random selection, in which source sentences are uniformly sampled from P E .</S>
+        </P>
+        <P>
+          <S ID="S-44148">&#8226; Similarity selection, where we choose sentences that exhibit the highest content-word n- gram overlap with S.</S>
+        </P>
+        <P>
+          <S ID="S-44149">&#8226; Dissimilarity selection, which selects sentences having the lowest degree of contentword n-gram overlap withS.</S>
+        </P>
+        <P>
+          <S ID="S-44150">&#8226; Active learning with greedy incremental selection, using a learner to maximize coverage by combining various input features.</S>
+        </P>
+        <P>
+          <S ID="S-44151">We simulate a total of 30 iterations, with the original 1,000 sample seed corpus growing to 7,000 sentence pairs.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Simulation Results</HEADER>
+        <P>
+          <S ID="S-44152">We track SMT performance at each iteration in two ways.</S>
+          <S ID="S-44153">The first and most effective method is to simply use an objective measure of translation quality, such as BLEU (<REF ID="R-07" RPTR="8">Papineni et al., 2001</REF>).</S>
+          <S ID="S-44154">Figure 2(a) illustrates the variation in BLEU scores across iterations for each selection strategy.</S>
+          <S ID="S-44155">We note that the proposed active learning strategy performs significantly better at every iteration than random, similarity, and dissimilarity-based selection.</S>
+          <S ID="S-44156">At the end of 30 iterations, the BLEU score gained 2.46 points, a relative improvement of 45.9%.</S>
+          <S ID="S-44157">By contrast, the nearest competitor was the random selection baseline, whose performance gained only 1.33 points in BLEU, a 24.8% improvement.</S>
+          <S ID="S-44158">Note that we tune the phrase-based SMT feature weights using MERT (<REF ID="R-06" RPTR="7">Och, 2003</REF>) once in the beginning, and use the same weights across all iterations.</S>
+          <S ID="S-44159">This allowed us to compare selection methods without variations introduced by fluctuation of the weights.</S>
+        </P>
+        <P>
+          <S ID="S-44160">(a) Trajectory of BLEU</S>
+        </P>
+        <P>
+          <S ID="S-44161">(b) Trajectory of untranslated word ratio</S>
+        </P>
+        <P>
+          <S ID="S-44162">(c) Directionality match</S>
+        </P>
+        <P>
+          <S ID="S-44163">(d) Diversity/Uniqueness</S>
+        </P>
+        <P>
+          <S ID="S-44164">The second method measures test set coverage in terms of the proportion of untranslated words in the SMT hypotheses, which arise due to the absence of appropriate in-context phrase pairs in the training data.</S>
+          <S ID="S-44165">Figure 2(b) shows the variation in this measure for the four selection techniques.</S>
+          <S ID="S-44166">Again, the proposed active learning algorithm outperforms its competitors across nearly all iterations, with very large improvements in the initial stages.</S>
+          <S ID="S-44167">Overall, the proportion of untranslated words dropped from 8.74% to 2.28% after 30 iterations, while the closest competitor (dissimilarity selection) dropped to 2.59%.</S>
+        </P>
+        <P>
+          <S ID="S-44168">It is also instructive to compare the distribution of the 6,000 sentences selected by each strategy at the end of the simulation to determine whether they came from the &#8220;in-domain&#8221; E2P set or the &#8220;out-of-domain&#8221; P2E collection.</S>
+          <S ID="S-44169">Figure 2(c) demonstrates that only 1.3% of sentences were selected from the reversed P2E set by the proposed active learning strategy.</S>
+          <S ID="S-44170">On the other hand, 70.9% of the sentences selected by the dissimilarity-based technique came from the P2E collection, explaining its low BLEU scores on the E2P test set.</S>
+          <S ID="S-44171">Surprisingly, similarity selection also chose a large fraction of sentences from the P2E collection; this was traced to a uniform distribution of very common sentences (e.g. &#8220;thank you&#8221;, &#8220;okay&#8221;, etc.) across the E2P and P2E sets.</S>
+        </P>
+        <P>
+          <S ID="S-44172">Figure 2(d) compares the uniqueness and overalln-gram diversity of the 6,000 sentences chosen by each strategy.</S>
+          <S ID="S-44173">The similarity selector received the lowest score on this scale, explaining the lack of improvement in coverage as measured by the proportion of untranslated words in the SMT hypotheses.</S>
+          <S ID="S-44174">Again, the proposed approach exhibits the highest degree of uniqueness, underscoring its value in lowering batch redundancy.</S>
+        </P>
+        <P>
+          <S ID="S-44175">It is interesting to note that dissimilarity selection is closest to the proposed active learning strategy in terms of coverage, and yet exhibits the worst BLEU scores.</S>
+          <S ID="S-44176">This confirms that, while there is overlap in their vocabularies, the E2P and P2E sets differ significantly in terms of longerspan constructs that influence SMT performance.</S>
+        </P>
+        <P>
+          <S ID="S-44177">These results clearly demonstrate the power of the proposed strategy in choosing diverse, indomain sentences that not only provide superior performance in terms of BLEU, but also improve coverage, leading to fewer untranslated concepts in the SMT hypotheses.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusion and Future Directions</HEADER>
+      <P>
+        <S ID="S-44185">Rapid development of SMT systems for resourcepoor language pairs requires judicious use of human translation capital.</S>
+        <S ID="S-44186">We described a novel active learning strategy that automatically learns to pick, from a large monolingual pool, sentences that maximize in-domain coverage.</S>
+        <S ID="S-44187">In conjunction with their translations, they are expected to improve SMT performance at a significantly faster rate than existing selection techniques.</S>
+        <S ID="S-44188">We introduced two key ideas that distinguish our approach from previous work.</S>
+        <S ID="S-44189">First, we utilize a sample of the candidate pool, rather than an additional in-domain development set, to learn the mapping between the features and the sentences that maximize coverage.</S>
+        <S ID="S-44190">This removes the restriction that the pool be derived from the target domain distribution; it can be an arbitrary collection of in- and out-of-domain sentences.</S>
+        <S ID="S-44191">Second, we construct batches using an incremental, greedy selection strategy with parallel ranking, instead of a traditional batch rank-andselect approach.</S>
+        <S ID="S-44192">This reduces redundancy, allowing more concepts to be covered in a given batch, and making better use of available resources.</S>
+        <S ID="S-44193">We showed through simulation experiments that the proposed strategy selects diverse batches of high-impact, in-domain sentences that result in a much more rapid improvement in translation performance than random and dissimilarity-based selection.</S>
+        <S ID="S-44194">This is reflected in objective indicators of translation quality (BLEU), and in terms of coverage as measured by the proportion of untranslated words in SMT hypotheses.</S>
+        <S ID="S-44195">We plan to evaluate the scalability of our approach by running simulations on a number of additional language pairs, domains, and corpus sizes.</S>
+        <S ID="S-44196">An issue with iterative active learning in general is the cost of re-training the SMT system for each batch.</S>
+        <S ID="S-44197">Small batches provide for smooth performance trajectories and better error recovery at an increased computational cost.</S>
+        <S ID="S-44198">We are currently investigating incremental approaches that allow SMT models to be updated online with minimal performance loss compared to full re-training.</S>
+        <S ID="S-44199">Finally, there is no inherent limitation in the proposed framework that ties it to a phrase-based SMT system.</S>
+        <S ID="S-44200">With suitable modifications to the input feature set, it can be adapted to work with various SMT architectures, including hierarchical and syntax-based systems.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>John Blatz</RAUTHOR>
+      <REFTITLE>Confidence estimation for machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Koby Crammer</RAUTHOR>
+      <REFTITLE>Pranking with ranking.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Matthias Eck</RAUTHOR>
+      <REFTITLE>Low cost portability for statistical machine translation based in N-gram frequency and TF-IDF.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Yoav Freund</RAUTHOR>
+      <REFTITLE>Selective sampling using the query by committee algorithm.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Gholamreza Haffari</RAUTHOR>
+      <REFTITLE>Active learning for statistical phrase-based machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: A method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

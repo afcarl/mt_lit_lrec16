@@ -1,0 +1,753 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Improved Discriminative ITG Alignment using Hierarchical Phrase Pairs and Semi-supervised Training</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-3041">While ITG has many desirable properties for word alignment, it still suffers from the limitation of one-to-one matching.</A-S>
+    <A-S ID="S-3042">While existing approaches relax this limitation using phrase pairs, we propose a ITG formalism, which even handles units of non-contiguous words, using both simple and hierarchical phrase pairs.</A-S>
+    <A-S ID="S-3043">We also propose a parameter estimation method, which combines the merits of both supervised and unsupervised learning, for the ITG formalism.</A-S>
+    <A-S ID="S-3044">The ITG alignment system achieves significant improvement in both word alignment quality and translation performance.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-3045">Inversion transduction grammar (ITG) (<REF ID="R-16" RPTR="23">Wu, 1997</REF>) is an adaptation of CFG to bilingual parsing.</S>
+        <S ID="S-3046">It does synchronous parsing of two languages with phrasal and word-level alignment as by-product.</S>
+        <S ID="S-3047">One of the merits of ITG is that it is less biased towards short-distance reordering compared with other word alignment models such as HMM.</S>
+        <S ID="S-3048">For this reason ITG has gained more and more attention recently in the word alignment community (Zhang et al., 2005; Cherry et al., 2006; <REF ID="R-09" RPTR="12">Haghighi et al., 2009</REF>) 1 .</S>
+        <S ID="S-3049">The basic ITG formalism suffers from the major drawback of one-to-one matching.</S>
+        <S ID="S-3050">This limitation renders ITG unable to produce certain alignment patterns (such as many-to-many * This work has been done while the first author was visiting Microsoft Research Asia.</S>
+        <S ID="S-3051">alignment for idiomatic expression).</S>
+        <S ID="S-3052">For this reason those recent approaches to ITG alignment introduce the notion of phrase (or block), defined as sequence of contiguous words, into the ITG formalism (<REF ID="R-03" RPTR="4">Cherry and Lin, 2007</REF>; <REF ID="R-09" RPTR="13">Haghighi et al., 2009</REF>; Zhang et al., 2008).</S>
+        <S ID="S-3053">However, there are still alignment patterns which cannot be captured by phrases.</S>
+        <S ID="S-3054">A simple example is connective in Chinese/English.</S>
+        <S ID="S-3055">In English, two clauses are connected by merely one connective (like "although", "because") but in Chinese we need two connectives (e.g. There is a sentence pattern " &#34429; &#28982; &#20294; &#26159; &#65533; although ", where and are variables for clauses).</S>
+        <S ID="S-3056">The English connective should then be aligned to two noncontiguous Chinese connectives, and such alignment pattern is not available in either wordlevel or phrase-level ITG.</S>
+        <S ID="S-3057">As hierarchical phrase-based SMT (<REF ID="R-04" RPTR="6">Chiang, 2007</REF>) is proved to be superior to simple phrase-based SMT, it is natural to ask, why don&#8223;t we further incorporate hierarchical phrase pairs (henceforth h-phrase pairs) into ITG?</S>
+        <S ID="S-3058">In this paper we propose a ITG formalism and parsing algorithm using h-phrase pairs.</S>
+        <S ID="S-3059">The ITG model involves much more parameters.</S>
+        <S ID="S-3060">On the one hand, each phrase/h-phrase pair has its own probability or score.</S>
+        <S ID="S-3061">It is not feasible to learn these parameters through discriminative/supervised learning since the repertoire of phrase pairs is much larger than the size of human-annotated alignment set.</S>
+        <S ID="S-3062">On the other hand, there are also a few useful features which cannot be estimated merely by unsupervised learning like EM.</S>
+        <S ID="S-3063">Inspired by Fraser et al. (2006), we propose a semi-supervised learning algorithm which combines the merits of both discrimina-</S>
+      </P>
+      <P>
+        <S ID="S-3064">Coling 2010: Poster Volume, pages 730&#8211;738, Beijing, August 2010 tive training (error minimization) and approximate EM (estimation of numerous parameters).</S>
+        <S ID="S-3065">The ITG model augmented with the learning algorithm is shown by experiment results to improve significantly both alignment quality and translation performance.</S>
+        <S ID="S-3066">In the following, we will explain, step-by-step, how to incorporate hierarchical phrase pairs into the ITG formalism (Section 2) and in ITG parsing (Section 3).</S>
+        <S ID="S-3067">The semi-supervised training method is elaborated in Section 4.</S>
+        <S ID="S-3068">The merits of the complete system are illustrated with the experiments described in Section 5.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 ITG Formalisms 2.1 W-ITG : ITG with only word pairs</HEADER>
+      <P>
+        <S ID="S-3139"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 W-ITG : ITG with only word pairs</HEADER>
+        <P>
+          <S ID="S-3069">The simplest formulation of ITG contains three types of rules: terminal unary rules &#65533; , where e and f represent words (possibly a null word, &#949;) in the English and foreign language respectively, and the binary rules &#65533; and &#65533; , which refer to that the component English and foreign phrases are combined in the same and inverted order respectively.</S>
+          <S ID="S-3070">From the viewpoint of word alignment, the terminal unary rules provide the links of word pairs, whereas the binary rules represent the reordering factor.</S>
+          <S ID="S-3071">Note also that the alignment between two phrase pairs is always composed of the alignment between word pairs (c.f.</S>
+          <S ID="S-3072">Figure 1(a) and (b)).</S>
+          <S ID="S-3073">The Figure 1 also shows ITG can handle the cases where two languages share the same (Figure 1(a)) and different (Figure 1(b)) word order</S>
+        </P>
+        <P>
+          <S ID="S-3074">e2</S>
+        </P>
+        <P>
+          <S ID="S-3075">e1</S>
+        </P>
+        <P>
+          <S ID="S-3076">e2</S>
+        </P>
+        <P>
+          <S ID="S-3077">e1</S>
+        </P>
+        <P>
+          <S ID="S-3078">f1 f2 f1 f2 (a) X &#8594;[X,X] (b) X &#8594;&#65533; X, X &#65533;</S>
+        </P>
+        <P>
+          <S ID="S-3079">f1 f2</S>
+        </P>
+        <P>
+          <S ID="S-3080">(c) X &#8594; [e,f ] e3</S>
+        </P>
+        <P>
+          <S ID="S-3081">e2</S>
+        </P>
+        <P>
+          <S ID="S-3082">e1</S>
+        </P>
+        <P>
+          <S ID="S-3083">e2</S>
+        </P>
+        <P>
+          <S ID="S-3084">e1</S>
+        </P>
+        <P>
+          <S ID="S-3085">f1 f2 f3</S>
+        </P>
+        <P>
+          <S ID="S-3086">(d) X &#8594; [e1Xe3, f1Xf3]</S>
+        </P>
+        <P>
+          <S ID="S-3087">Figure 1.</S>
+          <S ID="S-3088">Four ways in which ITG can analyze a multi-word span pair.</S>
+        </P>
+        <P>
+          <S ID="S-3089">Such a formulation has two drawbacks.</S>
+          <S ID="S-3090">First of all, the simple ITG leads to redundancy if word alignment is the sole purpose of applying ITG.</S>
+          <S ID="S-3091">For instance, there are two parses for three consecutive word pairs, viz.</S>
+        </P>
+        <P>
+          <S ID="S-3092">and .</S>
+          <S ID="S-3093">The problem of redundancy is fixed by adopting ITG normal form.</S>
+          <S ID="S-3094">The ITG normal form grammar as used in this paper is described in Appendix A.</S>
+        </P>
+        <P>
+          <S ID="S-3095">The second drawback is that ITG fails to produce certain alignment patterns.</S>
+          <S ID="S-3096">Its constraint that a word is not allowed to align to more than one word is indeed a strong limitation as no idiom or multi-word expression is allowed to align to a single word on the other side.</S>
+          <S ID="S-3097">Moreover, its reordering constraint makes it unable to produce the &#8222;inside-out&#8223; alignment pattern (c.f.</S>
+          <S ID="S-3098">Figure 2).</S>
+        </P>
+        <P>
+          <S ID="S-3099">f1 f2 f3 f4</S>
+        </P>
+        <P>
+          <S ID="S-3100">e1 e2 e3 e4</S>
+        </P>
+        <P>
+          <S ID="S-3101">Figure 2.</S>
+          <S ID="S-3102">An example of inside-out alignment.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 P-ITG : ITG with Phrase Pairs</HEADER>
+        <P>
+          <S ID="S-3103">A single word in one language is not always on a par with a single word in another language.</S>
+          <S ID="S-3104">For example, the Chinese word " &#30333; &#23467; " is equivalent to two words in English ("white house").</S>
+          <S ID="S-3105">This problem is even worsened by segmentation errors (i.e. splitting a single word into more than one word).</S>
+          <S ID="S-3106">The one-to-one constraint in W-ITG is a serious limitation as in reality there are always segmentation or tokenization errors as well as idiomatic expressions.</S>
+          <S ID="S-3107">Therefore, researches like <REF ID="R-03" RPTR="3">Cherry and Lin (2007)</REF>, <REF ID="R-09" RPTR="14">Haghighi et al. (2009)</REF> and Zhang et al. (2009) tackle this problem by enriching ITG, in addition to word pairs, with pairs of phrases (or blocks).</S>
+          <S ID="S-3108">That is, a sequence of source language word can be aligned, as a whole, to one (or a sequence of more than one) target language word.</S>
+        </P>
+        <P>
+          <S ID="S-3109">These methods can be subsumed under the term phrase-based ITG (P-ITG), which enhances W-ITG by altering the definition of a terminal production to include phrases: &#65533; (c.f.</S>
+          <S ID="S-3110">Figure 1(c)).</S>
+          <S ID="S-3111">stands for English phrase and stands for foreign phrase.</S>
+          <S ID="S-3112">As an example, if there is a simple phrase pair &lt;white house, &#30333;</S>
+        </P>
+        <P>
+          <S ID="S-3113">&#23467; &gt;, then it is transformed into the ITG rule &#65533; white house &#30333; &#23467; .</S>
+          <S ID="S-3114">An important question is how these phrase pairs can be formulated.</S>
+          <S ID="S-3115"><REF ID="R-11" RPTR="18">Marcu and Wong (2002)</REF> propose a joint probability model which searches the phrase alignment space, simultaneously learning translations lexicons for words and phrases without consideration of potentially suboptimal word alignments and heuristic for phrase extraction.</S>
+          <S ID="S-3116">This method suffers from computational complexity because it considers all possible phrases and all their possible alignments.</S>
+          <S ID="S-3117"><REF ID="R-00" RPTR="0">Birch et al. (2006)</REF> propose a better and more efficient method of constraining the search space which does not contradict a given high confidence word alignment for each sentence.</S>
+          <S ID="S-3118">Our P- ITG collects all phrase pairs which are consistent with a word alignment matrix produced by a simpler word alignment model.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 HP-ITG : P-ITG with H-Phrase pairs</HEADER>
+        <P>
+          <S ID="S-3119">P-ITG is the first enhancement of ITG to capture the linguistic phenomenon that more than one word of a language may function as a single unit, so that these words should be aligned to a single unit of another language.</S>
+          <S ID="S-3120">But P-ITG can only treat contiguous words as a single unit, and therefore cannot handle the single units of noncontiguous words.</S>
+          <S ID="S-3121">Apart from sentence connectives as mentioned in Section 1, there is also the example that the single word &#8220;since&#8221; in English corresponds to two non-adjacent words " &#33258; " and " &#20197; &#26469; " as shown the following sentence pair:</S>
+        </P>
+        <P>
+          <S ID="S-3122">&#33258; &#19978; &#21608; &#26411; &#20197; &#26469; , &#25105; &#19968; &#30452; &#22312; &#29983; &#30149; .</S>
+        </P>
+        <P>
+          <S ID="S-3123">I have been ill since last weekend .</S>
+        </P>
+        <P>
+          <S ID="S-3124">No matter whether it is P-ITG or phrase-based SMT, the very notion of phrase pair is not helpful because this example is simply handled by enumerating all possible contiguous sequences involving the words " &#33258; " and " &#20197; &#26469; ", and thus subject to serious data sparseness.</S>
+          <S ID="S-3125">The lesson learned from hierarchical phrase-based SMT is that the modeling of non-contiguous word sequence can be very simple if we allow rules involving h-phrase pairs, like:</S>
+        </P>
+        <P>
+          <S ID="S-3126">&#65533; since &#33258; &#20197; &#26469;</S>
+        </P>
+        <P>
+          <S ID="S-3127">where is a placeholder for substituting a phrase pair like " &#19978; &#21608; &#26411; /last weekend".</S>
+        </P>
+        <P>
+          <S ID="S-3128">H-phrase pairs can also perform reordering, as illustrated by the well-known example from <REF ID="R-04" RPTR="5">Chiang (2007)</REF>, &#65533; have with &#19982; &#26377; , for the following bilingual sentence fragment:</S>
+        </P>
+        <P>
+          <S ID="S-3129">&#19982; &#21271; &#38889; &#26377; &#37030; &#20132;</S>
+        </P>
+        <P>
+          <S ID="S-3130">have diplomatic relations with North Korea</S>
+        </P>
+        <P>
+          <S ID="S-3131">The potential of intra-phrase reordering may also help us to capture those alignment patterns like the &#8222;inside-out&#8223; pattern.</S>
+        </P>
+        <P>
+          <S ID="S-3132">All these merits of h-phrase pairs motivate a ITG formalism, viz.</S>
+          <S ID="S-3133">hierarchical phrase-based ITG (HP-ITG), which employs not only simple phrase pairs but also hierarchical ones.</S>
+          <S ID="S-3134">The ITG grammar is enriched with rules of the format: &#65533; where and refer to either a phrase or h-phrase (c.f.</S>
+          <S ID="S-3135">Figure 1(d)) pair in English and foreign language respectively 2 .</S>
+          <S ID="S-3136">Note that, although the format of HP-ITG is similar to P-ITG, it is much more difficult to handle rules with h- phrase pairs in ITG parsing, which will be elaborated in the next section.</S>
+        </P>
+        <P>
+          <S ID="S-3137">It is again an important question how to formulate the h-phrase pairs.</S>
+          <S ID="S-3138">Similar to P-ITG, the h-phrase pairs are obtained by extracting the h- phrase pairs which are consistent with a word alignment matrix produced by some simpler word alignment model.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 ITG Parsing</HEADER>
+      <P>
+        <S ID="S-3140">Based on the rules, W-ITG word alignment is done in a similar way to chart parsing (<REF ID="R-16" RPTR="24">Wu, 1997</REF>).</S>
+        <S ID="S-3141">The base step applies all relevant terminal unary rules to establish the links of word pairs.</S>
+        <S ID="S-3142">The word pairs are then combined into span pairs in all possible ways.</S>
+        <S ID="S-3143">Larger and larger span pairs are recursively built until the sentence pair is built.</S>
+      </P>
+      <P>
+        <S ID="S-3144">Figure 3(a) shows one possible derivation for a toy example sentence pair with three words in each sentence.</S>
+        <S ID="S-3145">Each node (rectangle) represents a pair, marked with certain phrase category, of</S>
+      </P>
+      <P>
+        <S ID="S-3146">2 <REF ID="R-09" RPTR="15">Haghighi et al. (2009)</REF> impose some rules which look like</S>
+      </P>
+      <P>
+        <S ID="S-3147">h-phrase pairs, but their rules are essentially h-phrase pairs with at most one &#8222; &#8223; only, added with the constraint that each &#8222; &#8223; covers only one word.</S>
+      </P>
+      <P>
+        <S ID="S-3148">A:[e1,e3]/[f1,f3]</S>
+      </P>
+      <P>
+        <S ID="S-3149">{e1/f2,e2/f1,e3/f3}</S>
+      </P>
+      <P>
+        <S ID="S-3150">A&#8594;[B,C]</S>
+      </P>
+      <P>
+        <S ID="S-3151">A:[e1,e3]/[f1,f3]</S>
+      </P>
+      <P>
+        <S ID="S-3152">{e1/f2,e2/f1,e3/f3} , {e1/f1,e2/f2,e3,f3}</S>
+      </P>
+      <P>
+        <S ID="S-3153">A&#8594;[A,C]</S>
+      </P>
+      <P>
+        <S ID="S-3154">C:[e1,e1]/[f2,f2]</S>
+      </P>
+      <P>
+        <S ID="S-3155">{e1/f2}</S>
+      </P>
+      <P>
+        <S ID="S-3156">(a)</S>
+      </P>
+      <P>
+        <S ID="S-3157">C:[e2,e2]/[f1,f1]</S>
+      </P>
+      <P>
+        <S ID="S-3158">{e2/f1}</S>
+      </P>
+      <P>
+        <S ID="S-3159">C:[e1,e1]/[f2,f2]</S>
+      </P>
+      <P>
+        <S ID="S-3160">{e1/f2}</S>
+      </P>
+      <P>
+        <S ID="S-3161">foreign span (F-span) and English span (E-span) (the upper half of the rectangle) and the associated alignment hypothesis (the lower half).</S>
+        <S ID="S-3162">Each graph like Figure 3(a) shows only one derivation and also only one alignment hypothesis.</S>
+      </P>
+      <P>
+        <S ID="S-3163">The various derivations in ITG parsing can be compactly represented in hypergraph (Klein et al., 2001) like Figure 3(b).</S>
+        <S ID="S-3164">Each hypernode (rectangle) comprises both a span pair (upper half) and the list of possible alignment hypotheses (lower half) for that span pair.</S>
+        <S ID="S-3165">The hyperedges show how larger span pairs are derived from smaller span pairs.</S>
+        <S ID="S-3166">Note that hypernode may have more than one alignment hypothesis, since a hypernode may be derived through more than one hyperedge (e.g. the topmost hypernode in Figure 3(b)).</S>
+        <S ID="S-3167">Due to the use of normal form, the hypotheses of a span pair are different from each other.</S>
+      </P>
+      <P>
+        <S ID="S-3168">In the case of P-ITG parsing, each span pair does not only examine all possible combinations of sub-span pairs using binary rules, but also checks if the yield of that span pair is exactly the same as that phrase pair.</S>
+        <S ID="S-3169">If so, then this span pair is treated as a valid leaf node in the parse tree.</S>
+        <S ID="S-3170">Moreover, in order to enable the parse tree produce a complete word aligned matrix as byproduct, the alignment links within the phrase pair (which are recorded when the phrase pair is extracted from a word aligned matrix produced by a simpler model) are taken as an alternative alignment hypothesis of that span pair.</S>
+      </P>
+      <P>
+        <S ID="S-3171">In the case of HP-ITG parsing, an ITG rule like &#65533; have with &#19982; &#26377; (originated from the hierarchical rule like &#65533; &lt; &#19982;</S>
+      </P>
+      <P>
+        <S ID="S-3172">&#26377; , have with &gt;), is processed in the following manner: 1) Each span pair checks if it</S>
+      </P>
+      <P>
+        <S ID="S-3173">C:[e2,e2]/[f1,f1]</S>
+      </P>
+      <P>
+        <S ID="S-3174">{e2/f1}</S>
+      </P>
+      <P>
+        <S ID="S-3175">contains the lexical anchors: "have", "with"," &#19982; " and " &#26377; "; 2) each span pair checks if the remaining words in its yield can form two sub-span pairs which fit the reordering constraint among</S>
+      </P>
+      <P>
+        <S ID="S-3176">and (Note that span pairs of any category in the ITG normal form grammar can substitute for or ).</S>
+        <S ID="S-3177">3) If both conditions hold, then the span pair is assigned an alignment hypothesis which combines the alignment links among the lexical anchors and those links among the subspan pairs.</S>
+      </P>
+      <P>
+        <S ID="S-3178">C:[e1,e2]/[f1,f2]</S>
+      </P>
+      <P>
+        <S ID="S-3179">{e1/f2,e1/f1, e2/f1,e2/f2} C:[e3,e3]/[f3,f3]</S>
+      </P>
+      <P>
+        <S ID="S-3180">e1 e2 e3</S>
+      </P>
+      <P>
+        <S ID="S-3181">f1 f2 f3</S>
+      </P>
+      <P>
+        <S ID="S-3182">(a)</S>
+      </P>
+      <P>
+        <S ID="S-3183">A&#8594;[C,C]</S>
+      </P>
+      <P>
+        <S ID="S-3184">{e3/f3}</S>
+      </P>
+      <P>
+        <S ID="S-3185">C:[e3,e3]/[f3,f3]</S>
+      </P>
+      <P>
+        <S ID="S-3186">{e3/f3}</S>
+      </P>
+      <P>
+        <S ID="S-3187">C:[e1,e1]/[f1,f1]</S>
+      </P>
+      <P>
+        <S ID="S-3188">Figure 3.</S>
+        <S ID="S-3189">Example ITG parses in graph (a) and hypergraph (b).</S>
+      </P>
+      <P>
+        <S ID="S-3190">(b)</S>
+      </P>
+      <P>
+        <S ID="S-3191">A:[e1,e3]/[f1,f3]</S>
+      </P>
+      <P>
+        <S ID="S-3192">{e1/f2,e1/f1,e2/f1,e2/f2,e3/f3} , {e1/f1,e1/f3,e3/f1,e3/f3,e2,f2}</S>
+      </P>
+      <P>
+        <S ID="S-3193">(c)</S>
+      </P>
+      <P>
+        <S ID="S-3194">{e1/f1}</S>
+      </P>
+      <P>
+        <S ID="S-3195">e1 e2 e3</S>
+      </P>
+      <P>
+        <S ID="S-3196">f1 f2 f3</S>
+      </P>
+      <P>
+        <S ID="S-3197">C:[e2,e2]/[f2,f2]</S>
+      </P>
+      <P>
+        <S ID="S-3198">{e2/f2}</S>
+      </P>
+      <P>
+        <S ID="S-3199">C:[e2,e2]/[f2,f2]</S>
+      </P>
+      <P>
+        <S ID="S-3200">(b)</S>
+      </P>
+      <P>
+        <S ID="S-3201">{e2/f2}</S>
+      </P>
+      <P>
+        <S ID="S-3202">A&#8594;[e1Xe3/f1Xf3,C]</S>
+      </P>
+      <P>
+        <S ID="S-3203">e1Xe3/f1Xf3: [e1Xe3]/[f1Xf3] {e1/f3,e1/f1, e3/f3,e3/f1}</S>
+      </P>
+      <P>
+        <S ID="S-3204">Figure 4.</S>
+        <S ID="S-3205">Phrase/h-phrase in hypergraph.</S>
+      </P>
+      <P>
+        <S ID="S-3206">Figure 4(c) shows an example how to use phrase pair and h-phrase pairs in hypergraph.</S>
+        <S ID="S-3207">Figure 4(a) and Figure 4(b) refer to alignment matrixes which cannot be generated by W-ITG, because of the one-to-one assumption.</S>
+        <S ID="S-3208">Figure 4(c) shows how the span pair [e1,e3]/[f1,f3] can be generated in two ways: one is combining a phrase pair and a word pair directly, and the other way is replacing the X in the h-phrase pair with a word pair.</S>
+        <S ID="S-3209">Here we only show how h- phrase pairs with one variable be used during the</S>
+      </P>
+      <P>
+        <S ID="S-3210">parsing, and h-phrase pairs with more than one variable can be used in a similar way.</S>
+      </P>
+      <P>
+        <S ID="S-3211">The original (unsupervised) ITG algorithm has complexity of O(n 6 ).</S>
+        <S ID="S-3212">When extended to supervised/discriminative framework, ITG runs even more slowly.</S>
+        <S ID="S-3213">Therefore all attempts to ITG alignment come with some pruning method.</S>
+        <S ID="S-3214"><REF ID="R-18" RPTR="26">Zhang and Gildea (2005)</REF> show that Model 1 (<REF ID="R-01" RPTR="1">Brown et al., 1993</REF>) probabilities of the word pairs inside and outside a span pair are useful.</S>
+        <S ID="S-3215">Tic-tac-toe pruning algorithm (Zhang and Gildea, 2005) uses dynamic programming to compute inside and outside scores for a span pair in O(n 4 ).</S>
+        <S ID="S-3216">Tic-tac-toe pruning method is adopted in this paper.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Semi-supervised Training</HEADER>
+      <P>
+        <S ID="S-3264">The original formulation of ITG (W-ITG) is a generative model in which the ITG tree of a sentence pair is produced by a set of rules.</S>
+        <S ID="S-3265">The parameters of these rules are trained by EM.</S>
+        <S ID="S-3266">Certainly it is difficult to add more non-independent features in such a generative model, and therefore Cherry et al. (2006) and <REF ID="R-09" RPTR="16">Haghighi et al. (2009)</REF> used a discriminative model to incorporate features to achieve state-of-art alignment performance.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 HP-DITG : Discriminative HP-ITG</HEADER>
+        <P>
+          <S ID="S-3217">We also use a discriminative model to assign score to an alignment candidate for a sentence pair ( ) as probability from a log-linear model (Liu et al., 2005; Moore, 2006):</S>
+        </P>
+        <P>
+          <S ID="S-3218">(1)</S>
+        </P>
+        <P>
+          <S ID="S-3219">where each is some feature about the alignment matrix, and each &#955; is the weight of the corresponding feature.</S>
+          <S ID="S-3220">The discriminative version of W-ITG, P-ITG, and HP-ITG are then called W-DITG, P-DITG, and HP-DITG respectively.</S>
+        </P>
+        <P>
+          <S ID="S-3221">There are two kinds of parameters in (1) to be learned.</S>
+          <S ID="S-3222">The first is the values of the features &#936;.</S>
+          <S ID="S-3223">Most features are indeed about the probabilities of the phrase/h-phrase pairs and there are too many of them to be trained from a labeled data set of limited size.</S>
+          <S ID="S-3224">Thus the feature values are trained by approximate EM.</S>
+          <S ID="S-3225">The other kind of parameters is feature weights &#955;, which are trained by an error minimization method.</S>
+          <S ID="S-3226">The discriminative training of &#955; and the approximate EM training of &#936; are integrated into a semisupervised training framework similar to EMD3 (<REF ID="R-07" RPTR="9">Fraser and Marcu, 2006</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Discriminative Training of &#955;</HEADER>
+        <P>
+          <S ID="S-3227">MERT (<REF ID="R-13" RPTR="19">Och, 2003</REF>) is used to train feature weights &#955;. MERT estimates model parameters with the objective of minimizing certain measure of translation errors (or maximizing certain performance measure of translation quality) for a development corpus.</S>
+          <S ID="S-3228">Given an SMT system which produces, with model parameters , the K-best candidate translations for a source sentence , and an error measure of a particular candidate with respect to the reference translation , the optimal parameter values will be:</S>
+        </P>
+        <P>
+          <S ID="S-3229">MERT for DITG applies the same equation for parameter tuning, with different interpretation of the components in the equation.</S>
+          <S ID="S-3230">Instead of a development corpus with reference translations, we have a collection of training samples, each of which is a sentence pair with annotated alignment result.</S>
+          <S ID="S-3231">The ITG parser outputs for each sentence pair a K-best list of alignment result based on the current parameter values .</S>
+          <S ID="S-3232">The MERT module for DITG takes alignment F-score of a sentence pair as the performance measure.</S>
+          <S ID="S-3233">Given an input sentence pair and the reference annotated alignment, MERT aims to maximize the F-score of DITG-produced alignment.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Approximate EM Training of &#936;</HEADER>
+        <P>
+          <S ID="S-3234">Three kinds of features (introduced in section 4.5 and 4.6) are calculated from training corpus given some initial alignment result: conditional probability of word pairs and two types of conditional probabilities for phrase/h-phrase.</S>
+        </P>
+        <P>
+          <S ID="S-3235">3 For simplicity, we will also call our semi-supervised</S>
+        </P>
+        <P>
+          <S ID="S-3236">framework as EMD.</S>
+        </P>
+        <P>
+          <S ID="S-3237">The initial alignment result is far from perfect and so the feature values thus obtained are not optimized.</S>
+          <S ID="S-3238">There are too many features to be trained in supervised way.</S>
+          <S ID="S-3239">So, unsupervised training like EM is the best solution.</S>
+        </P>
+        <P>
+          <S ID="S-3240">When EM is applied to our model, the E-step corresponds to calculating the probability for all the ITG trees, and the M-step corresponds to reestimate the feature values.</S>
+          <S ID="S-3241">As it is intractable to handle all possible ITG trees, instead we use the Viterbi parse to update the feature values.</S>
+          <S ID="S-3242">In other words, the training is a kind of approximate EM rather than EM.</S>
+          <S ID="S-3243">Word pairs are collected over Viterbi alignment and their conditional probabilities are estimated by MLE.</S>
+          <S ID="S-3244">As to phrase/h-phrase, if they are handled in a similar way, then there will be data sparseness (as there are much fewer phrase/h-phrase pairs in Viterbi parse tree than needed for reliable parameter estimation).</S>
+          <S ID="S-3245">Thus, we collect all phrase/h-phrase pairs which are consistent with the alignment links.</S>
+          <S ID="S-3246">The conditional probabilities are then estimated by MLE.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.4 Semi-supervised training</HEADER>
+        <P>
+          <S ID="S-3247">Figure 5.</S>
+          <S ID="S-3248">Semi-supervised training for HP-DITG.</S>
+        </P>
+        <P>
+          <S ID="S-3249">The discriminative training (error minimization) of feature weights and the approximate EM learning of feature values are integrated in a single semi-supervised framework.</S>
+          <S ID="S-3250">Given an initial estimation of (estimated from an initial alignment matrix by some simpler word alignment model) and an initial estimation of , the discriminative training process and the approximate EM learning process are alternatively iterated until there is no more improvement.</S>
+          <S ID="S-3251">The sketch of the semi-supervised training is shown in Figure 5.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.5 Features for word pairs</HEADER>
+        <P>
+          <S ID="S-3252">The following features about alignment link are used in W-DITG:</S>
+        </P>
+        <P>
+          <S ID="S-3253">1) Word pair translation probabilities trained from HMM model (<REF ID="R-15" RPTR="20">Vogel et al., 1996</REF>) and IBM model 4 (<REF ID="R-01" RPTR="2">Brown et al., 1993</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-3254">2) Conditional link probability (Moore,</S>
+        </P>
+        <P>
+          <S ID="S-3255">2006).</S>
+          <S ID="S-3256">3) Association score rank features (Moore et</S>
+        </P>
+        <P>
+          <S ID="S-3257">al., 2006).</S>
+          <S ID="S-3258">4) Distortion features: counts of inversion</S>
+        </P>
+        <P>
+          <S ID="S-3259">and concatenation.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.6 Features for phrase/h-phrase pairs</HEADER>
+        <P>
+          <S ID="S-3260">For our HP-DITG model, the rule probabilities in both English-to-foreign and foreign-to- English directions are estimated and taken as features, in addition to those features in W- DITG, in the discriminative model of alignment hypothesis selection:</S>
+        </P>
+        <P>
+          <S ID="S-3261">1) : The conditional probability of English phrase/h-phrase given foreign phrase/h-phrase.</S>
+        </P>
+        <P>
+          <S ID="S-3262">2) : The conditional probability of foreign phrase/h-phrase given English phrase/h-phrase.</S>
+        </P>
+        <P>
+          <S ID="S-3263">The features are calculated as described in section 4.3.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Evaluation</HEADER>
+      <P>
+        <S ID="S-3320">Our experiments evaluate the performance of HP-DITG in both word alignment and translation in a Chinese-English setting, taking GI- ZA++, BerkeleyAligner (henceforth BERK) (<REF ID="R-09" RPTR="11">Haghighi, et al., 2009</REF>), W-ITG as baselines.</S>
+        <S ID="S-3321">Word alignment quality is evaluated by recall, precision, and F-measure, while translation performance is evaluated by case-insensitive BLEU4.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Experiment Data</HEADER>
+        <P>
+          <S ID="S-3267">The small human annotated alignment set for discriminative training of feature weights is the same as that in <REF ID="R-09" RPTR="17">Haghighi et al. (2009)</REF>.</S>
+          <S ID="S-3268">The 491</S>
+        </P>
+        <P>
+          <S ID="S-3269">sentence pairs in this dataset are adapted to our own Chinese word segmentation standard.</S>
+          <S ID="S-3270">250 sentence pairs are used as training data and the other 241 are test data.</S>
+          <S ID="S-3271">The large, un-annotated bilingual corpus for approximate EM learning of feature values is FBIS, which is also the training set for our SMT systems.</S>
+        </P>
+        <P>
+          <S ID="S-3272">In SMT experiments, our 5-gram language model is trained from the Xinhua section of the Gigaword corpus.</S>
+          <S ID="S-3273">The NIST&#8223;03 test set is used as our development corpus and the NIST&#8223;05 and NIST&#8223;08 test sets are our test sets.</S>
+          <S ID="S-3274">We use two kinds of state-of-the-art SMT systems.</S>
+          <S ID="S-3275">One is a phrase-based decoder (PBSMT) with a MaxEntbased distortion model (<REF ID="R-17" RPTR="25">Xiong, et al., 2006</REF>), and the other is an implementation of hierarchical phrase-based model (HPBSMT) (<REF ID="R-04" RPTR="7">Chiang, 2007</REF>).</S>
+          <S ID="S-3276">The phrase/rule table for these two systems is not generated from the terminal node of HP- DITG tree directly, but extracted from word alignment matrix (HP-DITG generated) using the same criterion as most phrase-based systems (<REF ID="R-04" RPTR="8">Chiang, 2007</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 HP-DITG without EMD</HEADER>
+        <P>
+          <S ID="S-3277">Our first experiment isolates the contribution of the various DITG alignment models from that of semi-supervised training.</S>
+          <S ID="S-3278">The feature values of the DITG models are estimated simply from IBM Model 4 using GIZA++.</S>
+          <S ID="S-3279">Apart from DITG, P-ITG, and HP-ITG as introduced in Section 2, we also include a variation, known as H-DITG, which covers h-phrase pairs but no simple phrase pairs at all.</S>
+          <S ID="S-3280">The experiment results are shown in Table 1.</S>
+        </P>
+        <P>
+          <S ID="S-3281">Table 1.</S>
+          <S ID="S-3282">Performance gains with features for HP-DITG.</S>
+        </P>
+        <P>
+          <S ID="S-3283">It is obvious that any form of ITG achieves better F-Measure than GIZA++.</S>
+          <S ID="S-3284">Without semisupervised training, however, our various DITG models cannot compete with BERK.</S>
+          <S ID="S-3285">Among the DITG models, it can be seen that precision is roughly the same in all cases, while W-ITG has the lowest recall, due to the limitation of one-toone matching.</S>
+          <S ID="S-3286">The improvement by (simple) phrase pairs is roughly the same as that by h- phrase pairs.</S>
+          <S ID="S-3287">And it is not surprising that the combination of both kinds of phrases achieve the best result.</S>
+        </P>
+        <P>
+          <S ID="S-3288">Even HP-DITG does not achieve as high recall as BERK, it does produce promising alignment patterns that BERK fails to produce.</S>
+          <S ID="S-3289">For instance, for the following sentence pair:</S>
+        </P>
+        <P>
+          <S ID="S-3290">&#33258; &#19978; &#21608; &#26411; &#20197; &#26469; , &#25105; &#19968; &#30452; &#22312; &#29983; &#30149; .</S>
+        </P>
+        <P>
+          <S ID="S-3291">I have been ill since last weekend .</S>
+        </P>
+        <P>
+          <S ID="S-3292">Both GIZA++ and BERK produce the pattern in Figure 6(a), while HP-DITG produces the better pattern in Figure 6(b) as it learns the h-phrase pair since &#33258; &#20197; &#26469; .</S>
+        </P>
+        <P>
+          <S ID="S-3293">&#33258; &#19978; &#21608; &#26411; &#20197; &#26469;</S>
+        </P>
+        <P>
+          <S ID="S-3294">since last weekend</S>
+        </P>
+        <P>
+          <S ID="S-3295">(a): BERK/Giza++</S>
+        </P>
+        <P>
+          <S ID="S-3296">&#33258; &#19978; &#21608; &#26411; &#20197; &#26469;</S>
+        </P>
+        <P>
+          <S ID="S-3297">since last weekend</S>
+        </P>
+        <P>
+          <S ID="S-3298">(b): HP-DITG</S>
+        </P>
+        <P>
+          <S ID="S-3299">Figure 6.</S>
+          <S ID="S-3300">Partial alignment results.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Alignment Quality of HP-DITG with EMD</HEADER>
+        <P>
+          <S ID="S-3301">Table 2.</S>
+          <S ID="S-3302">Semi-supervised Training Task on F- Measure.</S>
+        </P>
+        <P>
+          <S ID="S-3303">The second experiment evaluates how the semi-supervised method of EMD improves HP- DITG with respect to word alignment quality.</S>
+          <S ID="S-3304">The results are shown in Table 2.</S>
+          <S ID="S-3305">In the table, EMD0 refers to the HP-DITG model before any EMD training; EMD1 refers to the model after the first iteration of training, and so on.</S>
+          <S ID="S-3306">It is empirically found that F-Measure is not improved after the third EMD iteration.</S>
+        </P>
+        <P>
+          <S ID="S-3307">It can be observed that EMD succeeds to help HP-DITG improves feature value and weight estimation iteratively.</S>
+          <S ID="S-3308">When semi-supervised</S>
+        </P>
+        <P>
+          <S ID="S-3309">training converges, the new HP-DITG model is better than before training by 2%, and better than BERK by 1%.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Translation Quality of HP-DITG with EMD</HEADER>
+        <P>
+          <S ID="S-3310">The third experiment evaluates the same alignment models in the last experiment but with respect to translation quality, measured by caseinsensitive BLEU4.</S>
+          <S ID="S-3311">The results are shown in Table 3.</S>
+          <S ID="S-3312">Note that the differences between EMD3 and the two baselines are statistically significant.</S>
+        </P>
+        <P>
+          <S ID="S-3313">Table 3.</S>
+          <S ID="S-3314">Semi-supervised Training Task on BLEU.</S>
+        </P>
+        <P>
+          <S ID="S-3315">It can be observed that EMD improves SMT performance in most iterations in most cases.</S>
+          <S ID="S-3316">EMD does not always improve BLEU score because the objective function of the discriminative training in EMD is about alignment F- Measure rather than BLEU.</S>
+          <S ID="S-3317">And it is well known that the correlation between F-Measure and BLEU (<REF ID="R-08" RPTR="10">Fraser and Marcu, 2007</REF>) is itself an intriguing problem.</S>
+        </P>
+        <P>
+          <S ID="S-3318">The best HP-DITG leads to more than 1 BLEU point gain compared with GIZA++ on all datasets/MT models.</S>
+          <S ID="S-3319">Compared with BERK, EMD3 improves SMT performance significantly on NIST05 and slightly on NIST08.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusion and Future Work</HEADER>
+      <P>
+        <S ID="S-3322">In this paper, we propose an ITG formalism which employs the notion of phrase/h-phrase pairs, in order to remove the limitation of one-toone matching.</S>
+        <S ID="S-3323">The formalism is proved to enable an alignment model to capture the linguistic fact that a single concept is expressed in several noncontiguous words.</S>
+        <S ID="S-3324">Based on the formalism, we also propose a semi-supervised training method to optimize feature values and feature weights, which does not only improve the alignment quality but also machine translation performance significantly.</S>
+        <S ID="S-3325">Combining the formalism and semi-supervised training, we obtain better alignment and translation than the baselines of GIZA++ and BERK.</S>
+        <S ID="S-3326">A fundamental problem of our current framework is that we fail to obtain monotonic increment of BLEU score during the course of semisupervised training.</S>
+        <S ID="S-3327">In the future, therefore, we will try to take the BLEU score as our objective function in discriminative training.</S>
+        <S ID="S-3328">That is to certain extent inspired by Deng et al. (2008).</S>
+        <S ID="S-3329">Appendix A.</S>
+        <S ID="S-3330">The Normal Form Grammar Table 4 lists the ITG rules in normal form as used in this paper, which extend the normal form in <REF ID="R-16" RPTR="21">Wu (1997)</REF> so as to handle the case of alignment to null.</S>
+      </P>
+      <P>
+        <S ID="S-3331">In these rules, is the Start symbol; is the category for concatenating combination whereas for inverted combination.</S>
+        <S ID="S-3332">Rules (2) and (3) are inherited from <REF ID="R-16" RPTR="22">Wu (1997)</REF>.</S>
+        <S ID="S-3333">Rules (4) divide the terminal category into subcategories.</S>
+        <S ID="S-3334">Rule schema (6) subsumes all terminal unary rules for some English word and foreign word , and rule schemas (7) are unary rules for alignment to null.</S>
+        <S ID="S-3335">Rules (8) ensure all words linked to null are combined in left branching manner, while rules (9) ensure those words linked to null combine with some following, rather than preceding, word pair.</S>
+        <S ID="S-3336">(Note: Accordingly, all sentences must be ended by a special token , otherwise the last word(s) of a sentence cannot be linked to null.</S>
+        <S ID="S-3337">) If there are both English and foreign words linked to null, rule (5) ensures that those English words linked to null precede those foreign words linked to null.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Alexandra Birch</RAUTHOR>
+      <REFTITLE>Constraining the Phrase-Based, Joint Probability Statistical Translation Model.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Peter F Brown Brown</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Colin Cherry</RAUTHOR>
+      <REFTITLE>Soft Syntactic Constraints for Word Alignment through Discriminative Training.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Colin Cherry</RAUTHOR>
+      <REFTITLE>Inversion Transduction Grammar for Joint Phrasal Translation Modeling.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical Phrase-based Translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>Jia Xu and Yuqing</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Phrase Table Training For Precision and Recall: What Makes a Good Phrase and a Good Phrase Pair?.</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Alexander Fraser</RAUTHOR>
+      <REFTITLE>SemiSupervised Training for StatisticalWord Alignment.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Alexander Fraser</RAUTHOR>
+      <REFTITLE>Measuring Word Alignment Quality for Statistical Machine Translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Aria Haghighi</RAUTHOR>
+      <REFTITLE>Better Word Alignments with Supervised ITG Models.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Dan Klein</RAUTHOR>
+      <REFTITLE>Parsing and Hypergraphs.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Daniel Marcu</RAUTHOR>
+      <REFTITLE>A Phrase-Based, Joint Probability Model for Statistical Machine Translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Robert Moore</RAUTHOR>
+      <REFTITLE>Improved Discriminative Bilingual Word Alignment.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>The Alignment Template Approach to Statistical Machine Translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Stephan Vogel</RAUTHOR>
+      <REFTITLE>HMM-based word alignment in statistical translation.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Dekai Wu</RAUTHOR>
+      <REFTITLE>Stochastic Inversion Transduction Grammars and Bilingual Parsing of Parallel Corpora.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Deyi Xiong</RAUTHOR>
+      <REFTITLE>Maximum entropy based phrase reordering model for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Hao Zhang</RAUTHOR>
+      <REFTITLE>Stochastic Lexicalized Inversion Transduction Grammar for Alignment.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

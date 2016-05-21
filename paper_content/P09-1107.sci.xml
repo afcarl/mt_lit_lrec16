@@ -1,0 +1,685 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Incremental HMM Alignment for MT System Combination</TITLE>
+  <AUTHORS>
+    <AUTHOR>Chi-Ho Li</AUTHOR>
+    <AUTHOR>Yupeng Liu</AUTHOR>
+    <AUTHOR>Xiaodong He</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-28265">Inspired by the incremental TER alignment, we re-designed the Indirect HMM (IHMM) alignment, which is one of the best hypothesis alignment methods for conventional MT system combination, in an incremental manner.</A-S>
+    <A-S ID="S-28266">One crucial problem of incremental alignment is to align a hypothesis to a confusion network (CN).</A-S>
+    <A-S ID="S-28267">Our incremental IHMM alignment is implemented in three different ways: 1) treat CN spans as HMM states and define state transition as distortion over covered n- grams between two spans; 2) treat CN spans as HMM states and define state transition as distortion over words in component translations in the CN; and 3) use a consensus decoding algorithm over one hypothesis and multiple IHMMs, each of which corresponds to a component translation in the CN.</A-S>
+    <A-S ID="S-28268">All these three approaches of incremental alignment based on IHMM are shown to be superior to both incremental TER alignment and conventional IHMM alignment in the setting of the Chinese-to-English track of the 2008 NIST Open MT evaluation.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-28269">Word-level combination using confusion network (<REF ID="R-03" RPTR="22">Matusov et al. (2006)</REF> and Rosti et al. (2007)) is a widely adopted approach for combining Machine Translation (MT) systems&#8217; output.</S>
+        <S ID="S-28270">Word alignment between a backbone (or skeleton) translation and a hypothesis translation is a key problem in this approach.</S>
+        <S ID="S-28271">Translation Edit Rate (TER, <REF ID="R-10" RPTR="34">Snover et al. (2006)</REF>) based alignment proposed in <REF ID="R-09" RPTR="33">Sim et al. (2007)</REF> is often taken as the baseline, and a couple of other approaches, such as the Indirect Hidden Markov Model (IHMM, <REF ID="R-00" RPTR="0">He et al. (2008)</REF><REF ID="R-02" RPTR="7">(2008)</REF>) and the ITG-based alignment (<REF ID="R-01" RPTR="6">Karakos et al. (2008)</REF><REF ID="R-02" RPTR="8">(2008)</REF>), were recently proposed with better results reported.</S>
+        <S ID="S-28272">With an alignment method, each hypothesis is aligned against the backbone and all the alignments are then used to build a confusion network (CN) for generating a better translation.</S>
+      </P>
+      <P>
+        <S ID="S-28273">However, as pointed out by <REF ID="R-08" RPTR="26">Rosti et al. (2008)</REF><REF ID="R-02" RPTR="9">(2008)</REF>, such a pair-wise alignment strategy will produce a low-quality CN if there are errors in the alignment of any of the hypotheses, no matter how good the alignments of other hypotheses are.</S>
+        <S ID="S-28274">For example, suppose we have the backbone &#8220;he buys a computer&#8221; and two hypotheses &#8220;he bought a laptop computer&#8221; and &#8220;he buys a laptop&#8221;.</S>
+        <S ID="S-28275">It will be natural for most alignment methods to produce the alignments in Figure 1a.</S>
+        <S ID="S-28276">The alignment of hypothesis 2 against the backbone cannot be considered an error if we consider only these two translations; nevertheless, when added with the alignment of another hypothesis, it produces the low-quality CN in Figure 1b, which may generate poor translations like &#8220;he bought a laptop laptop&#8221;.</S>
+        <S ID="S-28277">While it could be argued that such poor translations are unlikely to be selected due to language model, this CN does disperse the votes to the word &#8220;laptop&#8221; to two distinct arcs.</S>
+      </P>
+      <P>
+        <S ID="S-28278"><REF ID="R-08" RPTR="27">Rosti et al. (2008)</REF><REF ID="R-02" RPTR="10">(2008)</REF> showed that this problem can be rectified by incremental alignment.</S>
+        <S ID="S-28279">If hypothesis 1 is first aligned against the backbone, the CN thus produced (depicted in Figure 2a) is then aligned to hypothesis 2, giving rise to the good CN as depicted in Figure 2b.</S>
+        <S ID="S-28280">1 On the other hand, the</S>
+      </P>
+      <P>
+        <S ID="S-28281">1 Note that this CN may generate an incomplete sentence</S>
+      </P>
+      <P>
+        <S ID="S-28282">&#8220;he bought a&#8221;, which is nevertheless unlikely to be selected as it leads to low language model score.</S>
+      </P>
+      <P>
+        <S ID="S-28283">correct result depends on the order of hypotheses.</S>
+        <S ID="S-28284">If hypothesis 2 is aligned before hypothesis 1, the final CN will not be good.</S>
+        <S ID="S-28285">Therefore, the observation in <REF ID="R-08" RPTR="28">Rosti et al. (2008)</REF><REF ID="R-02" RPTR="11">(2008)</REF> that different order of hypotheses does not affect translation quality is counter-intuitive.</S>
+      </P>
+      <P>
+        <S ID="S-28286">This paper attempts to answer two questions: 1) as incremental TER alignment gives better performance than pair-wise TER alignment, would the incremental strategy still be better than the pairwise strategy if the TER method is replaced by another alignment method?</S>
+        <S ID="S-28287">2) how does translation quality vary for different orders of hypotheses being incrementally added into a CN?</S>
+        <S ID="S-28288">For question 1, we will focus on the IHMM alignment method and propose three different ways of implementing incremental IHMM alignment.</S>
+        <S ID="S-28289">Our experiments will also try several orders of hypotheses in response to question 2.</S>
+      </P>
+      <P>
+        <S ID="S-28290">This paper is structured as follows.</S>
+        <S ID="S-28291">After setting the notations on CN in section 2, we will first introduce, in section 3, two variations of the basic incremental IHMM model (IncIHMM1 and IncIHMM2).</S>
+        <S ID="S-28292">In section 4, a consensus decoding algorithm (CD-IHMM) is proposed as an alternative way to search for the optimal alignment.</S>
+        <S ID="S-28293">The issues of alignment normalization and the order of hypotheses being added into a CN are discussed in sections 5 and 6 respectively.</S>
+        <S ID="S-28294">Experiment results and analysis are presented in section 7.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Preliminaries: Notation on Confusion Network</HEADER>
+      <P>
+        <S ID="S-28295">Before the elaboration of the models, let us first clarify the notation on CN.</S>
+        <S ID="S-28296">A CN is usually described as a finite state graph with many spans.</S>
+        <S ID="S-28297">Each span corresponds to a word position and contains several arcs, each of which represents an alternative word (could be the empty symbol , &#603;) at that position.</S>
+        <S ID="S-28298">Each arc is also associated with M weights in an M-way system combination task.</S>
+        <S ID="S-28299">Follow Rosti et al. (2007), the i-th weight of an</S>
+      </P>
+      <P>
+        <S ID="S-28300">1 1+r</S>
+      </P>
+      <P>
+        <S ID="S-28301">arc is &#8721; r , where r is the rank of the hypothesis in the i-th system that votes for the word represented by the arc.</S>
+        <S ID="S-28302">This conception of CN is called the conventional or compact form of CN.</S>
+        <S ID="S-28303">The networks in Figures 1b and 2b are examples.</S>
+      </P>
+      <P>
+        <S ID="S-28304">On the other hand, as a CN is an integration of the skeleton and all hypotheses, it can be conceived as a list of the component translations.</S>
+        <S ID="S-28305">For example, the CN in Figure 2b can be converted to the form in Figure 3.</S>
+        <S ID="S-28306">In such an expanded or tabular form, each row represents a component translation.</S>
+        <S ID="S-28307">Each column, which is equivalent to a span in the compact form, comprises the alternative words at a word position.</S>
+        <S ID="S-28308">Thus each cell represents an alternative word at certain word position voted by certain translation.</S>
+        <S ID="S-28309">Each row is assigned the weight</S>
+      </P>
+      <P>
+        <S ID="S-28310">1 1+r</S>
+      </P>
+      <P>
+        <S ID="S-28311">, where r is the rank of the translation of some MT system.</S>
+        <S ID="S-28312">It is assumed that all MT systems are weighted equally and thus the</S>
+      </P>
+      <P>
+        <S ID="S-28313">rank-based weights from different system can be compared to each other without adjustment.</S>
+        <S ID="S-28314">The weight of a cell is the same as the weight of the corresponding row.</S>
+        <S ID="S-28315">In this paper the elaboration of the incremental IHMM models is based on such tabular form of CN.</S>
+      </P>
+      <P>
+        <S ID="S-28316">Let E1 I = (E 1 .</S>
+        <S ID="S-28317">.</S>
+        <S ID="S-28318">.</S>
+        <S ID="S-28319">E I ) denote the backbone CN, and e &#8242;J 1 = (e &#8242; 1 .</S>
+        <S ID="S-28320">.</S>
+        <S ID="S-28321">.</S>
+        <S ID="S-28322">e&#8242; J ) denote a hypothesis being aligned to the backbone.</S>
+        <S ID="S-28323">Each e &#8242; j is simply a word in the target language.</S>
+        <S ID="S-28324">However, each E i is a span, or a column, of the CN.</S>
+        <S ID="S-28325">We will also use E(k) to denote the k-th row of the tabular form CN, and E i (k) to denote the cell at the k-th row and the i-th column.</S>
+        <S ID="S-28326">W (k) is the weight for E(k), and W i (k) = W (k) is the weight for E i (k).</S>
+        <S ID="S-28327">p i (k) is the normalized weight for the cell E i (k), such that p i (k) =</S>
+      </P>
+      <P>
+        <S ID="S-28328">W i(k)</S>
+      </P>
+      <P>
+        <S ID="S-28329">&#8721;i W i(k)</S>
+      </P>
+      <P>
+        <S ID="S-28330">.</S>
+        <S ID="S-28331">Note that E(k) contains</S>
+      </P>
+      <P>
+        <S ID="S-28332">the same bag-of-words as the k-th original translation, but may have different word order.</S>
+        <S ID="S-28333">Note also that E(k) represents a word sequence with inserted empty symbols; the sequence with all inserted symbols removed is known as the compact form of E(k).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 The Basic IncIHMM Model</HEADER>
+      <P>
+        <S ID="S-28364">A na&#239;ve application of the incremental strategy to IHMM is to treat a span in the CN as an HMM state.</S>
+        <S ID="S-28365">Like <REF ID="R-00" RPTR="1">He et al. (2008)</REF><REF ID="R-02" RPTR="12">(2008)</REF>, the conditional probability of the hypothesis given the backbone CN can be decomposed into similarity model and distortion model in accordance with equation 1</S>
+      </P>
+      <P>
+        <S ID="S-28366">p(e &#8242;J 1 |E I 1) = &#8721; a J 1</S>
+      </P>
+      <P>
+        <S ID="S-28367">J&#8719; [p(a j |a j&#8722;1 , I)p(e &#8242; j|e aj )] (1)</S>
+      </P>
+      <P>
+        <S ID="S-28368">j=1</S>
+      </P>
+      <P>
+        <S ID="S-28369">The similarity between a hypothesis word e &#8242; j and a span E i is simply a weighted sum of the similarities between e &#8242; j and each word contained in E i as equation 2:</S>
+      </P>
+      <P>
+        <S ID="S-28370">p(e &#8242; j|E i ) = &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-28371">E i (k)&#603;E i</S>
+      </P>
+      <P>
+        <S ID="S-28372">p i (k) &#183; p(e &#8242; j|E i (k)) (2)</S>
+      </P>
+      <P>
+        <S ID="S-28373">The similarity between two words is estimated in exactly the same way as in conventional IHMM alignment.</S>
+      </P>
+      <P>
+        <S ID="S-28374">As to the distortion model, the incremental IHMM model also groups distortion parameters into a few &#8216;buckets&#8217;:</S>
+      </P>
+      <P>
+        <S ID="S-28375">c(d) = (1 + |d &#8722; 1|) &#8722;K</S>
+      </P>
+      <P>
+        <S ID="S-28376">The problem in incremental IHMM is when to apply a bucket.</S>
+        <S ID="S-28377">In conventional IHMM, the transition from state i to j has probability:</S>
+      </P>
+      <P>
+        <S ID="S-28378">p &#8242; (j|i, I) =</S>
+      </P>
+      <P>
+        <S ID="S-28379">c(j &#8722; i) &#8721; Il=1</S>
+      </P>
+      <P>
+        <S ID="S-28380">c(l &#8722; i) (3)</S>
+      </P>
+      <P>
+        <S ID="S-28381">It is tempting to apply the same formula to the transitions in incremental IHMM.</S>
+        <S ID="S-28382">However, the backbone in the incremental IHMM has a special property that it is gradually expanding due to the insertion operator.</S>
+        <S ID="S-28383">For example, initially the backbone CN contains the option e i in the i-th span and the option e i+1 in the (i+1)-th span.</S>
+        <S ID="S-28384">After the first round alignment, perhaps e i is aligned to the hypothesis word e &#8242; j , e i+1 to e &#8242; j+2 , and the hypothesis word e &#8242; j+1 is left unaligned.</S>
+        <S ID="S-28385">Then the consequent CN have an extra span containing the option e &#8242; j+1 inserted between the i-th and (i + 1)-th spans of the initial CN.</S>
+        <S ID="S-28386">If the distortion buckets are applied as in equation 3, then in the first round alignment, the transition from the span containing e i to that containing e i+1 is based on the bucket c(1), but in the second round alignment, the same transition will be based on the bucket c(2).</S>
+        <S ID="S-28387">It is therefore not reasonable to apply equation 3 to such gradually extending backbone as the monotonic alignment assumption behind the equation no longer holds.</S>
+      </P>
+      <P>
+        <S ID="S-28388">There are two possible ways to tackle this problem.</S>
+        <S ID="S-28389">The first solution estimates the transition probability as a weighted average of different distortion probabilities, whereas the second solution converts the distortion over spans to the distortion over the words in each hypothesis E(k) in the CN.</S>
+      </P>
+      <P>
+        <S ID="S-28390">3.1 Distortion Model 1: simple weighting of covered n-grams</S>
+      </P>
+      <P>
+        <S ID="S-28391">Distortion Model 1 shifts the monotonic alignment assumption from spans of CN to n-grams covered by state transitions.</S>
+        <S ID="S-28392">Let us illustrate this point with the following examples.</S>
+      </P>
+      <P>
+        <S ID="S-28393">In conventional IHMM, the distortion probability p &#8242; (i + 1|i, I) is applied to the transition from state i to i+1 given I states because such transition</S>
+      </P>
+      <P>
+        <S ID="S-28394">jumps across only one word, viz.</S>
+        <S ID="S-28395">the i-th word of the backbone.</S>
+        <S ID="S-28396">In incremental IHMM, suppose the i-th span covers two arcs e a and &#603;, with probabilities p 1 and p 2 = 1 &#8722; p 1 respectively, then the transition from state i to i + 1 jumps across one word (e a ) with probability p 1 and jumps across nothing with probability p 2 .</S>
+        <S ID="S-28397">Thus the transition probability should be p 1 &#183; p &#8242; (i + 1|i, I) + p 2 &#183; p &#8242; (i|i, I).</S>
+      </P>
+      <P>
+        <S ID="S-28398">Suppose further that the (i + 1)-th span covers two arcs e b and &#603;, with probabilities p 3 and p 4 respectively, then the transition from state i to i + 2 covers 4 possible cases:</S>
+      </P>
+      <P>
+        <S ID="S-28399">1. nothing (&#603;&#603;) with probability p 2 &#183; p 4 ;</S>
+      </P>
+      <P>
+        <S ID="S-28400">2. the unigram e a with probability p 1 &#183; p 4 ;</S>
+      </P>
+      <P>
+        <S ID="S-28401">3. the unigram e b with probability p 2 &#183; p 3 ;</S>
+      </P>
+      <P>
+        <S ID="S-28402">4. the bigram e a e b with probability p 1 &#183; p 3 .</S>
+      </P>
+      <P>
+        <S ID="S-28403">Accordingly the transition probability should be</S>
+      </P>
+      <P>
+        <S ID="S-28404">p 2 p 4 p &#8242; (i|i, I) + p 1 p 3 p &#8242; (i + 2|i, I) +</S>
+      </P>
+      <P>
+        <S ID="S-28405">(p 1 p 4 + p 2 p 3 )p &#8242; (i + 1|i, I).</S>
+      </P>
+      <P>
+        <S ID="S-28406">The estimation of transition probability can be generalized to any transition from i to i &#8242; by expanding all possible n-grams covered by the transition and calculating the corresponding probabilities.</S>
+        <S ID="S-28407">We enumerate all possible cell sequences S(i, i &#8242; ) covered by the transition from span i to i &#8242; ; each sequence is assigned the probability</S>
+      </P>
+      <P>
+        <S ID="S-28408">i &#8719; &#8242; &#8722;1</S>
+      </P>
+      <P>
+        <S ID="S-28409">Pi i&#8242; = p q (k).</S>
+      </P>
+      <P>
+        <S ID="S-28410">q=i</S>
+      </P>
+      <P>
+        <S ID="S-28411">where the cell at the i &#8242; -th span is on some row E(k).</S>
+        <S ID="S-28412">Since a cell may represent an empty word, a cell sequence may represent an n-gram where 0 &#8804; n &#8804; i &#8242; &#8722; i (or 0 &#8804; n &#8804; i &#8722; i &#8242; in backward transition).</S>
+        <S ID="S-28413">We denote |S(i, i &#8242; )| to be the length of n-gram represented by a particular cell sequence S(i, i &#8242; ).</S>
+        <S ID="S-28414">All the cell sequences S(i, i &#8242; ) can be classified, with respect to the length of corresponding n-grams, into a set of parameters where each element (with a particular value of n) has the probability P i&#8242; i (n; I) = &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-28415">|S(i,i &#8242; )|=n</S>
+      </P>
+      <P>
+        <S ID="S-28416">P i&#8242; i .</S>
+      </P>
+      <P>
+        <S ID="S-28417">The probability of the transition from i to i &#8242; is:</S>
+      </P>
+      <P>
+        <S ID="S-28418">p(i &#8242; |i, I) = &#8721; n [P i&#8242; i (n; I) &#183; p &#8242; (i + n|i, I)].</S>
+        <S ID="S-28419">(4) That is, the transition probability of incremental IHMM is a weighted sum of probabilities of &#8216;ngram jumping&#8217;, defined as conventional IHMM distortion probabilities.</S>
+      </P>
+      <P>
+        <S ID="S-28420">However, in practice it is not feasible to expand all possible n-grams covered by any transition since the number of n-grams grows exponentially.</S>
+        <S ID="S-28421">Therefore a length limit L is imposed such that for all state transitions where |i &#8242; &#8722; i| &#8804; L, the transition probability is calculated as equation 4, otherwise it is calculated by:</S>
+      </P>
+      <P>
+        <S ID="S-28422">p(i &#8242; |i, I) = max p(i &#8242; |q, I) &#183; p(q|i, I)</S>
+      </P>
+      <P>
+        <S ID="S-28423">q</S>
+      </P>
+      <P>
+        <S ID="S-28424">for some q between i and i &#8242; .</S>
+        <S ID="S-28425">In other words, the probability of longer state transition is estimated in terms of the probabilities of transitions shorter or equal to the length limit.</S>
+        <S ID="S-28426">2 All the state transitions can be calculated efficiently by dynamic programming.</S>
+      </P>
+      <P>
+        <S ID="S-28427">A fixed value P 0 is assigned to transitions to null state, which can be optimized on held-out data.</S>
+        <S ID="S-28428">The overall distortion model is: {</S>
+      </P>
+      <P>
+        <S ID="S-28429">P0 if j is null state</S>
+      </P>
+      <P>
+        <S ID="S-28430">&#732;p(j|i, I) = (1 &#8722; P 0 )p(j|i, I) otherwise</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Distortion Model 2: weighting of distortions of component translations</HEADER>
+        <P>
+          <S ID="S-28334">The cause of the problem of distortion over CN spans is the gradual extension of CN due to the inserted empty words.</S>
+          <S ID="S-28335">Therefore, the problem will disappear if the inserted empty words are removed.</S>
+          <S ID="S-28336">The rationale of Distortion Model 2 is that the distortion model is defined over the actual word sequence in each component translation E(k).</S>
+        </P>
+        <P>
+          <S ID="S-28337">Distortion Model 2 implements a CN in such a way that the real position of the i-th word of the k- th component translation can always be retrieved.</S>
+          <S ID="S-28338">The real position of E i (k), &#948;(i, k), refers to the position of the word represented by E i (k) in the compact form of E(k) (i.e. the form without any inserted empty words), or, if E i (k) represents an empty word, the position of the nearest preceding non-empty word.</S>
+          <S ID="S-28339">For convenience, we also denote by &#948; &#603; (i, k) the null state associated with the state of the real word &#948;(i, k).</S>
+          <S ID="S-28340">Similarly, the real length</S>
+        </P>
+        <P>
+          <S ID="S-28341">2 This limit L is also imposed on the parameter I in distortion probability p &#8242; (i &#8242; |i, I), because the value of I is growing larger and larger during the incremental alignment process.</S>
+          <S ID="S-28342">I is defined as L if I &gt; L.</S>
+        </P>
+        <P>
+          <S ID="S-28343">of E(k), L(k), refers to the number of non-empty words of E(k).</S>
+        </P>
+        <P>
+          <S ID="S-28344">The transition from span i &#8242; to i is then defined as</S>
+        </P>
+        <P>
+          <S ID="S-28345">p(i|i &#8242; 1 &#8721; ) = &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-28346">k W (k) [W (k) &#183; p k (i|i &#8242; )] (5) k</S>
+        </P>
+        <P>
+          <S ID="S-28347">where k is the row index of the tabular form CN.</S>
+        </P>
+        <P>
+          <S ID="S-28348">Depending on E i (k) and E i &#8242;(k), p k (i|i &#8242; ) is computed as follows:</S>
+        </P>
+        <P>
+          <S ID="S-28349">1. if both E i (k) and E i &#8242;(k) represent real words, then</S>
+        </P>
+        <P>
+          <S ID="S-28350">p k (i|i &#8242; ) = p &#8242; (&#948;(i, k)|&#948;(i &#8242; , k), L(k))</S>
+        </P>
+        <P>
+          <S ID="S-28351">where p &#8242; refers to the conventional IHMM distortion probability as defined by equation 3.</S>
+        </P>
+        <P>
+          <S ID="S-28352">2. if E i (k) represents a real word but E i &#8242;(k) the empty word, then</S>
+        </P>
+        <P>
+          <S ID="S-28353">p k (i|i &#8242; ) = p &#8242; (&#948;(i, k)|&#948; &#603; (i &#8242; , k), L(k))</S>
+        </P>
+        <P>
+          <S ID="S-28354">Like conventional HMM-based word alignment, the probability of the transition from a null state to a real word state is the same as that of the transition from the real word state associated with that null state to the other real word state.</S>
+          <S ID="S-28355">Therefore,</S>
+        </P>
+        <P>
+          <S ID="S-28356">p &#8242; (&#948;(i, k)|&#948; &#603; (i &#8242; , k), L(k)) = p &#8242; (&#948;(i, k)|&#948;(i &#8242; , k), L(k))</S>
+        </P>
+        <P>
+          <S ID="S-28357">3. if E i (k) represents the empty word but E i &#8242;(k) a real word, then {</S>
+        </P>
+        <P>
+          <S ID="S-28358">p k (i|i &#8242; P0 if&#948;(i, k) = &#948;(i ) = &#8242; , k) P 0 P &#948; (i|i &#8242; ; k) otherwise</S>
+        </P>
+        <P>
+          <S ID="S-28359">where P &#948; (i|i &#8242; ; k) = p &#8242; (&#948;(i, k)|&#948;(i &#8242; , k), L(k)).</S>
+          <S ID="S-28360">The second option is due to the constraint that a null state is accessible only to itself or the real word state associated with it.</S>
+          <S ID="S-28361">Therefore, the transition from i &#8242; to i is in fact composed of the first transition from i &#8242; to &#948;(i, k) and the second transition from &#948;(i, k) to the null state at i.</S>
+        </P>
+        <P>
+          <S ID="S-28362">4. if both E i (k) and E i &#8242;(k) represent the empty word, then, with similar logic as cases 2 and 3, {</S>
+        </P>
+        <P>
+          <S ID="S-28363">p k (i|i &#8242; P0 if&#948;(i, k) = &#948;(i ) = &#8242; , k) P 0 P &#948; (i|i &#8242; ; k) otherwise</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Incremental Alignment using Consensus Decoding over Multiple IHMMs</HEADER>
+      <P>
+        <S ID="S-28431">The previous section describes an incremental IHMM model in which the state space is based on the CN taken as a whole.</S>
+        <S ID="S-28432">An alternative approach is to conceive the rows (component translations) in the CN as individuals, and transforms the alignment of a hypothesis against an entire network to that against the individual translations.</S>
+        <S ID="S-28433">Each individual translation constitutes an IHMM and the optimal alignment is obtained from consensus decoding over these multiple IHMMs.</S>
+      </P>
+      <P>
+        <S ID="S-28434">Alignment over multiple sequential patterns has been investigated in different contexts.</S>
+        <S ID="S-28435">For example, <REF ID="R-04" RPTR="23">Nair and Sreenivas (2007)</REF> proposed multipattern dynamic time warping (MPDTW) to align multiple speech utterances to each other.</S>
+        <S ID="S-28436">However, these methods usually assume that the alignment is monotonic.</S>
+        <S ID="S-28437">In this section, a consensus decoding algorithm that searches for the optimal (non-monotonic) alignment between a hypothesis and a set of translations in a CN (which are already aligned to each other) is developed as follows.</S>
+        <S ID="S-28438">A prerequisite of the algorithm is a function for converting a span index to the corresponding HMM state index of a component translation.</S>
+        <S ID="S-28439">The two functions &#948; and &#948; &#603; s defined in section 3.2 are used to define a new function: {</S>
+      </P>
+      <P>
+        <S ID="S-28440">&#948;&#603; (i, k) if E &#175;&#948;(i, k) = i (k) is null</S>
+      </P>
+      <P>
+        <S ID="S-28441">&#948;(i, k) otherwise</S>
+      </P>
+      <P>
+        <S ID="S-28442">Accordingly, given the alignment a J 1 = a 1 .</S>
+        <S ID="S-28443">.</S>
+        <S ID="S-28444">.</S>
+        <S ID="S-28445">a J of a hypothesis (with J words) against a CN (where each a j is an index referring to the span of the CN), we can obtain the alignment &#227; k = &#175;&#948;(a 1 , k) .</S>
+        <S ID="S-28446">.</S>
+        <S ID="S-28447">.</S>
+        <S ID="S-28448">&#175;&#948;(a J , k) between the hypothesis and</S>
+      </P>
+      <P>
+        <S ID="S-28449">the k-th row of the tabular CN.</S>
+        <S ID="S-28450">The real length function L(k) is also used to obtain the number of non-empty words of E(k).</S>
+      </P>
+      <P>
+        <S ID="S-28451">Given the k-th row of a CN, E(k), an IHMM &#955;(k) is formed and the cost of the pair-wise alignment, &#227; k , between a hypothesis h and &#955;(k) is defined as:</S>
+      </P>
+      <P>
+        <S ID="S-28452">C(&#227; k ; h, &#955;(k)) = &#8722; log P (&#227; k |h, &#955;(k)) (6)</S>
+      </P>
+      <P>
+        <S ID="S-28453">The cost of the alignment of h against a CN is then defined as the weighted sum of the costs of the K alignments &#227; k :</S>
+      </P>
+      <P>
+        <S ID="S-28454">C(a; h, &#923;) = &#8721; k W (k)C(&#227; k ; h, &#955;(k))</S>
+      </P>
+      <P>
+        <S ID="S-28455">= &#8722; &#8721; k W (k) log P (&#227; k |h, &#955;(k))</S>
+      </P>
+      <P>
+        <S ID="S-28456">where &#923; = {&#955;(k)} is the set of pair-wise IHMMs, and W (k) is the weight of the k-th row.</S>
+        <S ID="S-28457">The optimal alignment &#226; is the one that minimizes this cost:</S>
+      </P>
+      <P>
+        <S ID="S-28458">&#226; = arg max</S>
+      </P>
+      <P>
+        <S ID="S-28459">a</S>
+      </P>
+      <P>
+        <S ID="S-28460">= arg max</S>
+      </P>
+      <P>
+        <S ID="S-28461">a</S>
+      </P>
+      <P>
+        <S ID="S-28462">&#8721; W (k) log P (&#227; k |h, &#955;(k))</S>
+      </P>
+      <P>
+        <S ID="S-28463">k</S>
+      </P>
+      <P>
+        <S ID="S-28464">&#8721;</S>
+      </P>
+      <P>
+        <S ID="S-28465">k</S>
+      </P>
+      <P>
+        <S ID="S-28466">W (k)[ &#8721; j</S>
+      </P>
+      <P>
+        <S ID="S-28467">log P (&#175;&#948;(a j , k)|&#175;&#948;(a j&#8722;1 , k), L(k)) +</S>
+      </P>
+      <P>
+        <S ID="S-28468">[</S>
+      </P>
+      <P>
+        <S ID="S-28469">log P (e j |E i (k))]] &#8721; 6 Order of Hypotheses = arg max [</S>
+      </P>
+      <P>
+        <S ID="S-28470">a j</S>
+      </P>
+      <P>
+        <S ID="S-28471">&#8721; W (k) log P (&#175;&#948;(a j , k)|&#175;&#948;(a j&#8722;1 , k), L(k)) +</S>
+      </P>
+      <P>
+        <S ID="S-28472">k</S>
+      </P>
+      <P>
+        <S ID="S-28473">&#8721;</S>
+      </P>
+      <P>
+        <S ID="S-28474">k</S>
+      </P>
+      <P>
+        <S ID="S-28475">= arg max</S>
+      </P>
+      <P>
+        <S ID="S-28476">a</S>
+      </P>
+      <P>
+        <S ID="S-28477">W (k) log P (e j |E i (k))]</S>
+      </P>
+      <P>
+        <S ID="S-28478">log P &#8242; (e j |E aj )]</S>
+      </P>
+      <P>
+        <S ID="S-28479">&#8721; [log P &#8242; (a j |a j&#8722;1 ) +</S>
+      </P>
+      <P>
+        <S ID="S-28480">j</S>
+      </P>
+      <P>
+        <S ID="S-28481">A Viterbi-like dynamic programming algorithm can be developed to search for &#226; by treating CN spans as HMM states, with a pseudo emission probability as</S>
+      </P>
+      <P>
+        <S ID="S-28482">P &#8242; (e j |E aj ) = K&#8719;</S>
+      </P>
+      <P>
+        <S ID="S-28483">P (e j |E aj (k)) W (k)</S>
+      </P>
+      <P>
+        <S ID="S-28484">k=1</S>
+      </P>
+      <P>
+        <S ID="S-28485">and a pseudo transition probability as</S>
+      </P>
+      <P>
+        <S ID="S-28486">P &#8242; (j|i) = K&#8719;</S>
+      </P>
+      <P>
+        <S ID="S-28487">P (&#175;&#948;(j, k)|&#175;&#948;(i, k), L(k)) W (k)</S>
+      </P>
+      <P>
+        <S ID="S-28488">k=1</S>
+      </P>
+      <P>
+        <S ID="S-28489">Note that P &#8242; (e j |E aj ) and P &#8242; (j|i) are not true probabilities and do not have the sum-to-one property.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Alignment Normalization</HEADER>
+      <P>
+        <S ID="S-28490">After alignment, the backbone CN and the hypothesis can be combined to form an even larger CN.</S>
+        <S ID="S-28491">The same principles and heuristics for the construction of CN in conventional system combination approaches can be applied.</S>
+        <S ID="S-28492">Our incremental alignment approaches adopt the same heuristics for alignment normalization stated in <REF ID="R-00" RPTR="2">He et al. (2008)</REF><REF ID="R-02" RPTR="13">(2008)</REF>.</S>
+        <S ID="S-28493">There is one exception, though.</S>
+        <S ID="S-28494">All 1- N mappings are not converted to N &#8722; 1 &#603;-1 mappings since this conversion leads to N &#8722; 1 insertion in the CN and therefore extending the network to an unreasonable length.</S>
+        <S ID="S-28495">The Viterbi alignment is abandoned if it contains an 1-N mapping.</S>
+        <S ID="S-28496">The best alignment which contains no 1-N mapping is searched in the N-Best alignments in a way inspired by <REF ID="R-05" RPTR="24">Nilsson and Goldberger (2001)</REF>.</S>
+        <S ID="S-28497">For example, if both hypothesis words e &#8242; 1 and e&#8242; 2 are aligned to the same backbone span E 1 , then all alignments a j={1,2} = i (where i &#8800; 1) will be examined.</S>
+        <S ID="S-28498">The alignment leading to the least reduction of Viterbi probability when replacing the alignment a j={1,2} = 1 will be selected.</S>
+      </P>
+      <P>
+        <S ID="S-28499">The default order of hypotheses in <REF ID="R-08" RPTR="29">Rosti et al. (2008)</REF><REF ID="R-02" RPTR="14">(2008)</REF> is to rank the hypotheses in descending of their TER scores against the backbone.</S>
+        <S ID="S-28500">This paper attempts several other orders.</S>
+        <S ID="S-28501">The first one is system-based order, i.e. assume an arbitrary order of the MT systems and feeds all the translations (in their original order) from a system before the translations from the next system.</S>
+        <S ID="S-28502">The rationale behind the system-based order is that the translations from the same system are much more similar to each other than to the translations from other systems, and it might be better to build CN by incorporating similar translations first.</S>
+        <S ID="S-28503">The second one is N-best rank-based order, which means, rather than keeping the translations from the same system as a block, we feed the top-1 translations from all systems in some order of systems, and then the second best translations from all systems, and so on.</S>
+        <S ID="S-28504">The presumption of the rank-based order is that top-ranked hypotheses are more reliable and it seemed beneficial to incorporate more reliable hypotheses as early as possible.</S>
+        <S ID="S-28505">These two kinds of order of hypotheses involve a certain degree of randomness as the order of systems is arbitrary.</S>
+        <S ID="S-28506">Such randomness can be removed by imposing a Bayes Risk order on MT systems, i.e. arrange the MT systems in ascending order of the Bayes Risk of their top-1 translations.</S>
+        <S ID="S-28507">These four orders of hypotheses are summarized in Table 1.</S>
+        <S ID="S-28508">We also tried some intuitively bad orders of hypotheses, including the reversal of these four orders and the random order.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Evaluation</HEADER>
+      <P>
+        <S ID="S-28540">The proposed approaches of incremental IHMM are evaluated with respect to the constrained Chinese-to-English track of 2008 NIST Open MT</S>
+      </P>
+      <P>
+        <S ID="S-28541">Evaluation (<REF ID="R-06" RPTR="25">NIST (2008)</REF><REF ID="R-02" RPTR="15">(2008)</REF>).</S>
+        <S ID="S-28542">In the following sections, the incremental IHMM approaches using distortion model 1 and 2 are named as IncIHMM1 and IncIHMM2 respectively, and the consensus decoding of multiple IHMMs as CD-IHMM.</S>
+        <S ID="S-28543">The baselines include the TER-based method in Rosti et al. (2007), the incremental TER method in <REF ID="R-08" RPTR="30">Rosti et al. (2008)</REF><REF ID="R-02" RPTR="16">(2008)</REF>, and the IHMM approach in <REF ID="R-00" RPTR="3">He et al. (2008)</REF><REF ID="R-02" RPTR="17">(2008)</REF>.</S>
+        <S ID="S-28544">The development (dev) set comprises the newswire and newsgroup sections of MT06, whereas the test set is the entire MT08.</S>
+        <S ID="S-28545">The 10- best translations for every source sentence in the dev and test sets are collected from eight MT systems.</S>
+        <S ID="S-28546">Case-insensitive BLEU-4, presented in percentage, is used as evaluation metric.</S>
+      </P>
+      <P>
+        <S ID="S-28547">The various parameters in the IHMM model are set as the optimal values found in <REF ID="R-00" RPTR="4">He et al. (2008)</REF><REF ID="R-02" RPTR="18">(2008)</REF>.</S>
+        <S ID="S-28548">The lexical translation probabilities used in the semantic similarity model are estimated from a small portion (FBIS + GALE) of the constrained track training data, using standard HMM alignment model (Och and Ney (2003)).</S>
+        <S ID="S-28549">The backbone of CN is selected by MBR.</S>
+        <S ID="S-28550">The loss function used for TER-based approaches is TER and that for IHMM-based approaches is BLEU.</S>
+        <S ID="S-28551">As to the incremental systems, the default order of hypotheses is the ascending order of TER score against the backbone, which is the order proposed in <REF ID="R-08" RPTR="31">Rosti et al. (2008)</REF><REF ID="R-02" RPTR="19">(2008)</REF>.</S>
+        <S ID="S-28552">The default order of hypotheses for our three incremental IHMM approaches is N-best rank order with Bayes Risk system order, which is empirically found to be giving the highest BLEU score.</S>
+        <S ID="S-28553">Once the CN is built, the final system combination output can be obtained by decoding it with a set of features and decoding parameters.</S>
+        <S ID="S-28554">The features we used include word confidences, language model score, word penalty and empty word penalty.</S>
+        <S ID="S-28555">The decoding parameters are trained by maximum BLEU training on the dev set.</S>
+        <S ID="S-28556">The training and decoding processes are the same as described by Rosti et al. (2007).</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>7.1 Comparison against Baselines</HEADER>
+        <P>
+          <S ID="S-28509">Table 2 lists the BLEU scores achieved by the three baseline combination methods and IncIHMM2.</S>
+          <S ID="S-28510">The comparison between pairwise and incremental TER methods justifies the superiority of the incremental strategy.</S>
+          <S ID="S-28511">However, the benefit of incremental TER over pair-wise TER is smaller than that mentioned in <REF ID="R-08" RPTR="32">Rosti et al. (2008)</REF><REF ID="R-02" RPTR="20">(2008)</REF>, which may be because of the difference between test sets and other experimental conditions.</S>
+          <S ID="S-28512">The comparison between the two pair-wise alignment methods shows that IHMM gives a 0.7 BLEU point gain over TER, which is a bit smaller than the difference reported in <REF ID="R-00" RPTR="5">He et al. (2008)</REF><REF ID="R-02" RPTR="21">(2008)</REF>.</S>
+          <S ID="S-28513">The possible causes of such discrepancy include the different dev set and the smaller training set for estimating semantic similarity parameters.</S>
+          <S ID="S-28514">Despite that, the pair-wise IHMM method is still a strong baseline.</S>
+          <S ID="S-28515">Table 2 also shows the performance of IncIHMM2, our best incremental IHMM approach.</S>
+          <S ID="S-28516">It is almost one BLEU point higher than the pair-wise IHMM baseline and much higher than the two TER baselines.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>7.2 Comparison among the Incremental IHMM Models</HEADER>
+        <P>
+          <S ID="S-28517">Table 3 lists the BLEU scores achieved by the three incremental IHMM approaches.</S>
+          <S ID="S-28518">The two distortion models for IncIHMM approach lead to almost the same performance, whereas CD-IHMM is much less satisfactory.</S>
+        </P>
+        <P>
+          <S ID="S-28519">For IncIHMM, the gist of both distortion mod-</S>
+        </P>
+        <P>
+          <S ID="S-28520">els is to shift the distortion over spans to the distortion over word sequences.</S>
+          <S ID="S-28521">In distortion model 2 the word sequences are those sequences available in one of the component translations in the CN.</S>
+          <S ID="S-28522">Distortion model 1 is more encompassing as it also considers the word sequences which are combined from subsequences from various component translations.</S>
+          <S ID="S-28523">However, as mentioned in section 3.1, the number of sequences grows exponentially and there is therefore a limit L to the length of sequences.</S>
+          <S ID="S-28524">In general the limit L &#8805; 8 would render the tuning/decoding process intolerably slow.</S>
+          <S ID="S-28525">We tried the values 5 to 8 for L and the variation of performance is less than 0.1 BLEU point.</S>
+          <S ID="S-28526">That is, distortion model 1 cannot be improved by tuning L.</S>
+          <S ID="S-28527">The similar BLEU scores as shown in Table 3 implies that the incorporation of more word sequences in distortion model 1 does not lead to extra improvement.</S>
+          <S ID="S-28528">Although consensus decoding is conceptually different from both variations of IncIHMM, it can indeed be transformed into a form similar to IncIHMM2.</S>
+          <S ID="S-28529">IncIHMM2 calculates the parameters of the IHMM as a weighted sum of various probabilities of the component translations.</S>
+          <S ID="S-28530">In contrast, the equations in section 4 shows that CD-IHMM calculates the weighted sum of the logarithm of those probabilities of the component translations.</S>
+          <S ID="S-28531">In other words, IncIHMM2 makes use of the sum of probabilities whereas CD-IHMM makes use of the product of probabilities.</S>
+          <S ID="S-28532">The experiment results indicate that the interaction between the weights and the probabilities is more fragile in the product case than in the summation case.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>7.3 Impact of Order of Hypotheses</HEADER>
+        <P>
+          <S ID="S-28533">Table 4 lists the BLEU scores on the test set achieved by IncIHMM1 using different orders of hypotheses.</S>
+          <S ID="S-28534">The column &#8216;reversal&#8217; shows the impact of deliberately bad order, viz.</S>
+          <S ID="S-28535">more than one BLEU point lower than the best order.</S>
+          <S ID="S-28536">The random order is a baseline for not caring about order of hypotheses at all, which is about 0.7 BLEU</S>
+        </P>
+        <P>
+          <S ID="S-28537">point lower than the best order.</S>
+          <S ID="S-28538">Among the orders with good performance, it is observed that N-best rank order leads to about 0.2 to 0.3 BLEU point improvement, and that the Bayes Risk order of systems does not improve performance very much.</S>
+          <S ID="S-28539">In sum, the performance of incremental alignment is sensitive to the order of hypotheses, and the optimal order is defined in terms of the rank of each hypothesis on some system&#8217;s n-best list.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>8 Conclusions</HEADER>
+      <P>
+        <S ID="S-28557">This paper investigates the application of the incremental strategy to IHMM, one of the state-ofthe-art alignment methods for MT output combination.</S>
+        <S ID="S-28558">Such a task is subject to the problem of how to define state transitions on a gradually expanding CN.</S>
+        <S ID="S-28559">We proposed three different solutions, which share the principle that transition over CN spans must be converted to the transition over word sequences provided by the component translations.</S>
+        <S ID="S-28560">While the consensus decoding approach does not improve performance much, the two distortion models for incremental IHMM (IncIHMM1 and IncIHMM2) give superb performance in comparison with pair-wise TER, pair-wise IHMM, and incremental TER.</S>
+        <S ID="S-28561">We also showed that the order of hypotheses is important as a deliberately bad order would reduce translation quality by one BLEU point.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Xiaodong He</RAUTHOR>
+      <REFTITLE>Indirect-HMMbased Hypothesis Alignment for Combining Outputs from Machine Translation Systems.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Damianos Karakos</RAUTHOR>
+      <REFTITLE>Machine Translation 956 Combination using ITG-based Alignments.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Evgeny Matusov</RAUTHOR>
+      <REFTITLE>Computing Consensus Translation from Multiple Machine Translation Systems using Enhanced Hypothesis Alignment.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Nishanth Ulhas Nair</RAUTHOR>
+      <REFTITLE>Joint Decoding of Multiple Speech Patterns for Robust Speech Recognition.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Dennis Nilsson</RAUTHOR>
+      <REFTITLE>Sequentially Finding the N-Best List in Hidden Markov Models.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>NIST</RAUTHOR>
+      <REFTITLE>The NIST Open Machine Translation Evaluation. www.nist.gov/ speech/tests/mt/2008/doc/</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>I Rosti</RAUTHOR>
+      <REFTITLE>Kishore Papineni, Salim Roukos, Todd Ward and WeiJing Zhu</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Antti-Veikko I Rosti</RAUTHOR>
+      <REFTITLE>Incremental Hypothesis Alignment for Building Confusion Networks with Application to Machine Translation System Combination.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Khe Chai Sim</RAUTHOR>
+      <REFTITLE>Consensus Network Decoding for Statistical Machine Translation System Combination.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Matthew Snover</RAUTHOR>
+      <REFTITLE>Linnea Micciulla and John Makhoul</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

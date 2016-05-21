@@ -1,0 +1,838 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Hallucinating Phrase Translations for Low Resource MT</TITLE>
+  <AUTHORS>
+    <AUTHOR>Ann Irvine</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-7281">We demonstrate that &#8220;hallucinating&#8221; phrasal translations can significantly improve the quality of machine translation in low resource conditions.</A-S>
+    <A-S ID="S-7282">Our hallucinated phrase tables consist of entries composed from multiple unigram translations drawn from the baseline phrase table and from translations that are induced from monolingual corpora.</A-S>
+    <A-S ID="S-7283">The hallucinated phrase table is very noisy.</A-S>
+    <A-S ID="S-7284">Its translations are low precision but high recall.</A-S>
+    <A-S ID="S-7285">We counter this by introducing 30 new feature functions (including a variety of monolinguallyestimated features) and by aggressively pruning the phrase table.</A-S>
+    <A-S ID="S-7286">Our analysis evaluates the intrinsic quality of our hallucinated phrase pairs as well as their impact in end-to-end Spanish-English and Hindi-English MT.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-7287">In this work, we augment the translation model for a low-resource phrase-based SMT system by automatically expanding its phrase table.</S>
+        <S ID="S-7288">We &#8220;hallucinate&#8221; new phrase table entries by composing the unigram translations from the baseline system&#8217;s phrase table and translations learned from comparable monolingual corpora.</S>
+        <S ID="S-7289">The composition process yields a very large number of new phrase pair translations, which are high recall but low precision.</S>
+        <S ID="S-7290">We filter the phrase table using a new set of feature functions estimated from monolingual corpora.</S>
+        <S ID="S-7291">We evaluate the hallucinated phrase pairs intrinsically as well as in end-to-end machine translation.</S>
+        <S ID="S-7292">The augmented phrase table provides more coverage than the original phrase table, while being high quality enough to improve translation performance.</S>
+      </P>
+      <P>
+        <S ID="S-7293">We propose a four-part approach to hallucinating and using new phrase pair translations:</S>
+      </P>
+      <P>
+        <S ID="S-7294">1.</S>
+        <S ID="S-7295">Learn potential translations for out-ofvocabulary (OOV) words from comparable monolingual corpora</S>
+      </P>
+      <P>
+        <S ID="S-7296">2.</S>
+        <S ID="S-7297">&#8220;Hallucinate&#8221; a large, noisy set of phrase translations by composing unigram translations from the baseline model and from the monolingually-induced bilingual dictionary</S>
+      </P>
+      <P>
+        <S ID="S-7298">3.</S>
+        <S ID="S-7299">Use comparable monolingual corpora to score, rank, and prune the huge number of hallucinated translations</S>
+      </P>
+      <P>
+        <S ID="S-7300">4.</S>
+        <S ID="S-7301">Augment the baseline phrase table with hallucinated translations and new feature functions estimated from monolingual corpora</S>
+      </P>
+      <P>
+        <S ID="S-7302">We define an algorithm for generating loosely compositional phrase pairs, which we use to hallucinate new translations.</S>
+        <S ID="S-7303">In oracle experiments, we show that such loosely compositional phrase pairs contribute substantially to the performance of end-to-end SMT, beyond that of component unigram translations.</S>
+        <S ID="S-7304">In our non-oracle experiments, we show that adding a judiciously pruned set of automatically hallucinated phrase pairs to an endto-end baseline SMT model results in a significant improvement in translation quality for both Spanish-English and Hindi-English.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Motivation</HEADER>
+      <P>
+        <S ID="S-7305">Translation models learned over small amounts of parallel data suffer from the problem of low coverage.</S>
+        <S ID="S-7306">That is, they do not include translations for many words and phrases.</S>
+        <S ID="S-7307">Unknown</S>
+      </P>
+      <P>
+        <S ID="S-7308">words, or out-of-vocabulary (OOV) words, have been the focus of previous work on integrating bilingual lexicon induction and machine translation (<REF ID="R-03" RPTR="3">Daum&#233; and Jagarlamudi, 2011</REF>; <REF ID="R-10" RPTR="13">Irvine and Callison-Burch, 2013</REF><REF ID="R-11" RPTR="16">Irvine and Callison-Burch, 2013</REF>a; <REF ID="R-26" RPTR="38">Razmara et al., 2013</REF>).</S>
+        <S ID="S-7309">Bilingual lexicon induction is the task of learning translations from monolingual texts, and typical approaches compare projected distributional signatures of words in the source language with distributional signatures representing target language words (<REF ID="R-23" RPTR="33">Rapp, 1995</REF>; <REF ID="R-27" RPTR="39">Schafer and Yarowsky, 2002</REF>; <REF ID="R-14" RPTR="22">Koehn and Knight, 2002</REF>; <REF ID="R-08" RPTR="10">Haghighi et al., 2008</REF>).</S>
+        <S ID="S-7310">If the source and target language each contain, for example, 100, 000 words, the number of pairwise comparisons is about 10 billion, which is significant but computationally feasible.</S>
+      </P>
+      <P>
+        <S ID="S-7311">In contrast to unigrams, the difficulty in inducing a comprehensive set of phrase translations is that the number of both source and target phrases is immense.</S>
+        <S ID="S-7312">For example, there are about 83 million unique phrases up to length three in the English Wikipedia.</S>
+        <S ID="S-7313">Pairwise comparisons of two sets of 100 million phrases corresponds to 1 x 10 16 .</S>
+        <S ID="S-7314">Thus, even if we limit the task to short phrases, the number of pairwise phrase comparisons necessary to do an exhaustive search is infeasible.</S>
+        <S ID="S-7315">However, multi-word translation units have been shown to improve the quality of SMT dramatically (<REF ID="R-15" RPTR="23">Koehn et al., 2003</REF>).</S>
+        <S ID="S-7316">Phrase translations allow translation models to memorize local context-dependent translations and reordering patterns.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Approach</HEADER>
+      <P>
+        <S ID="S-7381">Rather than compare all source language phrases with all target language phrases, our approach efficiently proposes a smaller set of hypothesis phrase translations for each source language phrase.</S>
+        <S ID="S-7382">Our method builds upon the notion that many phrase translations can be composed from the translations of its component words and subphrases.</S>
+        <S ID="S-7383">For example Spanish la bruja verde translates into English as the green witch.</S>
+        <S ID="S-7384">Each Spanish word corresponds to exactly one English word.</S>
+        <S ID="S-7385">The phrase pair could be memorized and translated as a unit, or the English translation could be composed from the translations of each Spanish unigram.</S>
+      </P>
+      <P>
+        <S ID="S-7386"><REF ID="R-29" RPTR="41">Zens et al. (2012)</REF> found that only 2% of phrase pairs in German-English, Czech-English, Spanish- English, and French-English phrase tables consist of multi-word source and target phrases and are non-compositional.</S>
+        <S ID="S-7387">That is, for these languages, the vast majority of phrase pairs in a given phrase table could be composed from smaller units.</S>
+        <S ID="S-7388">Our approach takes advantage of the fact that many phrases can be translated compositionally.</S>
+      </P>
+      <P>
+        <S ID="S-7389">We describe our approach in three parts.</S>
+        <S ID="S-7390">In Section 3.1, we begin by inducing translations for unknown unigrams.</S>
+        <S ID="S-7391">Then, in 3.2, we introduce our algorithm for composing phrase translations.</S>
+        <S ID="S-7392">In order to achieve a high recall in our set of hypothesis translations, we define compositionality more loosely than is typical.</S>
+        <S ID="S-7393">Finally, in 3.3, we use comparable corpora to prune the large set of hypothesis translations for each source phrase.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Unigram Translations</HEADER>
+        <P>
+          <S ID="S-7317">In any low resource setting, many word translations are likely to be unknown.</S>
+          <S ID="S-7318">Therefore, before moving to phrases, we use a bilingual lexicon induction technique to identify translations for unigrams.</S>
+          <S ID="S-7319">Specifically, because we assume a setting where we have some small amount of parallel data, we follow our prior work on supervised bilingual lexicon induction (Irvine and Callison- Burch, 2013b).</S>
+          <S ID="S-7320">We take examples of good translation pairs from our word aligned training data (described in Section 4) and use random word pairs as negative supervision.</S>
+          <S ID="S-7321">We use this supervision to learn a log-linear classifier that predicts whether a given word pair is a translation or not.</S>
+          <S ID="S-7322">We pair and score all source language unigrams in our tuning and test sets with target language unigrams that appear in our comparable corpora.</S>
+          <S ID="S-7323">Then, for each source language unigram, we use the log-linear model scores to rerank candidate target language unigram translations.</S>
+          <S ID="S-7324">As in our prior work, we include the following word pair features in our log-linear classifier: contextual similarity, temporal similarity, topic similarity, frequency similarity, and orthographic similarity.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Loosely Compositional Translations</HEADER>
+        <P>
+          <S ID="S-7325">We propose a novel technique for loosely composing phrasal translations from an existing dictionary of unigram translations and stop word lists.</S>
+          <S ID="S-7326">Given a source language phrase, our approach considers all combinations and all permutations of all unigram translations for each source phrase content word.</S>
+          <S ID="S-7327">We ignore stop words in the input source phrase and allow any number of stop words anywhere in the output target phrase.</S>
+          <S ID="S-7328">In order to make the enumeration efficient, we precompute an inverted index that maps sorted target</S>
+        </P>
+        <P>
+          <S ID="S-7329">A</S>
+        </P>
+        <P>
+          <S ID="S-7330">la casa linda</S>
+        </P>
+        <P>
+          <S ID="S-7331">Input: A set of source language phrases of interest, S, each consisting of a sequence of words s m 1 , s m 2 , ...s m i ; A list of all target language phrases, targetP hrases; Source and target stop word lists, Stop src and Stop trg; Set of unigram translations, t s m</S>
+        </P>
+        <P>
+          <S ID="S-7332">i</S>
+        </P>
+        <P>
+          <S ID="S-7333">, for all source language words s m i R Stop src; monolingual target language phrase frequencies, F req T ; Monolingual frequency threshold &#952; F reqT Output: @ S m P S, a set of candidate phrase translations, T1 m , T2 m , ...Tk m</S>
+        </P>
+        <P>
+          <S ID="S-7334">B</S>
+        </P>
+        <P>
+          <S ID="S-7335">C</S>
+        </P>
+        <P>
+          <S ID="S-7336">stop words removed</S>
+        </P>
+        <P>
+          <S ID="S-7337">casa linda</S>
+        </P>
+        <P>
+          <S ID="S-7338">Cartesian product&#8232; of unigram translations</S>
+        </P>
+        <P>
+          <S ID="S-7339">cute, house handsome, house house, pretty</S>
+        </P>
+        <P>
+          <S ID="S-7340">Inverted Index lookups</S>
+        </P>
+        <P>
+          <S ID="S-7341">pretty house</S>
+        </P>
+        <P>
+          <S ID="S-7342">the pretty house D a pretty house</S>
+        </P>
+        <P>
+          <S ID="S-7343">cute house house and handsome Figure 1: Example of loosely composed translations for the</S>
+        </P>
+        <P>
+          <S ID="S-7344">Spanish input in A, la casa linda.</S>
+          <S ID="S-7345">In B, we remove the stop word la.</S>
+          <S ID="S-7346">Then, in C, we enumerate the cartesian product of all unigram translations in the bilingual dictionary and sort the words within each alphabetically.</S>
+          <S ID="S-7347">Finally, we look up each list of words in C in the inverted index, and corresponding target phrases are enumerated in D.</S>
+          <S ID="S-7348">The inverted index contains all phrasal combinations and permutations of the word lists in C which also appear monolingually with some frequency and with, optionally, any number of stop words.</S>
+        </P>
+        <P>
+          <S ID="S-7349">language content words to sets of phrases containing those words in any order along with, optionally, any number of stop words.</S>
+          <S ID="S-7350">Our algorithm for composing candidate phrase translations is given in Algorithm 1, and an example translation is composed in Figure 1.</S>
+          <S ID="S-7351">Although in our experiments we compose translations for source phrases up to length three, the algorithm is generally applicable to any set of source phrases of interest.</S>
+        </P>
+        <P>
+          <S ID="S-7352">Algorithm 1 yields a set of target language translations for any source language phrase for which all content unigrams have at least one known translation.</S>
+          <S ID="S-7353">For most phrases, the resulting set of hypothesis translations is very large and the majority are incorrect.</S>
+          <S ID="S-7354">In an initial pruning step, we add a monolingual frequency cutoff to the composition algorithm and only add target phrases that have a frequency of at least &#952; F reqT to the inverted index.</S>
+          <S ID="S-7355">Doing so eliminates improbable target language constructions early on, for example house handsome her or cute a house.</S>
+        </P>
+        <P>
+          <S ID="S-7356">Construct TargetInvertedIndex: for T P targetP hrases do</S>
+        </P>
+        <P>
+          <S ID="S-7357">if F req T pT q &#283; &#952; F reqT then T 1 &#208;words t j P T if t j R Stop trg Tsorted 1 &#208; sortedpT 1 q append T to TargetInvertedIndex[Tsorted] 1</S>
+        </P>
+        <P>
+          <S ID="S-7358">end end</S>
+        </P>
+        <P>
+          <S ID="S-7359">for S m P S do S 1 &#208;words s m i P S m if s m i R Stop src Combs S 1 &#208; t s 1 1 &#346;</S>
+        </P>
+        <P>
+          <S ID="S-7360">ts 1 2</S>
+        </P>
+        <P>
+          <S ID="S-7361">&#346; ... &#346;</S>
+        </P>
+        <P>
+          <S ID="S-7362">ts 1 k</S>
+        </P>
+        <P>
+          <S ID="S-7363">T &#208; r s for c s 1 P Combs S 1 do</S>
+        </P>
+        <P>
+          <S ID="S-7364">c s 1 sorted &#208; sortedpc s 1q T &#208; T `TargetInvertedIndexpc s 1 sorted q end T m &#8220; T</S>
+        </P>
+        <P>
+          <S ID="S-7365">end</S>
+        </P>
+        <P>
+          <S ID="S-7366">Algorithm 1: Computing a set of candidate compositional phrase translations for each source phrase in the set S.</S>
+          <S ID="S-7367">An inverted index of target phrases is constructed that maps sorted lists of content words to phrases that contain those content words, as well as optionally any stop words, and have a frequency of at least &#952; F reqT .</S>
+          <S ID="S-7368">Then, for a given source phrase S m , stop words are removed from the phrase.</S>
+          <S ID="S-7369">Next, the cartesian product of all unigram translations is computed.</S>
+          <S ID="S-7370">Each element in the product is sorted and any corresponding phrases in the inverted index are added to the output.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Pruning Phrase Pairs Using Scores Derived from Comparable Corpora</HEADER>
+        <P>
+          <S ID="S-7371">We further prune the large, noisy set of hypothesized phrase translations before augmenting a seed translation model.</S>
+          <S ID="S-7372">To do so, we use a supervised setup very similar to that used for inducing unigram translations; we estimate a variety of signals that indicate translation equivalence, including temporal, topical, contextual, and string similarity.</S>
+          <S ID="S-7373">As we showed in <REF ID="R-13" RPTR="20">Klementiev et al. (2012)</REF>, such signals are effective for identifying phrase translations as well as unigram translations.</S>
+          <S ID="S-7374">We add ngram length, alignment, and unigram translation features to the set, listed in Appendix A.</S>
+        </P>
+        <P>
+          <S ID="S-7375">We learn a log-linear model for combining the features into a single score for predicting the quality of a given phrase pair.</S>
+          <S ID="S-7376">We extract training data from the seed translation model.</S>
+          <S ID="S-7377">We rank hypothesis translations for each source phrase using clas-</S>
+        </P>
+        <P>
+          <S ID="S-7378">sification scores and keep the top-k.</S>
+          <S ID="S-7379">We found that using a score threshold sometimes improves precision.</S>
+          <S ID="S-7380">However, as experiments below show, the recall of the set of phrase pairs is more important, and we did not observe improvements in translation quality when we used a score threshold.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experimental Setup</HEADER>
+      <P>
+        <S ID="S-7443">In all of our experiments, we assume that we have access to only a small parallel corpus.</S>
+        <S ID="S-7444">For our Spanish experiments, we randomly sample 2, 000 sentence pairs (about 57, 000 Spanish words) from the Spanish-English Europarl v5 parallel corpus (<REF ID="R-17" RPTR="26">Koehn, 2005</REF>).</S>
+        <S ID="S-7445">For Hindi, we use the parallel corpora released by <REF ID="R-22" RPTR="30">Post et al. (2012)</REF>.</S>
+        <S ID="S-7446">Again, we randomly sample 2, 000 sentence pairs from the training corpus (about 39, 000 Hindi words).</S>
+        <S ID="S-7447">We expect that this amount of parallel text could be compiled for a single text domain and any pair of modern languages.</S>
+        <S ID="S-7448">Additionally, we use approximately 2, 500 and 1, 000 single-reference parallel sentences each for tuning and testing our Spanish and Hindi models, respectively.</S>
+        <S ID="S-7449">Spanish tuning and test sets are newswire articles taken from the 2010 WMT shared task (<REF ID="R-00" RPTR="0">Callison-Burch et al., 2010</REF>).</S>
+        <S ID="S-7450">1 We use the Hindi development and testing splits released by <REF ID="R-22" RPTR="31">Post et al. (2012)</REF>.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Unigram Translations</HEADER>
+        <P>
+          <S ID="S-7394">Of the 16, 269 unique unigrams in the source side of our Spanish MT tuning and test sets, 73% are OOV with respect to our training corpus.</S>
+          <S ID="S-7395">21% of unigram tokens are OOV.</S>
+          <S ID="S-7396">For Hindi, 61% of the 8, 137 unique unigrams in the tuning and test sets are OOV with respect to our training corpus, and 18% of unigram tokens are OOV.</S>
+          <S ID="S-7397">However, because automatic word alignments estimated over the small parallel training corpora are noisy, we use bilingual lexicon induction to induce translations for all unigrams.</S>
+          <S ID="S-7398">We use the Wikipedia and online news web crawls datasets that we released in <REF ID="R-10" RPTR="14">Irvine and Callison-Burch (2013</REF><REF ID="R-11" RPTR="17">Irvine and Callison-Burch (2013</REF>b) to estimate similarity scores.</S>
+          <S ID="S-7399">Together, the two datasets contain about 900 million words of Spanish data and about 50 million words of Hindi data.</S>
+          <S ID="S-7400">For both languages, we limit the set of hypothesis target unigram translations to those that appear at least 10 times in our comparable corpora.</S>
+        </P>
+        <P>
+          <S ID="S-7401">We use 3, 000 high probability word translation</S>
+        </P>
+        <P>
+          <S ID="S-7402">1 news-test2008 plus news-syscomb2009 for tuning and</S>
+        </P>
+        <P>
+          <S ID="S-7403">newstest2009 for testing.</S>
+        </P>
+        <P>
+          <S ID="S-7404">pairs extracted from each parallel corpus as positive supervision and 9, 000 random word pairs as negative supervision.</S>
+          <S ID="S-7405">We use Vowpal Wabbit 2 for learning.</S>
+          <S ID="S-7406">The top-5 induced translations for each source language word are used as both a baseline set of new translations (Section 6.3) and for composing phrase translations.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Composing and Pruning Phrase Translations</HEADER>
+        <P>
+          <S ID="S-7407">There are about 183 and 66 thousand unique bigrams and trigrams in the Spanish and Hindi tuning and test sets, respectively.</S>
+          <S ID="S-7408">However, many of these phrases do not demand new hypothesis translations.</S>
+          <S ID="S-7409">We do not translate those which contain numbers or punctuation.</S>
+          <S ID="S-7410">Additionally, for Spanish, we exclude names, which are typically translated identically between Spanish and English.</S>
+          <S ID="S-7411">3 We exclude phrases which are sequences of stop words only.</S>
+          <S ID="S-7412">Additionally, we exclude phrases that appear more than 100 times in the small training corpus because our seed phrase table likely already contains high quality translations for them.</S>
+          <S ID="S-7413">Finally, we exclude phrases that appear fewer than 20 times in our comparable corpora as our features are unreliable when estimated over so few tokens.</S>
+          <S ID="S-7414">We hypothesize translations for the approximately 15 and 6 thousand Spanish and Hindi phrases, respectively, which meet these criteria.</S>
+          <S ID="S-7415">Our approach for inducing translations straightforwardly generalizes to any set of source phrases.</S>
+        </P>
+        <P>
+          <S ID="S-7416">In defining loosely compositional phrase translations, we use both the induced unigram dictionary (Section 3.1) and the dictionary extracted from the word aligned parallel corpus.</S>
+          <S ID="S-7417">We expand these dictionaries further by mapping unigrams to their five-character word prefixes.</S>
+          <S ID="S-7418">We use monolingual corpora of Wikipedia articles 4 to construct stop word lists, containing the most frequent 300 words in each language, and indexes of monolingual phrase frequencies.</S>
+          <S ID="S-7419">There are about 83 million unique phrases up to length three in the English Wikipedia.</S>
+          <S ID="S-7420">However, we ignore target phrases that appear fewer than three times, reducing this set to 10 million English phrases.</S>
+          <S ID="S-7421">On</S>
+        </P>
+        <P>
+          <S ID="S-7422">2 http://hunch.net/&#732;vw/, version 6.1.4. with</S>
+        </P>
+        <P>
+          <S ID="S-7423">standard learning parameters 3 Our names list comes from page titles of Spanish</S>
+        </P>
+        <P>
+          <S ID="S-7424">Wikipedia pages about people.</S>
+          <S ID="S-7425">We iterate through years, beginning with 1AD, and extract names from Wikipedia &#8216;born in&#8217; category pages, e.g. &#8216;2013 births,&#8217; or &#8216;Nacidos en 2013.&#8217; 4 All inter-lingually linked source language and English</S>
+        </P>
+        <P>
+          <S ID="S-7426">articles.</S>
+        </P>
+        <P>
+          <S ID="S-7427">average, our Spanish model yields 7, 986 English translations for each Spanish bigram, and 9, 231 for each trigram, or less than 0.1% of all possible candidate English phrases.</S>
+          <S ID="S-7428">Our Hindi model yields even fewer candidate English phrases, 826 for each bigram and 1, 113 for each trigram, on average.</S>
+          <S ID="S-7429">We use the same comparable corpora used for bilingual lexicon induction to estimate features over hypothesis phrase translations.</S>
+          <S ID="S-7430">The full feature set is listed in Appendix A.</S>
+          <S ID="S-7431">We extract supervision from the seed translation models by first identifying phrase pairs with multi-word source strings, that appear at least three times in the training corpus, and that are composeable using baseline model unigram translations and induced dictionaries.</S>
+          <S ID="S-7432">Then, for each language pair, we use the 3, 000 that have the highest ppf|eq scores as positive supervision.</S>
+          <S ID="S-7433">We randomly sample 9, 000 compositional phrase pairs from those not in each phrase table as negative supervision.</S>
+          <S ID="S-7434">Again, we use Vowpal Wabbit for learning a log linear model to score any phrase pair.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Machine Translation</HEADER>
+        <P>
+          <S ID="S-7435">We use GIZA++ to word align each training corpus.</S>
+          <S ID="S-7436">We use the Moses SMT framework (<REF ID="R-16" RPTR="25">Koehn et al., 2007</REF>) and the standard phrase-based MT feature set, including phrase and lexical translation probabilities and a lexicalized reordering model.</S>
+          <S ID="S-7437">When we augment our models with new translations, we use the average reordering scores over all bilingually estimated phrase pairs.</S>
+          <S ID="S-7438">We tune all models using batch MIRA (<REF ID="R-01" RPTR="1">Cherry and Foster, 2012</REF>).</S>
+          <S ID="S-7439">We average results over three tuning runs and use approximate randomization to measure statistical significance (<REF ID="R-02" RPTR="2">Clark et al., 2011</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-7440">For Spanish, we use a 5-gram language model trained on the English side of the complete Europarl corpus and for Hindi a 5-gram language model trained on the English side of the complete training corpus released by <REF ID="R-22" RPTR="32">Post et al. (2012)</REF>.</S>
+          <S ID="S-7441">We train our language models using SRILM with Kneser-Ney smoothing.</S>
+          <S ID="S-7442">Our baseline models use a phrase limit of three, and we augment them with translations of phrases up to length three in our experiments.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Oracle Experiment</HEADER>
+      <P>
+        <S ID="S-7451">Before moving to the results of our proposed approach for composing phrase translations, we present an oracle experiment to answer these research questions: Would a low resource translation model benefit from composing its unigram translations into phrases?</S>
+        <S ID="S-7452">Would this be further improved by adding unigram translations that are learned from monolingual texts?</S>
+        <S ID="S-7453">We answer these questions by starting with our lowresource Spanish-English and Hindi-English baselines and augmenting each with (1) phrasal translations composed from baseline model unigram translations, and (2) phrasal translations composed of a mix of baseline model unigram translations and the monolingually-induced unigrams.</S>
+      </P>
+      <P>
+        <S ID="S-7454">Figure 2 illustrates how our hallucinated phrasetable entries can result in improved translation quality for Spanish to English translation.</S>
+        <S ID="S-7455">Since the baseline model is trained from such a small amount of data, it typically translates individual words instead of phrases.</S>
+        <S ID="S-7456">In our augmented system, we compose a translation of was no one from habia nadie, since habia translates as was in the baseline model, nadie translates as one, and no is a stop word.</S>
+        <S ID="S-7457">We are able to monolingually-induce translations for the OOVs centros and electorales before composing the phrase translation polling stations for centros electorales.</S>
+        <S ID="S-7458">In our oracle experiments, composed translations are only added to the phrase table if they are contained in the reference.</S>
+        <S ID="S-7459">This eliminates the huge number of noisy translations that our compositional algorithm generates.</S>
+        <S ID="S-7460">We augment baseline models with translations for the same sets of source language phrases described in Section 4.</S>
+        <S ID="S-7461">We use GIZA++ to word align our tuning and test sets 5 and use a standard phrase pair extraction heuristic 6 to identify oracle phrase translations.</S>
+        <S ID="S-7462">We add oracle translations to each baseline model without bilingually estimated translation scores 7 because such scores are not available for our automatically induced translations.</S>
+        <S ID="S-7463">Instead, we score the oracle phrase pairs using the 30 new phrase table features described in Section 3.3.</S>
+      </P>
+      <P>
+        <S ID="S-7464">Table 1 shows the results of our oracle experiments.</S>
+        <S ID="S-7465">Augmenting the baselines with the subset of oracle translations which are composed given the unigram translations in the baseline models themselves (i.e. in the small training sets) yields</S>
+      </P>
+      <P>
+        <S ID="S-7466">5 For both languages, we learn an alignment over our tuning and test sets and complete parallel training sets.</S>
+        <S ID="S-7467">6 grow-diag-final 7 We use an indicator feature for distinguishing new composed translations from bilingually extracted phrase pairs.</S>
+      </P>
+      <P>
+        <S ID="S-7468">Baseline: not having dependent on the centros electorales .</S>
+      </P>
+      <P>
+        <S ID="S-7469">Input: no hab&#237;a nadie en los centros electorales .</S>
+      </P>
+      <P>
+        <S ID="S-7470">Hallucination Oracle: no was no one in the polling stations .</S>
+      </P>
+      <P>
+        <S ID="S-7471">original composeable&#8232; from original original composeable&#8232; from induced</S>
+      </P>
+      <P>
+        <S ID="S-7472">no hab&#237;a nadie en los centros electorales, which translates correctly as there was nobody at the voting offices.</S>
+        <S ID="S-7473">The full oracle is augmented with translations composed from the seed model as well as induced unigram translations.</S>
+        <S ID="S-7474">The phrase was no one is composeable from hab&#237;a nadie given the seed model.</S>
+        <S ID="S-7475">In contrast, the phrase polling stations is composeable from centros electorales using induced translations.</S>
+        <S ID="S-7476">For each translation, the phrase segmentations used by the decoder are highlighted.</S>
+      </P>
+      <P>
+        <S ID="S-7477">original</S>
+      </P>
+      <P>
+        <S ID="S-7478">baseline SMT model and composeable oracle translations with and without induced unigram translations.</S>
+      </P>
+      <P>
+        <S ID="S-7479">a BLEU score improvement of about 1.4 points for Spanish and about 0.6 for Hindi.</S>
+        <S ID="S-7480">This finding itself is noteworthy, and we investigated the reason for it.</S>
+        <S ID="S-7481">A representative example of a compositional oracle translation that was added to the Spanish model is para evitarlos, which translates as to prevent them.</S>
+        <S ID="S-7482">In the training corpus, para translates far more frequently as for than to.</S>
+        <S ID="S-7483">Thus, it is useful for the translation model to know that, in the context of evitarlos, para should translate as to and not for.</S>
+        <S ID="S-7484">Additionally, evitarlos was observed only translating as the unigram prevent.</S>
+        <S ID="S-7485">The small model fails to align the adjoined clitic los with its translation them.</S>
+        <S ID="S-7486">However, our loose definition of compositionality allows the English stop word them to appear anywhere in the target translation.</S>
+      </P>
+      <P>
+        <S ID="S-7487">In the first result, composeable translations do not include those that contain new, induced word translations.</S>
+        <S ID="S-7488">Using the baseline model and induced unigram translations to compose phrase translations results in a 2 and 1.6 BLEU point gain for Spanish and Hindi, respectively.</S>
+      </P>
+      <P>
+        <S ID="S-7489">The second column of Table 1 shows the results</S>
+      </P>
+      <P>
+        <S ID="S-7490">of augmenting the baseline models with the same oracle phrase pairs as well as the new features estimated over all phrase pairs.</S>
+        <S ID="S-7491">Although the features do not improve the performance of the baseline models, this diverse set of scores improves performance dramatically when new, oracle phrase pairs are added.</S>
+        <S ID="S-7492">Adding all oracle translations and the new feature set results in a total gain of about 2.6 BLEU points for Spanish and about 1.9 for Hindi.</S>
+        <S ID="S-7493">These gains are the maximum that we could hope to achieve by augmenting models with our hallucinated translations and new feature set.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Experimental Results</HEADER>
+      <P>
+        <S ID="S-7582"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>6.1 Unigram Translations</HEADER>
+        <P>
+          <S ID="S-7494">Table 2 shows examples of top ranked translations for several Spanish words.</S>
+          <S ID="S-7495">Although performance is generally quite good, we do observe some instances of false cognates, for example the top ranked translation for aburridos, which translates correctly as bored, is burritos.</S>
+          <S ID="S-7496">Using automatic word alignments as a reference, we find that 44% of Spanish tuning set unigrams have a correct translation in their top-10 ranked lists and 62% in the top-100.</S>
+          <S ID="S-7497">For Hindi, 31% of tuning set unigrams have a correct translation in their top-10 ranked lists and 43% in the top-100.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.2 Hallucinated Phrase Pairs</HEADER>
+        <P>
+          <S ID="S-7498">Before moving to end-to-end SMT experiments, we evaluate the goodness of the hallucinated and pruned phrase pairs themselves.</S>
+          <S ID="S-7499">In order to do so, we use the same set of oracle phrase translations described in Section 5.</S>
+          <S ID="S-7500">Table 3 shows the top three English translations for several Spanish phrases along with their model scores.</S>
+          <S ID="S-7501">Common, loose translations of some phrases are scored higher than less common but literal translations.</S>
+          <S ID="S-7502">For example, very obvi-</S>
+        </P>
+        <P>
+          <S ID="S-7503">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7504">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7505">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7506">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7507">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7508">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7509">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7510">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7511">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7512">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7513">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7514">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7515">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7516">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7517">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7518">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7519">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7520">&#9679; &#9679;</S>
+        </P>
+        <P>
+          <S ID="S-7521">ous scores higher than very evident as a translation of Spanish muy evidentes.</S>
+          <S ID="S-7522">Similarly, dutch minister is scored higher than netherlands minister as a translation for ministro neerland&#232;s.</S>
+        </P>
+        <P>
+          <S ID="S-7523">We use model scores to rerank candidate translations for each source phrase and keep the topk translations.</S>
+          <S ID="S-7524">Figure 3 shows the precision and type-based recall (the percent of source phrases for which at least one correct translation is generated) as we vary k for each language pair.</S>
+          <S ID="S-7525">At k &#8220; 1, precision and recall are about 27% for Spanish and about 25% for Hindi.</S>
+          <S ID="S-7526">8 At k &#8220; 200, recall increases to 57% for Spanish and precision drops to 2%.</S>
+          <S ID="S-7527">For Hindi, recall increases to 40% and precision drops to 1%.</S>
+          <S ID="S-7528">Moving from k &#8220; 1 to k &#8220; 200, precision drops at about the same rate for the two source languages.</S>
+          <S ID="S-7529">However, recall increases less for Hindi than for Spanish.</S>
+          <S ID="S-7530">We attribute this to two things.</S>
+          <S ID="S-7531">First, Hindi and English are less related than Spanish and English, and fewer phrases are translated compositionally.</S>
+          <S ID="S-7532">Our oracle experiments showed that there is less to gain in composing phrase translations for Hindi than for Spanish.</S>
+          <S ID="S-7533">Second, the accuracy of our induced unigram translations is lower for Hindi than it is for Spanish.</S>
+          <S ID="S-7534">Without accurate unigram translations, we are unable to compose high quality phrase translations.</S>
+        </P>
+        <P>
+          <S ID="S-7535">8 Since we are computing type-based recall, and at k=1,</S>
+        </P>
+        <P>
+          <S ID="S-7536">we produce exactly one translation for each source phrase, precision and recall are the same.</S>
+        </P>
+        <P>
+          <S ID="S-7537">Precision Precision</S>
+        </P>
+        <P>
+          <S ID="S-7538">0</S>
+        </P>
+        <P>
+          <S ID="S-7539">0</S>
+        </P>
+        <P>
+          <S ID="S-7540">13.47</S>
+        </P>
+        <P>
+          <S ID="S-7541">13.90 14.07 14.30</S>
+        </P>
+        <P>
+          <S ID="S-7542">8.49</S>
+        </P>
+        <P>
+          <S ID="S-7543">Recall</S>
+        </P>
+        <P>
+          <S ID="S-7544">(a) Spanish</S>
+        </P>
+        <P>
+          <S ID="S-7545">8.16</S>
+        </P>
+        <P>
+          <S ID="S-7546">8.86 8.89</S>
+        </P>
+        <P>
+          <S ID="S-7547">9.00</S>
+        </P>
+        <P>
+          <S ID="S-7548">0 10 20 30 40 50 60 70</S>
+        </P>
+        <P>
+          <S ID="S-7549">Recall</S>
+        </P>
+        <P>
+          <S ID="S-7550">9.04</S>
+        </P>
+        <P>
+          <S ID="S-7551">(b) Hindi</S>
+        </P>
+        <P>
+          <S ID="S-7552">top-k scored hallucinated translations.</S>
+          <S ID="S-7553">k varies from 1 to 200.</S>
+          <S ID="S-7554">Baseline model performance is shown with a red triangle.</S>
+        </P>
+        <P>
+          <S ID="S-7555">Because we hallucinate translations for source phrases that appear in the training data up to 100 times, our baseline models include some of the oracle phrase translations.</S>
+          <S ID="S-7556">Not surprisingly, the bilingually extracted phrase pairs have relatively high precision (81% and 40% for Spanish and Hindi, respectively) and low recall (6% and 15% for Spanish and Hindi, respectively).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>6.3 End-to-End Translation</HEADER>
+        <P>
+          <S ID="S-7557">Table 4 shows end-to-end translation BLEU score results (<REF ID="R-21" RPTR="29">Papineni et al., 2002</REF>).</S>
+          <S ID="S-7558">Our first baseline SMT models are trained using only 2, 000 parallel sentences and no new translation model features.</S>
+          <S ID="S-7559">Our Spanish baseline achieves a BLEU score of 13.47 and our Hindi baseline a BLEU score of 8.49.</S>
+          <S ID="S-7560">When we add the 30 new feature functions estimated over comparable monolingual corpora, performance is slightly lower, 13.35 for</S>
+        </P>
+        <P>
+          <S ID="S-7561">are augmented with monolingual phrase table features and then also with the top-5 induced translations for all OOV unigrams.</S>
+          <S ID="S-7562">Then, we append the top-k hallucinated phrase translations to the third baseline models.</S>
+          <S ID="S-7563">BLEU scores are averaged over three tuning runs.</S>
+          <S ID="S-7564">We measure the statistical significance of each +Phrase Trans model in comparison with the highest performing (bolded) baseline for each language; * indicates statistical significance with p &#259; 0.01.</S>
+        </P>
+        <P>
+          <S ID="S-7565">Spanish and 8.26 for Hindi.</S>
+          <S ID="S-7566">Our third baselines augment the second with unigram translations for all OOV tuning and test set source words using the bilingual lexicon induction techniques described in Section 3.1.</S>
+          <S ID="S-7567">We append the top-5 translations for each, 9 score both the original and the new phrase pairs with the new feature set, and retune.</S>
+          <S ID="S-7568">With these additional unigram translations, performance increases to 14.01 for Spanish and 8.31 for Hindi.</S>
+        </P>
+        <P>
+          <S ID="S-7569">We append the top-k composed translations for the source phrases described in Section 4 to the third baseline models.</S>
+          <S ID="S-7570">Both original and new phrase pairs are scored using the new feature set.</S>
+          <S ID="S-7571">BLEU score results are shown at different values of k along the precision-recall plots for each language pair in Figure 3 as well as in Table 4.</S>
+          <S ID="S-7572">We would expect that higher precision and higher recall would benefit end-to-end SMT.</S>
+          <S ID="S-7573">As usual, a tradeoff exists between precision and recall, however, in this case, improvements in recall outweigh the risk of a lower precision.</S>
+          <S ID="S-7574">As k increases, precision decreases but both recall and BLEU scores increase.</S>
+          <S ID="S-7575">For both Spanish and Hindi, BLEU score gains start to taper off at k values over 25.</S>
+        </P>
+        <P>
+          <S ID="S-7576">In additional experiments, we found that without the new features the same sets of hallucinated phrase pairs hurt performance slightly in comparison with the baseline augmented with unigram translations, and results don&#8217;t change as we vary k.</S>
+          <S ID="S-7577">10 Thus, the translation models are able to effectively use the higher recall sets of new phrase</S>
+        </P>
+        <P>
+          <S ID="S-7578">9 The same set used for composing phrase translations.</S>
+          <S ID="S-7579">10 For all values of k between 1 and 100, without the new</S>
+        </P>
+        <P>
+          <S ID="S-7580">features, BLEU scores are about 13.70 for Spanish</S>
+        </P>
+        <P>
+          <S ID="S-7581">pairs because we also augmented the models with 30 new feature functions, which help them distinguish good from bad translations.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Discussion</HEADER>
+      <P>
+        <S ID="S-7583">Our results showed that including a high recall set of &#8220;hallucinated&#8221; translations in our augmented phrase table successfully improved the quality of our machine translations.</S>
+        <S ID="S-7584">The algorithm that we proposed for hypothesizing translations is flexible, and in future work we plan to modify it slightly to output even more candidate translations.</S>
+        <S ID="S-7585">For example, we could retrieve target phrases which contain at least one source word translation instead of all.</S>
+        <S ID="S-7586">Alternatively, we could identify candidates using entirely different information, for example the monolingual frequency of a source and target word, instead of unigram translations.</S>
+        <S ID="S-7587">This type of inverted index may improve recall in the set of hypothesis phrase translations at the cost of generating a much bigger set for reranking.</S>
+        <S ID="S-7588">Our new phrase table features were informative in distinguishing correct from incorrect phrase translations, and they allowed us to make use of noisy but high recall supplemental phrase pairs.</S>
+        <S ID="S-7589">This is a critical result for research on identifying phrase translations from non-parallel text.</S>
+        <S ID="S-7590">We also believe that using fairly strong target (English) language models contributed to our models&#8217; ability to discriminate between good and bad hallucinated phrase pairs.</S>
+        <S ID="S-7591">We leave research on the influence of the language model in our setting to future work.</S>
+        <S ID="S-7592">In this work, we experimented with two language pairs, Spanish-English and Hindi-English.</S>
+        <S ID="S-7593">While Spanish and English are very closely related, Hindi and English are less related.</S>
+        <S ID="S-7594">Our oracle experiments showed potential for composing phrase translations for both language pairs, and, indeed, in our experiments using hallucinated phrase translations we saw significant translation quality gains for both.</S>
+        <S ID="S-7595">We expect that improving the quality of induced unigram translations will yield even more performance gains.</S>
+      </P>
+      <P>
+        <S ID="S-7596">The vast majority of prior work on low resource MT has focused on Spanish-English (<REF ID="R-08" RPTR="11">Haghighi et al., 2008</REF>; <REF ID="R-13" RPTR="21">Klementiev et al., 2012</REF>; <REF ID="R-24" RPTR="34">Ravi and Knight, 2011</REF>; <REF ID="R-05" RPTR="6">Dou and Knight, 2012</REF>; <REF ID="R-25" RPTR="36">Ravi, 2013</REF>; <REF ID="R-06" RPTR="8">Dou and Knight, 2013</REF>).</S>
+        <S ID="S-7597">Although such experiments serve as important proofs of concept, we found it important to also experiment with a more</S>
+      </P>
+      <P>
+        <S ID="S-7598">truly low resource language pair.</S>
+        <S ID="S-7599">The success of our approach that we have seen for Spanish and Hindi suggests that it is worth pursuing such directions for other even less related and resourced language pairs.</S>
+        <S ID="S-7600">In addition to language pair, text genre and the degree of looseness or literalness of given parallel corpora may also affect the amount of phrase translation compositionality.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>8 Related Work</HEADER>
+      <P>
+        <S ID="S-7601">Phrase-based SMT models estimated over very large parallel corpora are expensive to store and process.</S>
+        <S ID="S-7602">Prior work has reduced the size of SMT phrase tables in order to improve efficiency without the loss of translation quality (<REF ID="R-09" RPTR="12">He et al., 2009</REF>; <REF ID="R-12" RPTR="19">Johnson et al., 2007</REF>; <REF ID="R-29" RPTR="42">Zens et al., 2012</REF>).</S>
+        <S ID="S-7603">Typically, the goal of pruning is to identify and remove phrase pairs which are likely to be inaccurate, using either the scores and counts of a given pair itself or those relative to other phrase pairs.</S>
+        <S ID="S-7604">Our work, in contrast, focuses on low resource settings, where training data is limited and provides incomplete and unreliable scored phrase pairs.</S>
+        <S ID="S-7605">We begin by dramatically increasing the size of our SMT phrase table in order to expand its coverage and then use non-parallel data to rescore and filter the table.</S>
+        <S ID="S-7606">In the decipherment task, translation models are learned from comparable corpora without any parallel text (<REF ID="R-24" RPTR="35">Ravi and Knight, 2011</REF>; <REF ID="R-05" RPTR="7">Dou and Knight, 2012</REF>; <REF ID="R-25" RPTR="37">Ravi, 2013</REF>).</S>
+        <S ID="S-7607">In contrast, we begin with a small amount of parallel data and take a very different approach to learning translation models.</S>
+        <S ID="S-7608">In our prior work (Irvine and Callison- Burch, 2013b), we showed how effective even small amounts of bilingual data can be for learning translations from monolingual texts.</S>
+      </P>
+      <P>
+        <S ID="S-7609"><REF ID="R-07" RPTR="9">Garera and Yarowsky (2008)</REF> pivot through bilingual dictionaries in several language pairs to compose translations for compound words.</S>
+        <S ID="S-7610">Zhang and Zong (2013) construct a set of new, additional phrase pairs for the task of domain adaptation for machine translation.</S>
+        <S ID="S-7611">That work uses two dictionaries to bootstrap a set of phrase pair translations: one probabilistic dictionary extracted from 2 million words of bitext and one manually created new-domain dictionary of 140, 000 word translations.</S>
+        <S ID="S-7612">Our approach to the construction of new phrase pairs is somewhat similar to Zhang and Zong (2013), but we don&#8217;t rely on a very large manually generated dictionary.</S>
+        <S ID="S-7613">Additionally, we focus on the low resource language pair setting, where a large training corpus is not available.</S>
+      </P>
+      <P>
+        <S ID="S-7614"><REF ID="R-04" RPTR="4">Deng et al. (2008)</REF> work in a standard SMT setting but use a discriminative framework for extracting phrase pairs from parallel corpora.</S>
+        <S ID="S-7615">That approach yields a phrase table with higher precision and recall than the table extracted by standard world alignment based heuristics (<REF ID="R-20" RPTR="28">Och and Ney, 2003</REF>; <REF ID="R-15" RPTR="24">Koehn et al., 2003</REF>).</S>
+        <S ID="S-7616">The discriminative model combines features from word alignments and bilingual training data as well as information theoretic features estimated over monolingual data into a single log-linear model and then the phrase pairs are filtered using a threshold on model scores.</S>
+        <S ID="S-7617">The phrase pairs that it extracts are limited to those that appear in pairs of sentences in the parallel training data.</S>
+        <S ID="S-7618">Our work takes a similar approach to that of <REF ID="R-04" RPTR="5">Deng et al. (2008)</REF>, however, unlike that work, we hallucinate phrase pairs that did not appear in training data in order to augment the original, bilingually extracted phrase table.</S>
+      </P>
+      <P>
+        <S ID="S-7619">Other prior work has used comparable corpora to extract parallel sentences and phrases (<REF ID="R-19" RPTR="27">Munteanu and Marcu, 2006</REF>; <REF ID="R-28" RPTR="40">Smith et al., 2010</REF>).</S>
+        <S ID="S-7620">Such efforts are orthogonal to our approach.</S>
+        <S ID="S-7621">We use parallel corpora, when available, and hallucinates phrase translations without assuming any parallel text in our comparable corpora.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>9 Conclusions</HEADER>
+      <P>
+        <S ID="S-7622">We showed that &#8220;hallucinating&#8221; phrasal translations can significantly improve machine translation performance in low resource conditions.</S>
+        <S ID="S-7623">Our hallucinated translations are composed from unigram translations.</S>
+        <S ID="S-7624">The translations are low precision but high recall.</S>
+        <S ID="S-7625">We countered this by introducing new feature functions and pruning aggressively.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-7626">This material is based on research sponsored by DARPA under contract HR0011-09-1-0044 and by the Johns Hopkins University Human Language Technology Center of Excellence.</S>
+      <S ID="S-7627">The views and conclusions contained in this publication are those of the authors and should not be interpreted as representing official policies or endorsements of DARPA or the U.S. Government.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Chris Callison-Burch</RAUTHOR>
+      <REFTITLE>Findings of the 2010 joint workshop on statistical machine translation and metrics for machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Colin Cherry</RAUTHOR>
+      <REFTITLE>Batch tuning strategies for statistical machine translation.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Jonathan H Clark</RAUTHOR>
+      <REFTITLE>Better hypothesis testing for statistical machine translation: controlling for optimizer instability.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Hal Daum&#233;</RAUTHOR>
+      <REFTITLE>Domain adaptation for machine translation by mining unseen words.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>Phrase table training for precision and recall: What makes a good phrase and a good phrase pair?</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Qing Dou</RAUTHOR>
+      <REFTITLE>Large scale decipherment for out-of-domain machine translation.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Qing Dou</RAUTHOR>
+      <REFTITLE>Dependencybased decipherment for resource-limited machine translation.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Nikesh Garera</RAUTHOR>
+      <REFTITLE>Translating compounds by learning component gloss translation models via multiple languages.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Aria Haghighi</RAUTHOR>
+      <REFTITLE>Learning bilingual lexicons from monolingual corpora.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Zhongjun He</RAUTHOR>
+      <REFTITLE>Discarding monotone composed rule for hierarchical phrase-based statistical machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Ann Irvine</RAUTHOR>
+      <REFTITLE>Combining bilingual and comparable corpora for low resource machine translation.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Ann Irvine</RAUTHOR>
+      <REFTITLE>Supervised bilingual lexicon induction with multiple monolingual signals.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Howard Johnson</RAUTHOR>
+      <REFTITLE>Improving translation quality by discarding most of the phrasetable.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Alex Klementiev</RAUTHOR>
+      <REFTITLE>Toward statistical machine translation without parallel corpora.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Learning a translation lexicon from monolingual corpora.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: Open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Europarl: A parallel corpus for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Prasanth Kolachina</RAUTHOR>
+      <REFTITLE>Prediction of learning curves in machine translation.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Dragos Munteanu</RAUTHOR>
+      <REFTITLE>Extracting parallel sub-sentential fragments from non-parallel corpora.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Salim Roukos Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Matt Post</RAUTHOR>
+      <REFTITLE>Constructing parallel corpora for six indian languages via crowdsourcing.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Reinhard Rapp</RAUTHOR>
+      <REFTITLE>Identifying word translations in non-parallel texts.</REFTITLE>
+      <DATE>1995</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Sujith Ravi</RAUTHOR>
+      <REFTITLE>Deciphering foreign language.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Sujith Ravi</RAUTHOR>
+      <REFTITLE>Scalable decipherment for machine translation via hash sampling.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Majid Razmara</RAUTHOR>
+      <REFTITLE>Graph propagation for paraphrasing out-of-vocabulary words in statistical machine translation.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Charles Schafer</RAUTHOR>
+      <REFTITLE>Inducing translation lexicons via diverse similarity measures and bridge languages.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Jason R Smith</RAUTHOR>
+      <REFTITLE>Extracting parallel sentences from comparable corpora using document level alignment.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR>Richard Zens</RAUTHOR>
+      <REFTITLE>A systematic comparison of phrase table pruning techniques.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

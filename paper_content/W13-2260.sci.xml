@@ -1,0 +1,955 @@
+<PAPER>
+  <FILENO/>
+  <TITLE></TITLE>
+  <AUTHORS/>
+  <ABSTRACT/>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-55084">In statistical machine translation (SMT), optimisation &#8212; the task of searching for an optimum translation &#8212; is performed over a high-complexity distribution defined by the intersection between a translation hypergraph and a target language model (LM).</S>
+        <S ID="S-55085">This distribution is too complex to be represented exactly and one typically resorts to approximation techniques such as beam-search (Koehn et al., 2003) and cube-pruning (Chiang, 2007), where maximisation is performed over a pruned representation of the full distribution.</S>
+      </P>
+      <P>
+        <S ID="S-55086">Often, rather than finding a single optimum, one is really interested in obtaining a set of probabilistic samples from the distribution.</S>
+        <S ID="S-55087">This is the case for minimum error rate training (Och, 2003; Watanabe et al., 2007), minimum risk training (Smith and Eisner, 2006) and minimum risk decoding (Kumar and Byrne, 2004).</S>
+        <S ID="S-55088">Due to the additional computational challenges posed by sampling, n-best lists, a by-product of optimisation, are typically used as approximation to true probabilistic samples.</S>
+        <S ID="S-55089">A known issue with n-best lists is that they tend to be clustered around only one mode of the distribution.</S>
+        <S ID="S-55090">A more direct procedure is to attempt to directly draw samples from the underlying distribution rather than rely on n-best list approximations (Arun et al., 2009; Blunsom and Osborne, 2008).</S>
+      </P>
+      <P>
+        <S ID="S-55091">OS &#8727; (Dymetman et al., 2012a) is a recent approach that stresses a unified view between the two types of inference, optimisation and sampling.</S>
+        <S ID="S-55092">In this view, rather than resorting to pruning in order to cope with the tractability issues, one upperbounds the complex goal distribution with a simpler &#8220;proposal&#8221; distribution for which dynamic programming is feasible.</S>
+        <S ID="S-55093">This proposal is incrementally refined to be closer to the goal until the maximum is found, or until the sampling performance exceeds a certain level.</S>
+      </P>
+      <P>
+        <S ID="S-55094">This paper applies the OS &#8727; approach to the problem of inference in hierarchical SMT (Chiang, 2007).</S>
+        <S ID="S-55095">In a nutshell, the idea is to replace the intractable problem of intersecting a contextfree grammar with a full language model by the tractable problem of intersecting it with a simplified, optimistic version of this LM which &#8220;forgets&#8221; parts of n-gram contexts, and to incrementally add more context based on evidence of the need to do so.</S>
+        <S ID="S-55096">Evidence is gathered by optimising or sampling from the tractable proxy distribution and focussing on the most serious over-optimistic estimates relative to the goal distribution.</S>
+      </P>
+      <P>
+        <S ID="S-55097">Our main contribution is to provide an exact optimiser/sampler for hierarchical SMT that is efficient in exploring only a small fraction of the space of n-grams involved in a full intersection.</S>
+        <S ID="S-55098">Although at this stage our experiments are limited to short sentences, they provide insights on the behavior of the technique and indicate directions towards a more efficient implementation within the same paradigm.</S>
+      </P>
+      <P>
+        <S ID="S-55099">The paper is organized as follows: &#167;2 provides background on OS &#8727; and hierarchical translation; &#167;3 describes our approach to exact inference in SMT; in &#167;4 the experimental setup is presented and findings are discussed; &#167;5 discusses related work, and &#167;6 concludes.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Background</HEADER>
+      <P>
+        <S ID="S-55147"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 OS &#8727;</HEADER>
+        <P>
+          <S ID="S-55100">The OS &#8727; approach (Dymetman et al., 2012a; Dymetman et al., 2012b) proposes a unified view of exact inference in sampling and optimisation, where the two modalities are seen as extremes in a continuum of inference tasks in L p spaces (Rudin, 1987), with sampling associated with the L 1 norm, and optimisation with the L &#8734; norm.</S>
+          <S ID="S-55101">The objective function p, over which inference needs to be performed, is a complex non-negative function over a discrete or continuous space X, which defines an unnormalised distribution over X.</S>
+          <S ID="S-55102">The goal is to optimise or sample relative to p &#8212; where sampling is interpreted in terms of the normalised distribution &#175;p(.</S>
+          <S ID="S-55103">) = p(.</S>
+          <S ID="S-55104">)/ &#8747; X p(x)dx.</S>
+        </P>
+        <P>
+          <S ID="S-55105">Directly optimising or sampling from p is unfeasible; however, it is possible to define an (unnormalized) distribution q of lower complexity than p, which upper-bounds p everywhere (ie.</S>
+          <S ID="S-55106">p(x) &#8804; q(x), &#8704;x &#8712; X), and from which it is feasible to optimise or sample directly.</S>
+          <S ID="S-55107">Sampling is performed through rejection sampling: first a sample x is drawn from q, and then x is accepted or rejected with probability given by the ratio r = p(x)/q(x), which is less than 1 by construction.</S>
+          <S ID="S-55108">Accepted x&#8217;s can be shown to produce an exact sample from p (Robert and Casella, 2004).</S>
+          <S ID="S-55109">When the sample x from q is rejected, it is used as a basis for &#8220;refining&#8221; q into a slightly more complex q &#8242; , where p &#8804; q &#8242; &#8804; q is still an upper-bound to p.</S>
+          <S ID="S-55110">This &#8220;adaptive rejection sampling&#8221; technique incrementally improves the rate of acceptance, and is pursued until some rate above a given threshold is obtained, at which point one stops refining and uses the current proposal to obtain further exact samples from p.</S>
+        </P>
+        <P>
+          <S ID="S-55111">In the case of optimisation, one finds the maximum x relative to q, and again computes the ratio r = p(x)/q(x).</S>
+          <S ID="S-55112">If this ratio equals 1, then it is easy to show that x is the actual maximum from p.</S>
+          <S ID="S-55113">1 Otherwise we refine the proposal in a similar way to the sampling case, continuing until we find a ratio equal to 1 (or very close to 1 if we are willing to accept an approximation to the maximum).</S>
+          <S ID="S-55114">For finite spaces X, this optimisation technique is argued to be a generalisation of A &#8727; .</S>
+        </P>
+        <P>
+          <S ID="S-55115">An application of the OS &#8727; technique to sampling/optimisation with High-Order HMM&#8217;s is described in Carter et al. (2012) and provides background for this paper.</S>
+          <S ID="S-55116">In that work, while the highorder HMM corresponds to an intractable goal distribution, it can be upper-bounded by a sequence of tractable distributions for which optimisers and samplers can be obtained through standard dynamic programming techniques.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Hierarchical Translation</HEADER>
+        <P>
+          <S ID="S-55117">An abstract formulation of the decoding process for hierarchical translation models such as that of Chiang (2007) can be expressed as a sequence of three steps.</S>
+          <S ID="S-55118">In a first step, a translation model G, represented as a weighted synchronous contextfree grammar (SCFG) (Chiang, 2005), is applied to (in other words, intersected with) the source sentence f to produce a weighted context-free grammar G(f) over the target language.</S>
+          <S ID="S-55119">2 In a second step, G(f) is intersected with a weighted finitestate automaton A representing the target language model, resulting in a weighted context-free grammar G &#8242; (f) = G(f) &#8745; A.</S>
+          <S ID="S-55120">In a final step, a dynamic programming procedure (see &#167;2.4) is applied to find the maximum derivation x in G &#8242; (f), and the sequence of leaves of yield(x) is the result translation.</S>
+        </P>
+        <P>
+          <S ID="S-55121">While this formulation gives the general principle, already mentioned in Chiang (2007), most implementations do not exactly follow these steps or use this terminology.</S>
+          <S ID="S-55122">In practice, the closest approach to this abstract formulation is that of Dyer (2010) and the related system cdec (Dyer et al., 2010); we follow a similar approach here.</S>
+        </P>
+        <P>
+          <S ID="S-55123">1 This is because if x &#8242; was such that p(x &#8242; ) &gt; p(x), then</S>
+        </P>
+        <P>
+          <S ID="S-55124">q(x &#8242; ) &#8805; p(x &#8242; ) &gt; p(x) = q(x), and hence x would not be a maximum for q, a contradiction.</S>
+          <S ID="S-55125">2 G(f) is thus a compact representation of a forest over</S>
+        </P>
+        <P>
+          <S ID="S-55126">target sequences, and is equivalent to a hypergraph, using different terminology.</S>
+        </P>
+        <P>
+          <S ID="S-55127">Whatever the actual implementation chosen, all approaches face a common problem: the complexity of the intersection G &#8242; (f) = G(f) &#8745; A increases rapidly with the order of the language model, and can become unwieldy for moderate-length input sentences even with a bigram model.</S>
+          <S ID="S-55128">In order to address this problem, most implementations employ variants of a technique called cube-pruning (Chiang, 2007; Huang and Chiang, 2007), where the cells constructed during the intersection process retain only a k-best list of promising candidates.</S>
+          <S ID="S-55129">This is an approximation technique, related to beam-search, which performs well in practice, but is not guaranteed to find the actual optimum.</S>
+        </P>
+        <P>
+          <S ID="S-55130">In the approach presented here &#8212; described in detail in &#167;3 &#8212; we do not prune the search space.</S>
+          <S ID="S-55131">While we do construct the full initial grammar G(f), we proceed by incrementally intersecting it with simple automata associated with upperbounds of A, for which the intersection is tractable.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Earley Intersection</HEADER>
+        <P>
+          <S ID="S-55132">In their classical paper Bar-Hillel et al. (1961) showed that the intersection of a CFG with a FSA is a CFG, and Billot and Lang (1989) were possibly the first to notice the connection of this construct with chart-parsing.</S>
+          <S ID="S-55133">In general, parsing with a CFG can be seen as a special case of intersection, with the input sequence represented as a &#8220;flat&#8221; (linear chain) automaton, and this insight allows to generalise various parsing algorithms to corresponding intersection algorithms.</S>
+          <S ID="S-55134">One such algorithm, for weighted context-free grammars and automata, inspired by the CKY parsing algorithm, is presented in Nederhof and Satta (2008).</S>
+          <S ID="S-55135">The algorithm that we are using is different; it is inspired by Earley parsing, and was introduced in chapter 2 of Dyer (2010).</S>
+          <S ID="S-55136">The advantage of Dyer&#8217;s &#8220;Earley Intersection&#8221; algorithm is that it combines top-down predictions with bottom-up completions.</S>
+          <S ID="S-55137">The algorithm thus avoids constructing many non-terminals that may be justified from the bottom-up perspective, but can never be &#8220;requested&#8221; by a top-down derivation, and would need to be pruned in a second pass.</S>
+          <S ID="S-55138">Our early experiments showed an important gain in intermediary storage and in overall time by using this Earley-based technique as opposed to a CKY-based technique.</S>
+        </P>
+        <P>
+          <S ID="S-55139">We do not describe the Earley Intersection algorithm in detail here, but refer to Dyer (2010), which we follow closely.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.4 Optimisation and Sampling from a WCFG</HEADER>
+        <P>
+          <S ID="S-55140">Optimisation in a weighted CFG (WCFG) 3 , that is, finding the maximum derivation, is well studied and involves a dynamic programming procedure that assigns in turn to each nonterminal, according to a bottom-up traversal regime, a maximum derivation along with its weight, up to the point where a maximum derivation is found for the initial nonterminal in the grammar.</S>
+          <S ID="S-55141">This can be seen as working in the max-times semiring, where the weight of a derivation is obtained through the product of the weights of its sub-derivations, and where the weight associated with a nonterminal is obtained by maximising over the different derivations rooted in that nonterminal.</S>
+        </P>
+        <P>
+          <S ID="S-55142">The case of sampling can be handled in a very similar way, by working in the sum-times instead of the max-times semiring.</S>
+          <S ID="S-55143">Here, instead of maximising over the weights of the competing derivations rooted in the same nonterminal, one sums over these weights.</S>
+          <S ID="S-55144">By proceeding in the same bottom-up way, one ends with an accumulation of all the weights on the initial nonterminal (this can also be seen as the partition function associated with the grammar).</S>
+          <S ID="S-55145">An efficient exact sampler is then obtained by starting at the root nonterminal, randomly selecting an expansion proportionally to the weight of this expansion, and iterating in a topdown way.</S>
+          <S ID="S-55146">This process is described in more detail in section 4 of Johnson et al. (2007), for instance.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Approach</HEADER>
+      <P>
+        <S ID="S-55309">The complexity of building the full intersection G(f) &#8745; A, when A represents a language model of order n, is related to the fact that the number of states of A grows exponentially with n, and that each nonterminal N in G(f) tends to generate in the grammar G &#8242; (f) many indexed nonterminals of the form (i, N, j), where i, j are states of A and the nonterminal (i, N, j) can be interpreted as an N connecting an i state to a j state.</S>
+      </P>
+      <P>
+        <S ID="S-55310">In our approach, instead of explicitly constructing the full intersection G(f) &#8745; A, which, using the notation of &#167;2.1, is identified with the unnormalised goal distribution p(x), we incrementally produce a sequence of &#8220;proposal&#8221; grammars q (t) , which all upper-bound p, where q (0) = G(f) &#8745; A (0) , ..., q (t+1) = q (t) &#8745; A (t) , etc.</S>
+        <S ID="S-55311">Here A (0) is</S>
+      </P>
+      <P>
+        <S ID="S-55312">3 Here the CFG is assumed to be acyclic, which is typically</S>
+      </P>
+      <P>
+        <S ID="S-55313">the case in translation applications.</S>
+      </P>
+      <P>
+        <S ID="S-55314">an optimistic, low complexity, &#8220;unigram&#8221; version of the automaton A, and each increment A (t) is a small automaton that refines q (t) relative to some specific k-gram context (i.e., sequence of k words) not yet made explicit in the previous increments, where k takes some value between 1 and n.</S>
+        <S ID="S-55315">This process produces a sequence of grammars q (t) such that q (0) (.</S>
+        <S ID="S-55316">) &#8805; q (1) (.</S>
+        <S ID="S-55317">) &#8805; q (2) (.</S>
+        <S ID="S-55318">) &#8805; ... &#8805; p(.</S>
+        <S ID="S-55319">).</S>
+      </P>
+      <P>
+        <S ID="S-55320">In the limit &#8898; M</S>
+      </P>
+      <P>
+        <S ID="S-55321">t=0 A(t) = A for some large M, so</S>
+      </P>
+      <P>
+        <S ID="S-55322">that we are in principle able to reconstruct the full intersection p(.</S>
+        <S ID="S-55323">) = q (M) = G(f)&#8745;A (0) &#8745;...&#8745;A (M) in finite time.</S>
+        <S ID="S-55324">In practice our actual process stops much earlier: in optimisation, when the value of the maximum derivation x &#8727; t relative to q (t) becomes equal to its value according to the full language model, in sampling when the acceptance rate of samples from q (t) exceeds a certain threshold.</S>
+        <S ID="S-55325">The process is detailed in what follows.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 OS &#8727; for Hierarchical Translation</HEADER>
+        <P>
+          <S ID="S-55148">Our application of OS &#8727; to hierarchical translation is illustrated in Algorithm 1, with the two modes, optimisation and sampling, made explicit and shown side-by-side to stress the parallelism.</S>
+        </P>
+        <P>
+          <S ID="S-55149">On line 1, we initialise the time step to 0, and for sampling we also initialise the current acceptance rate (AR) to 0.</S>
+          <S ID="S-55150">On line 2, we initialise the initial proposal grammar q (0) , where A (0) is detailed in &#167;3.2.</S>
+          <S ID="S-55151">On line 3, we start a loop: in optimisation we stop when we have found an x that is accepted, meaning that the maximum has been found; in sampling, we stop when the estimated acceptance rate (AR) of the current proposal q (t) exceeds a certain threshold (e.g. 20%) &#8212; this AR can be roughly estimated by observing how many of the last (say) one hundred samples from the proposal have been accepted, and tends to reflect the actual acceptance rate obtained by using q (t) without further refinements.</S>
+          <S ID="S-55152">On line 4, in optimisation, we compute the argmax x from the proposal, and in sampling we draw a sample x from the proposal.</S>
+          <S ID="S-55153">4 On line 5, we compute the ratio r = p(x)/q (t) (x); by construction q (t) is an optimistic version of p, thus r &#8804; 1.</S>
+        </P>
+        <P>
+          <S ID="S-55154">On line 6, in optimisation we accept x if the ratio is equal to 1, in which case we have found the maximum, and in sampling we accept x with probability r, which is a form of adaptive rejection sampling and guarantees that accepted sam-</S>
+        </P>
+        <P>
+          <S ID="S-55155">4 Following the OS &#8727; approach, taking an argmax is actually</S>
+        </P>
+        <P>
+          <S ID="S-55156">assimilated to an extreme form of sampling, with an L &#8734; space taking the place of an L 1 space.</S>
+        </P>
+        <P>
+          <S ID="S-55157">ples form exact samples from p; see (Dymetman et al., 2012a).</S>
+        </P>
+        <P>
+          <S ID="S-55158">If x was rejected (line 7), we then (lines 8, 9) refine q (t) into a q (t+1) such that p(.</S>
+          <S ID="S-55159">) &#8804; q (t+1) (.</S>
+          <S ID="S-55160">) &#8804; q (t) (.</S>
+          <S ID="S-55161">) everywhere.</S>
+          <S ID="S-55162">This is done by defining the incremental automaton A (t+1) on the basis of x and q (t) , as will be detailed below, and by intersecting this automaton with q (t)</S>
+        </P>
+        <P>
+          <S ID="S-55163">Finally, on line 11, in optimisation we return the x which has been accepted, namely the maximum of p, and in sampling we return the list of already accepted x&#8217;s, which form an exact sample from p, along with the current q (t) , which can be used as a sampler to produce further exact samples with an acceptance rate performance above the predefined threshold.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Incremental refinements</HEADER>
+        <P>
+          <S ID="S-55164">Initial automatonA (0) This deterministic automaton is an &#8220;optimistic&#8221; version of A which only records unigram information.</S>
+          <S ID="S-55165">A (0) has only one state q 0 , which is both initial and final.</S>
+          <S ID="S-55166">For each word a of the target language it has a transition (q 0 , a, q 0 ) whose weight is denoted by w 1 (a).</S>
+          <S ID="S-55167">This weight is called the &#8220;max-backoff unigram weight&#8221; (Carter et al., 2012) and it is defined as:</S>
+        </P>
+        <P>
+          <S ID="S-55168">w 1 (a) &#8801; max p lm(a|h),</S>
+        </P>
+        <P>
+          <S ID="S-55169">h</S>
+        </P>
+        <P>
+          <S ID="S-55170">where p lm (a|h) is the conditional language model probability of a relative to the history h, and where the maximum is taken over all possible histories, that is, over all possible sequence of target words that might precede a.</S>
+        </P>
+        <P>
+          <S ID="S-55171">Max-backoffs Following Carter et al. (2012), for any language model of finite order, the unigram max-backoff weights w 1 (a) can be precomputed in a &#8220;Max-ARPA&#8221; table, an extension of the ARPA format (Jurafsky and Martin, 2000) for the target language model, which can be precomputed on the basis of the standard ARPA table.</S>
+        </P>
+        <P>
+          <S ID="S-55172">From the Max-ARPA table one can also directly compute the following &#8220;max-backoff weights&#8221;: w 2 (a|a &#8722;1 ), w 3 (a|a &#8722;2 a &#8722;1 ), ..., which are defined by:</S>
+        </P>
+        <P>
+          <S ID="S-55173">w 2 (a|a &#8722;1 ) &#8801; max</S>
+        </P>
+        <P>
+          <S ID="S-55174">h p lm(a|h, a &#8722;1 )</S>
+        </P>
+        <P>
+          <S ID="S-55175">w 3 (a|a &#8722;2 a &#8722;1 ) &#8801; max</S>
+        </P>
+        <P>
+          <S ID="S-55176">h p lm(a|h, a &#8722;2 a &#8722;1 )</S>
+        </P>
+        <P>
+          <S ID="S-55177">...</S>
+        </P>
+        <P>
+          <S ID="S-55178">where the maximum is taken over the part of the history which is not explicitely indicated.</S>
+        </P>
+        <P>
+          <S ID="S-55179">Note that: (i) if the underlying language model is, say, a trigram model, then w 3 (a|a &#8722;2 a &#8722;1 ) is simply p lm (a|a &#8722;2 a &#8722;1 ), and similarly for an underlying model of order k in general, and (ii) w 2 (a|a &#8722;1 ) = max a&#8722;2 w 3 (a|a &#8722;2 a &#8722;1 ) and w 1 (a) = max a&#8722;1 w 2 (a|a &#8722;1 ).</S>
+        </P>
+        <P>
+          <S ID="S-55180">Incremental automata A (t) The weight assigned to any target sentence by A (0) is larger or equal to its weight according to A.</S>
+          <S ID="S-55181">Therefore, the initial grammar q (0) = G(f) &#8745; A (0) is optimistic relative to the actual grammar p = G(f) &#8745; A: for any derivation x in p, we have p(x) &#8804; q (0) (x).</S>
+          <S ID="S-55182">We can then apply the OS &#8727; technique with q (0) .</S>
+          <S ID="S-55183">In the case of optimisation, this means that we find the maximum derivation x from q (0) .</S>
+          <S ID="S-55184">By construction, with y = yield(x), we have A (0) (y) &#8805; A(y).</S>
+          <S ID="S-55185">If the two values are equal, we have found the maximum, 5 otherwise there must be a word y i in the sequence y1 m = y for which p lm (y i |y1 i&#8722;1 ) is strictly smaller than w 1 (y i ).</S>
+          <S ID="S-55186">Let us take among such words the one for which the ratio &#945; = w 2 (y i |y i&#8722;1 )/w 1 (y i ) &#8804; 1 is the smallest, and for convenience let us rename b = y i&#8722;1 , a = y i .</S>
+          <S ID="S-55187">We then define the (deterministic) automaton A (1) as illustrated in the following figure:</S>
+        </P>
+        <P>
+          <S ID="S-55188">else:1</S>
+        </P>
+        <P>
+          <S ID="S-55189">b:1 0 1 b:1 else:1</S>
+        </P>
+        <P>
+          <S ID="S-55190">Here the state 0 is both initial and final, and the state 1 is final; all edges carry a (multiplicative) weight equal to 1, except edge (1, a, 0), which carries the weight &#945;.</S>
+          <S ID="S-55191">We use the abbreviation &#8220;else&#8221; to refer to any label other than b when starting from 0, and other than b or a when starting from 1.</S>
+        </P>
+        <P>
+          <S ID="S-55192">5 This case is very unlikely with A (0) , but helps introduce</S>
+        </P>
+        <P>
+          <S ID="S-55193">the general case.</S>
+        </P>
+        <P>
+          <S ID="S-55194">a:&#945;</S>
+        </P>
+        <P>
+          <S ID="S-55195">It is easy to check that this automaton assigns to any word sequence y a weight equal to &#945; k , where k is the number of occurrences of b a in y.</S>
+          <S ID="S-55196">In particular, if y is such that y i&#8722;1 = b, y i = a, then the transition in (the deterministic automaton) A (0) &#8745; A (1) that consumes y i carries the weight &#945; w 1 (a), in other words, the weight w 2 (a|b).</S>
+          <S ID="S-55197">Thus the new proposal grammar q (1) = q (0) &#8745; A (1) has now &#8220;incorporated&#8221; knowledge of the bigram a-in-thecontext-b, at the cost of some increase in its complexity.</S>
+          <S ID="S-55198">6</S>
+        </P>
+        <P>
+          <S ID="S-55199">The general procedure for choosing A (t+1) follows the same pattern.</S>
+          <S ID="S-55200">We find the max derivation x in q (t) along with its yield y; if p(x) = q (t) (x), we stop and output x; otherwise we find some subsequence y i&#8722;m&#8722;1 , y i&#8722;m , ..., y i such that the knowledge of the n-gram y i&#8722;m , ..., y i has already been registered in q (t) , but not that of the n-gram y i&#8722;m&#8722;1 , y i&#8722;m , ..., y i , and we define an automaton A (t+1) which assign to a sequence a weight &#945; k , where</S>
+        </P>
+        <P>
+          <S ID="S-55201">&#945; = w m+1(y i |y i&#8722;m&#8722;1 , y i&#8722;m , ..., y i&#8722;1 ) , w m (y i |y i&#8722;m , ..., y i&#8722;1 )</S>
+        </P>
+        <P>
+          <S ID="S-55202">and where k is the number of occurrences of y i&#8722;m&#8722;1 , y i&#8722;m , ..., y i in the sequence.</S>
+          <S ID="S-55203">7</S>
+        </P>
+        <P>
+          <S ID="S-55204">We note that we have p &#8804; q (t+1) &#8804; q (t) everywhere, and also that the number of possible refinement operations is bounded, because at some point we would have expanded all contexts to their maximum order, at which point we would have reproduced p(.</S>
+          <S ID="S-55205">) on the whole space X of possible</S>
+        </P>
+        <P>
+          <S ID="S-55206">6 Note that without further increasing q (1) &#8217;s complexity one</S>
+        </P>
+        <P>
+          <S ID="S-55207">can incorporate knowledge about all bigrams sharing the prefix b.</S>
+          <S ID="S-55208">This is because A (1) does not need additional states to account for different continuations of the context b, all we need is to update the weights of the transitions leaving state 1 appropriately.</S>
+          <S ID="S-55209">More generally, it is not more costly to account for all n-grams prefixed by the same context of n &#8722; 1 words than it is to account for only one of them.</S>
+          <S ID="S-55210">7 Building A (t+1) is a variant of the standard construction</S>
+        </P>
+        <P>
+          <S ID="S-55211">for a &#8220;substring-searching&#8221; automaton (Cormen et al., 2001) and produces an automaton with n states (the order of the n- gram).</S>
+          <S ID="S-55212">This construction is omitted for the sake of space.</S>
+        </P>
+        <P>
+          <S ID="S-55213">derivations exactly.</S>
+          <S ID="S-55214">However, we typically stop much earlier than that, without expanding contexts in the regions of X which are not promising even on optimistic assessments based on limited contexts.</S>
+        </P>
+        <P>
+          <S ID="S-55215">Following the OS &#8727; methodology, the situation with sampling is completely parallel to that of optimisation, the only difference being that, instead of finding the maximum derivation x from q (t) (.</S>
+          <S ID="S-55216">), we draw a sample x from the distribution associated with q (t) (.</S>
+          <S ID="S-55217">), then accept it with probability given by the ratio r = p(x)/q (t) (x) &#8804; 1.</S>
+          <S ID="S-55218">In the case of a reject, we identify a subsequence y i&#8722;m&#8722;1 , y i&#8722;m , ..., y i in yield(x) as in the optimisation case, and similarly refine q (t) into q (t+1) = q (t) &#8745; A (t+1) .</S>
+          <S ID="S-55219">The acceptance rate gradually increases because q (t) comes closer and closer to p.</S>
+          <S ID="S-55220">We stop the process at a point where the current acceptance rate, estimated on the basis of, say, the last one hundred trials, exceeds a predefined threshold, perhaps 20%.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Illustration</HEADER>
+        <P>
+          <S ID="S-55221">In this section, we present a small running example of our approach.</S>
+          <S ID="S-55222">Consider the lowercased German source sentence: eine letzte beobachtung .</S>
+        </P>
+        <P>
+          <S ID="S-55223">Table 1 shows the translation associated with the optimum derivation from each proposal q (i) .</S>
+          <S ID="S-55224">The n-gram whose cost, if extended by one word to the left, would be increased by the largest factor is underlined.</S>
+          <S ID="S-55225">The extended context selected for refinement is highlighted in bold.</S>
+        </P>
+        <P>
+          <S ID="S-55226">Consider the very first iteration (i = 0), at which point only unigram costs have been incorporated.</S>
+          <S ID="S-55227">The sequence &lt;s&gt; one last observation .</S>
+          <S ID="S-55228">&lt;/s&gt; represents the translation associated to the best derivation x in q (0) .</S>
+          <S ID="S-55229">We proceed by choosing from it one sequence to be the base for a refinement that will lower q (0) bringing it closer to p. Amongst all possible one-word (to the left) extensions, extending the unigram &#8216;one&#8217; to the bigram &#8216;&lt;s&gt; one&#8217; is the operation that lowers q (0) (x) the most.</S>
+          <S ID="S-55230">It might be helpful to understand it as the bigram &#8216;&lt;s&gt; one&#8217; being associated to the largest LM gap observed in x.</S>
+          <S ID="S-55231">Therefore the context &#8216;&lt;s&gt;&#8217; is selected for refinement, which means that an automaton A (1) is designed to down-weight derivations compatible with bigrams prefixed by &#8216;&lt;s&gt;&#8217;.</S>
+          <S ID="S-55232">The proposal q (0) is intersected with A (1) producing q (1) .</S>
+          <S ID="S-55233">We proceed like this iteratively, always selecting a context not yet accounted for until q (i) (x) = p(x) for the best derivation (13 th iteration in our example), when the true optimum is found with a certificate of optimality.</S>
+        </P>
+        <P>
+          <S ID="S-55234">Score (Q, P, B) ; Delta (C, M) ; #states (R)</S>
+        </P>
+        <P>
+          <S ID="S-55235">&#8722;2 &#8722;1 0 1 2 3</S>
+        </P>
+        <P>
+          <S ID="S-55236">Q P B C M R</S>
+        </P>
+        <P>
+          <S ID="S-55237">MC R</S>
+        </P>
+        <P>
+          <S ID="S-55238">Q P Best Current gap Minimum gap Refinement</S>
+        </P>
+        <P>
+          <S ID="S-55239">R R R R</S>
+        </P>
+        <P>
+          <S ID="S-55240">C M</S>
+        </P>
+        <P>
+          <S ID="S-55241">MC R</S>
+        </P>
+        <P>
+          <S ID="S-55242">R</S>
+        </P>
+        <P>
+          <S ID="S-55243">C MC M C M C M C M C M M C M C M C M C M C</S>
+        </P>
+        <P>
+          <S ID="S-55244">Q Q Q Q</S>
+        </P>
+        <P>
+          <S ID="S-55245">Q Q Q Q PB PB PB PB Q Q Q Q Q PB B PB PB PB PB QP B PB B PB P P</S>
+        </P>
+        <P>
+          <S ID="S-55246">0 2 4 6 8 10 12</S>
+        </P>
+        <P>
+          <S ID="S-55247">R</S>
+        </P>
+        <P>
+          <S ID="S-55248">Iteration (i)</S>
+        </P>
+        <P>
+          <S ID="S-55249">Figure 1 displays the progression of Q (score of the best derivation) and P (that derivation&#8217;s true score).</S>
+          <S ID="S-55250">As guaranteed by construction, Q is always above P .</S>
+          <S ID="S-55251">B represents the score of the best derivation so far according to the true scoring function, that is, B is a lower-bound on the true optimum 8 .</S>
+          <S ID="S-55252">The optimal solution is achieved when P = Q.</S>
+        </P>
+        <P>
+          <S ID="S-55253">Curve B in Figure 1 shows that the best scoring solution was found quite early in the search (i = 3).</S>
+          <S ID="S-55254">However, optimality could only be proven 10 iterations later.</S>
+          <S ID="S-55255">Another way of stating the convergence criterion Q = P is observing a zero gap (in the log domain) between Q and P (see curve C &#8211; current gap), or a zero gap between Q and B (see curve M &#8211; minimum gap).</S>
+          <S ID="S-55256">Observe how M drops quickly from 1 to nearly 0, followed by a long tail where M</S>
+        </P>
+        <P>
+          <S ID="S-55257">8 This observation allows for error-safe pruning in optimisation: if x is a lower-bound on the true optimum, derivations in q (i) that score lower than p(x) could be safely removed.</S>
+          <S ID="S-55258">We have left that possibility for future work.</S>
+        </P>
+        <P>
+          <S ID="S-55259">R</S>
+        </P>
+        <P>
+          <S ID="S-55260">R</S>
+        </P>
+        <P>
+          <S ID="S-55261">R</S>
+        </P>
+        <P>
+          <S ID="S-55262">R</S>
+        </P>
+        <P>
+          <S ID="S-55263">R</S>
+        </P>
+        <P>
+          <S ID="S-55264">R</S>
+        </P>
+        <P>
+          <S ID="S-55265">decreases much slower.</S>
+          <S ID="S-55266">Note that if we were willing to accept an approximate solution, we could already stop the search if B remained unchanged for a predetermined number of iterations or if changes in B were smaller than some threshold, at the cost of giving up on the optimality certificate.</S>
+        </P>
+        <P>
+          <S ID="S-55267">Finally, curve R shows the number of states in the automaton A (i) that refines the proposal at iteration i.</S>
+          <S ID="S-55268">Note how lower order n-grams (2-grams in fact) are responsible for the largest drop in the first iterations and higher-order n-grams (in fact 3- grams) are refined later in the long tail.</S>
+        </P>
+        <P>
+          <S ID="S-55269">Figure 2 illustrates the progression of the sampler for the same German sentence.</S>
+          <S ID="S-55270">At each iteration a batch of 500 samples is drawn from q (i) .</S>
+          <S ID="S-55271">The rejected samples in the batch are used to collect statistics about overoptimistic n-grams and to heuristically choose one context to be refined for the next iteration, similar to the optimisation mode.</S>
+          <S ID="S-55272">We start with a low acceptance rate which grows up to 30% after 15 different contexts were incorporated.</S>
+          <S ID="S-55273">Note how the L 1 norm of q (its partition function) decreases after each refinement, that is, q is gradually brought closer to p, resulting in the increased number of exact samples and better acceptance rate.</S>
+        </P>
+        <P>
+          <S ID="S-55274">Note that, starting from iteration one, all refinements here correspond to 2-grams (i.e. one-word contexts).</S>
+          <S ID="S-55275">This can be explained by the fact that, in sampling, lower-order refinements are those that mostly increase acceptance rate (rationale: highorder n-grams are compatible with fewer grammar rules).</S>
+        </P>
+        <P>
+          <S ID="S-55276">9 10 0 1000 0.1 0.2 0.3 1.0 1.5 2.0</S>
+        </P>
+        <P>
+          <S ID="S-55277">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55278">&#9679; &#9679; &#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55279">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55280">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55281">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55282">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55283">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55284">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55285">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55286">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55287">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55288">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55289">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55290">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55291">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55292">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55293">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55294">&#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55295">exact</S>
+        </P>
+        <P>
+          <S ID="S-55296">accrate refinement</S>
+        </P>
+        <P>
+          <S ID="S-55297">&#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679; &#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55298">0 5 10</S>
+        </P>
+        <P>
+          <S ID="S-55299">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55300">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55301">L1</S>
+        </P>
+        <P>
+          <S ID="S-55302">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55303">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55304">Iteration (i)</S>
+        </P>
+        <P>
+          <S ID="S-55305">&#9679; &#9679; &#9679; &#9679; &#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55306">&#9679; &#9679; &#9679; &#9679; &#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55307">&#9679;</S>
+        </P>
+        <P>
+          <S ID="S-55308">&#9679;</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments</HEADER>
+      <P>
+        <S ID="S-55399">We used the Moses toolkit (Koehn et al., 2007) to extract a SCFG following Chiang (2005) from the 6 th version of the Europarl collection (Koehn, 2005) (German-English portion).</S>
+        <S ID="S-55400">We trained language models using lmplz (Heafield et al., 2013) and interpolated the models trained on the English monolingual data made available by the WMT (Callison-Burch et al., 2012) (i.e. Europarl, newscommentaries, news-2012 and commoncrawl).</S>
+        <S ID="S-55401">Tuning was performed via MERT using newstest2010 as development set; test sentences were extracted from newstest2011.</S>
+        <S ID="S-55402">Finally, we restricted our SCFGs to having at most 10 target productions for a given source production.</S>
+        <S ID="S-55403">Figure 3 shows some properties of the initial grammar G(f) as a function of the input sentence length (the quantities are averages over 20 sentences for each class of input length).</S>
+        <S ID="S-55404">The number of unigrams grows linearly with the input length, while the number of unique bigrams compatible with strings generated by G(f) appears to grow quadratically 9 and the size of the grammar in number of rules appears to be cubic &#8212; a consequence of having up to two nonterminals on the right-hand side of a rule.</S>
+      </P>
+      <P>
+        <S ID="S-55405">Figure 4 shows the number of refinement operations until convergence in optimisation and sampling, as well as the total duration, as a function of the input length.</S>
+        <S ID="S-55406">10 The plots will be discussed in detail below.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Optimisation</HEADER>
+        <P>
+          <S ID="S-55326">In optimisation (Figures 4a and 4b), the number of refinements up to convergence appears to be linear with the input length, while the total duration grows much quicker.</S>
+          <S ID="S-55327">These findings are further discussed in what follows.</S>
+        </P>
+        <P>
+          <S ID="S-55328">Table 2 shows some important quantities regarding optimisation with OS &#8727; using a 4-gram LM.</S>
+          <S ID="S-55329">The first column shows how many sentences we are considering, the second column shows the sentence length, the third column m is the average number of refinements up to convergence.</S>
+          <S ID="S-55330">Column |A| refers to the refinement type, which is the number of states in the automaton A, that is, the order of</S>
+        </P>
+        <P>
+          <S ID="S-55331">9 The number of unique bigrams is an estimate obtained by</S>
+        </P>
+        <P>
+          <S ID="S-55332">combining the terminals at the boundary of nonterminals that may be adjacent in a derivation.</S>
+          <S ID="S-55333">10 The current implementation faces timeouts depending on</S>
+        </P>
+        <P>
+          <S ID="S-55334">the length of the input sentence and the order of the language model, explaining why certain curves are interrupted earlier than others in Figure 4.</S>
+        </P>
+        <P>
+          <S ID="S-55335">2 4 6 8 10</S>
+        </P>
+        <P>
+          <S ID="S-55336">Input length</S>
+        </P>
+        <P>
+          <S ID="S-55337">(a) Unigrams in G(f)</S>
+        </P>
+        <P>
+          <S ID="S-55338">2 4 6 8 10</S>
+        </P>
+        <P>
+          <S ID="S-55339">Input length</S>
+        </P>
+        <P>
+          <S ID="S-55340">(b) Bigrams compatible with G(f)</S>
+        </P>
+        <P>
+          <S ID="S-55341">2 4 6 8 10</S>
+        </P>
+        <P>
+          <S ID="S-55342">Input length</S>
+        </P>
+        <P>
+          <S ID="S-55343">(c) Number of rules in G(f)</S>
+        </P>
+        <P>
+          <S ID="S-55344">|R f | |R 0 |</S>
+        </P>
+        <P>
+          <S ID="S-55345">the n-grams being re-weighted (e.g. |A| = 2 when refining bigrams sharing a one-word context).</S>
+          <S ID="S-55346">Column count refers to the average number of refinements that are due to each refinement type.</S>
+          <S ID="S-55347">Finally, the last column compares the number of rules in the final proposal to that of the initial one.</S>
+        </P>
+        <P>
+          <S ID="S-55348">The first positive result concerns how much context OS &#8727; needs to take into account for finding the optimum derivation.</S>
+          <S ID="S-55349">Table 2 (column m) shows that OS &#8727; explores a very reduced space of n-gram contexts up to convergence.</S>
+          <S ID="S-55350">To illustrate that, consider the last row in Table 2 (sentences with 6 words).</S>
+          <S ID="S-55351">On average, convergence requires incorporating only about 103 contexts of variable order, of which 55 are bigram (2-word) contexts (remember that |A| = 3 when accounting for a 2-word context).</S>
+          <S ID="S-55352">According to Figure 3b, in sentences with 6 words, about 2,000 bigrams are compatible with strings generated by G(f).</S>
+          <S ID="S-55353">This means that only 2.75% of these bigrams (55 out of 2,000) need to be explicitly accounted for, illustrating how wasteful a full intersection would be.</S>
+        </P>
+        <P>
+          <S ID="S-55354">A problem, however, is that the time until convergence grows quickly with the length of the input (Figure 4b).</S>
+          <S ID="S-55355">This can be explained as follows.</S>
+          <S ID="S-55356">At each iteration the grammar is refined to account for n-grams sharing a context of (n &#8722; 1) words.</S>
+          <S ID="S-55357">That</S>
+        </P>
+        <P>
+          <S ID="S-55358">|R f | |R 0 |</S>
+        </P>
+        <P>
+          <S ID="S-55359">operation typically results in a larger grammar: most rules are preserved, some rules are deleted, but more importantly, some rules are added to account for the portion of the current grammar that involves the selected n-grams.</S>
+          <S ID="S-55360">Enlarging the grammar at each iteration means that successive refinements become incrementally slower.</S>
+          <S ID="S-55361">The histogram of refinement types of Table 2 highlights how efficient OS &#8727; is w.r.t.</S>
+          <S ID="S-55362">the space of n-grams it needs to explore before convergence.</S>
+          <S ID="S-55363">The problem is clearly not the number of refinements, but rather the relation between the growth of the grammar and the successive intersections.</S>
+          <S ID="S-55364">Controlling for this growth and optimising the intersection as to partially reuse previously computed charts may be the key for a more generally tractable solution.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Sampling</HEADER>
+        <P>
+          <S ID="S-55365">Figure 4c shows that sampling is more economical than optimisation in that it explicitly incorporates even fewer contexts.</S>
+          <S ID="S-55366">Note how OS &#8727; converges to acceptance rates from 1% to 10% in much fewer iterations than are necessary to find an optimum 11 .</S>
+          <S ID="S-55367">Although the convergence in sampling is</S>
+        </P>
+        <P>
+          <S ID="S-55368">11 Currently we use MERT to train the model&#8217;s weight vector &#8212; which is normalised by its L 1 norm in the Moses implementation.</S>
+          <S ID="S-55369">While optimisation is not sensitive to the scale of the weights, in sampling the scale determines how flat or</S>
+        </P>
+        <P>
+          <S ID="S-55370">2 4 6 8 10</S>
+        </P>
+        <P>
+          <S ID="S-55371">Input length</S>
+        </P>
+        <P>
+          <S ID="S-55372">(a) Optimisation: number of refinements.</S>
+        </P>
+        <P>
+          <S ID="S-55373">2 4 6 8 10</S>
+        </P>
+        <P>
+          <S ID="S-55374">Input length</S>
+        </P>
+        <P>
+          <S ID="S-55375">(b) Optimisation: time for convergence.</S>
+        </P>
+        <P>
+          <S ID="S-55376">faster than in optimisation, the total duration is still an issue (Figure 4b).</S>
+        </P>
+        <P>
+          <S ID="S-55377">Table 3 shows the same quantities as Table 2, but now for sampling.</S>
+          <S ID="S-55378">It is worth highlighting that even though we are using an upper-bound over a 4-gram LM (and aiming at a 5% acceptance rate), very few contexts are selected for refinement, most of them lower-order ones (one-word contexts &#8212; rows with |A| = 2).</S>
+          <S ID="S-55379">Observe that an improved acceptance rate always leads to faster acquisition of exact samples after we stop refining our proxy distribution.</S>
+          <S ID="S-55380">However, Figure 4d shows for example that moving from 5% to 10% acceptance rate using a 4-gram LM (curves X and Y) is time-consuming.</S>
+          <S ID="S-55381">Thus there is a trade-off between how much time one spends improving the acceptance rate and how many exact samples one intends do draw.</S>
+          <S ID="S-55382">Figure 5 shows the average time to draw batches between</S>
+        </P>
+        <P>
+          <S ID="S-55383">peaked the distribution is.</S>
+          <S ID="S-55384">Arun et al. (2010) experiment with scaling MERT-trained weights as to maximise BLEU on heldout data, as well as with MBR training.</S>
+          <S ID="S-55385">A more adequate training algorithm along similar lines is reserved for future work.</S>
+        </P>
+        <P>
+          <S ID="S-55386">Time (s)</S>
+        </P>
+        <P>
+          <S ID="S-55387">200 500 1000 2000 5000 10000</S>
+        </P>
+        <P>
+          <S ID="S-55388">1 2</S>
+        </P>
+        <P>
+          <S ID="S-55389">5% AR 10% AR</S>
+        </P>
+        <P>
+          <S ID="S-55390">2 2 2 2</S>
+        </P>
+        <P>
+          <S ID="S-55391">1 1 1 1</S>
+        </P>
+        <P>
+          <S ID="S-55392">1e+00 1e+02 1e+04 1e+06</S>
+        </P>
+        <P>
+          <S ID="S-55393">Samples</S>
+        </P>
+        <P>
+          <S ID="S-55394">one and one million samples from two exact samplers that were refined up to 5% and 10% acceptance rate respectively.</S>
+          <S ID="S-55395">The sampler at 5% AR (which is faster to obtain) turns out to be more efficient if we aim at producing less than 10K samples.</S>
+        </P>
+        <P>
+          <S ID="S-55396">Finally, note that samples are independently</S>
+        </P>
+        <P>
+          <S ID="S-55397">1 2 1</S>
+        </P>
+        <P>
+          <S ID="S-55398">drawn from the final proposal, making the approach an appealing candidate to parallelism in order to increase the effective acceptance rate.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Related Work</HEADER>
+      <P>
+        <S ID="S-55407">Rush and Collins (2011) do not consider sampling, but they address exact decoding for hierarchical translation.</S>
+        <S ID="S-55408">They use a Dual Decomposition approach (a special case of Lagrangian Relaxation), where the target CFG (hypergraph in their terminology) component and the target language model component &#8220;trade-off&#8221; their weights so as to ensure agreement on what each component believes to be the maximum.</S>
+        <S ID="S-55409">In many cases, this technique is able to detect the actual true maximum derivation.</S>
+        <S ID="S-55410">When this is not the case, they use a finite-statebased intersection mechanism to &#8220;tighten&#8221; the first component so that some constraints not satisfied by the current solution are enforced, and iterate until the true maximum is found or a time-out is met, which results in a high proportion of finding the true maximum.</S>
+        <S ID="S-55411">Arun et al. (2009, 2010) address the question of sampling in a standard phrase-based translation model (Koehn et al., 2003).</S>
+        <S ID="S-55412">Contrarily to our use of rejection sampling (a Monte-Carlo method), they use a Gibbs sampler (a Markov-Chain Monte- Carlo (MCMC) method).</S>
+        <S ID="S-55413">Samples are obtained by iteratively re-sampling groups of well-designed variables in such a way that (i) the sampler does not tend to be trapped locally by high correlations between conditioning and conditioned variables, and (ii) the combinatorial space of possibilities for the next step is small enough so that conditional probabilities can be computed explicitly.</S>
+        <S ID="S-55414">By contrast to our exact approach, the samples obtained by Gibbs sampling are not independent, but form a Markov chain that only converges to the target distribution in the limit, with convergence properties difficult to assess.</S>
+        <S ID="S-55415">Also by contrast to us, these papers do not address the question of finding the maximum derivation directly, but only through finding a maximum among the derivations sampled so far, which in principle can be quite different.</S>
+      </P>
+      <P>
+        <S ID="S-55416">Blunsom and Osborne (2008) address probabilistic inference, this time, as we do, in the context of hierarchical translation, where sampling is used both for the purposes of decoding and training the model.</S>
+        <S ID="S-55417">When decoding in the presence of a language model, an approximate sampling procedure is performed in two stages.</S>
+        <S ID="S-55418">First, cube-pruning is employed to construct a WCFG which generates a subset of all the possible derivations that would correspond to a full intersection with the target language model.</S>
+        <S ID="S-55419">In a second step this grammar is sampled through the same dynamic programming procedure that we have described in &#167;2.4.</S>
+        <S ID="S-55420">By contrast to our approach, the paper does not attempt to perform exact inference.</S>
+        <S ID="S-55421">However it does not only address the question of decoding, but also that of training the model, which requires, in addition to sampling, an estimate of the model&#8217;s partition function.</S>
+        <S ID="S-55422">In common with Arun et al. (2010), the authors stress the fact that a sampler of derivations is also a sampler of translations as strings, while a maximiser over derivations cannot be used to find the maximum translation string.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusions</HEADER>
+      <P>
+        <S ID="S-55423">The approach we have presented is, to our knowledge, the first one to address the problem of exact sampling for hierarchical translation and to do that in a framework that also handles exact optimisation.</S>
+        <S ID="S-55424">Our experiments show that only a fraction of the language model n-grams need to be incorporated in the target grammar in order to perform exact inference in this approach.</S>
+        <S ID="S-55425">However, in the current implementation, we experience timeouts for sentences of even moderate length.</S>
+        <S ID="S-55426">We are working on improving this situation along three dimensions: (i) our implementation of the Earley Intersection rebuilds a grammar from scratch at each intersection, while it could capitalise on the charts built during the previous steps; (ii) the unigramlevel max-backoffs are not as tight as they could be if one took into account more precisely the set of contexts in which each word can appear relative to the grammar; (iii) most importantly, while our refinements are &#8220;local&#8221; in the sense of addressing one n-gram context at a time, they still affect a large portion of the rules in the current grammar, even rules that have very low probability of being ever sampled by this grammar; by preventing refinement of such rules during the intersection process, we may be able to make the intersection more local and to produce much smaller grammars, without losing the exactness properties of the approach.</S>
+      </P>
+      <P>
+        <S ID="S-55427">Acknowledgements</S>
+      </P>
+      <P>
+        <S ID="S-55428">The first author wishes to thank the PASCAL-2 Visit to Industry programme for partially funding his visit to Xerox Research Centre Europe last Fall, which initiated this collaboration.</S>
+      </P>
+      <P>
+        <S ID="S-55429">References</S>
+      </P>
+      <P>
+        <S ID="S-55430">Abhishek Arun, Chris Dyer, Barry Haddow, Phil Blunsom, Adam Lopez, and Philipp Koehn.</S>
+        <S ID="S-55431">2009.</S>
+        <S ID="S-55432">Monte carlo inference and maximization for phrase-based translation.</S>
+        <S ID="S-55433">In Proceedings of the Thirteenth Conference on Computational Natural Language Learning, CoNLL &#8217;09, pages 102&#8211;110, Stroudsburg, PA, USA.</S>
+        <S ID="S-55434">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55435">Abhishek Arun, Barry Haddow, Philipp Koehn, Adam Lopez, Chris Dyer, and Phil Blunsom.</S>
+        <S ID="S-55436">2010.</S>
+        <S ID="S-55437">Monte carlo techniques for phrase-based translation.</S>
+        <S ID="S-55438">Machine Translation, 24(2):103&#8211;121, June.</S>
+      </P>
+      <P>
+        <S ID="S-55439">Yehoshua Bar-Hillel, Micha A. Perles, and Eli Shamir.</S>
+        <S ID="S-55440">1961.</S>
+        <S ID="S-55441">On formal properties of simple phrase structure grammars.</S>
+        <S ID="S-55442">Zeitschrift f&#252;r Phonetik, Sprachwissenschaft und Kommunikationsforschung, (14):143&#8211; 172.</S>
+      </P>
+      <P>
+        <S ID="S-55443">Sylvie Billot and Bernard Lang.</S>
+        <S ID="S-55444">1989.</S>
+        <S ID="S-55445">The structure of shared forests in ambiguous parsing.</S>
+        <S ID="S-55446">In Proceedings of the 27th Annual Meeting of the Association for Computational Linguistics, pages 143&#8211;151, Vancouver, British Columbia, Canada, June.</S>
+        <S ID="S-55447">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55448">Phil Blunsom and Miles Osborne.</S>
+        <S ID="S-55449">2008.</S>
+        <S ID="S-55450">Probabilistic inference for machine translation.</S>
+        <S ID="S-55451">In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP &#8217;08, pages 215&#8211; 223, Stroudsburg, PA, USA.</S>
+        <S ID="S-55452">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55453">Chris Callison-Burch, Philipp Koehn, Christof Monz, Matt Post, Radu Soricut, and Lucia Specia.</S>
+        <S ID="S-55454">2012.</S>
+        <S ID="S-55455">Findings of the 2012 workshop on statistical machine translation.</S>
+        <S ID="S-55456">In Proceedings of the Seventh Workshop on Statistical Machine Translation, pages 10&#8211; 51, Montr&#233;al, Canada, June.</S>
+        <S ID="S-55457">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55458">Simon Carter, Marc Dymetman, and Guillaume Bouchard.</S>
+        <S ID="S-55459">2012.</S>
+        <S ID="S-55460">Exact Sampling and Decoding in High-Order Hidden Markov Models.</S>
+        <S ID="S-55461">In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning, pages 1125&#8211;1134, Jeju Island, Korea, July.</S>
+        <S ID="S-55462">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55463">David Chiang.</S>
+        <S ID="S-55464">2005.</S>
+        <S ID="S-55465">A hierarchical phrase-based model for statistical machine translation.</S>
+        <S ID="S-55466">In Proceedings of the 43rd Annual Meeting on Association for Computational Linguistics, ACL &#8217;05, pages 263&#8211; 270, Stroudsburg, PA, USA.</S>
+        <S ID="S-55467">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55468">David Chiang.</S>
+        <S ID="S-55469">2007.</S>
+        <S ID="S-55470">Hierarchical Phrase-Based Translation.</S>
+        <S ID="S-55471">Computational Linguistics, 33:201&#8211;228.</S>
+      </P>
+      <P>
+        <S ID="S-55472">Thomas H. Cormen, Clifford Stein, Ronald L. Rivest, and Charles E. Leiserson.</S>
+        <S ID="S-55473">2001.</S>
+        <S ID="S-55474">Introduction to Algorithms.</S>
+        <S ID="S-55475">McGraw-Hill Higher Education, 2nd edition.</S>
+      </P>
+      <P>
+        <S ID="S-55476">Chris Dyer, Jonathan Weese, Hendra Setiawan, Adam Lopez, Ferhan Ture, Vladimir Eidelman, Juri Ganitkevitch, Phil Blunsom, and Philip Resnik.</S>
+        <S ID="S-55477">2010. cdec: a decoder, alignment, and learning framework for finite-state and context-free translation models.</S>
+        <S ID="S-55478">In Proceedings of the ACL 2010 System Demonstrations, ACLDemos &#8217;10, pages 7&#8211;12, Stroudsburg, PA, USA.</S>
+        <S ID="S-55479">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55480">Christopher Dyer.</S>
+        <S ID="S-55481">2010.</S>
+        <S ID="S-55482">A Formal Model of Ambiguity and its Applications in Machine Translation.</S>
+        <S ID="S-55483">Ph.D.</S>
+        <S ID="S-55484">thesis, University of Maryland.</S>
+      </P>
+      <P>
+        <S ID="S-55485">M. Dymetman, G. Bouchard, and S. Carter.</S>
+        <S ID="S-55486">2012a.</S>
+        <S ID="S-55487">The OS* Algorithm: a Joint Approach to Exact Optimization and Sampling.</S>
+        <S ID="S-55488">ArXiv e-prints, July.</S>
+      </P>
+      <P>
+        <S ID="S-55489">Marc Dymetman, Guillaume Bouchard, and Simon Carter.</S>
+        <S ID="S-55490">2012b.</S>
+        <S ID="S-55491">Optimization and sampling for nlp from a unified viewpoint.</S>
+        <S ID="S-55492">In Proceedings of the First International Workshop on Optimization Techniques for Human Language Technology, pages 79&#8211; 94, Mumbai, India, December.</S>
+        <S ID="S-55493">The COLING 2012 Organizing Committee.</S>
+      </P>
+      <P>
+        <S ID="S-55494">Kenneth Heafield, Ivan Pouzyrevsky, Jonathan H. Clark, and Philipp Koehn.</S>
+        <S ID="S-55495">2013.</S>
+        <S ID="S-55496">Scalable modified Kneser-Ney language model estimation.</S>
+        <S ID="S-55497">In Proceedings of the 51st Annual Meeting of the Association for Computational Linguistics, Sofia, Bulgaria, August.</S>
+      </P>
+      <P>
+        <S ID="S-55498">Liang Huang and David Chiang.</S>
+        <S ID="S-55499">2007.</S>
+        <S ID="S-55500">Forest rescoring: Faster decoding with integrated language models.</S>
+        <S ID="S-55501">In Proceedings of the 45th Annual Meeting of the Association of Computational Linguistics, pages 144&#8211;151, Prague, Czech Republic, June.</S>
+        <S ID="S-55502">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55503">Mark Johnson, Thomas Griffiths, and Sharon Goldwater.</S>
+        <S ID="S-55504">2007.</S>
+        <S ID="S-55505">Bayesian inference for PCFGs via Markov chain Monte Carlo.</S>
+        <S ID="S-55506">In Human Language Technologies 2007: The Conference of the North American Chapter of the Association for Computational Linguistics; Proceedings of the Main Conference, pages 139&#8211;146, Rochester, New York, April.</S>
+        <S ID="S-55507">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55508">Daniel Jurafsky and James H. Martin.</S>
+        <S ID="S-55509">2000.</S>
+        <S ID="S-55510">Speech and Language Processing: An Introduction to Natural Language Processing, Computational Linguistics and Speech Recognition (Prentice Hall Series in Artificial Intelligence).</S>
+        <S ID="S-55511">Prentice Hall, 1 edition.</S>
+      </P>
+      <P>
+        <S ID="S-55512">Philipp Koehn, Franz Josef Och, and Daniel Marcu.</S>
+        <S ID="S-55513">2003.</S>
+        <S ID="S-55514">Statistical phrase-based translation.</S>
+        <S ID="S-55515">In Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology - Volume 1, NAACL &#8217;03, pages 48&#8211;54, Stroudsburg, PA, USA.</S>
+        <S ID="S-55516">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55517">Philipp Koehn, Hieu Hoang, Alexandra Birch, Chris Callison-Burch, Marcello Federico, Nicola Bertoldi, Brooke Cowan, Wade Shen, Christine Moran, Richard Zens, Chris Dyer, Ond&#345;ej Bojar, Alexandra Constantin, and Evan Herbst.</S>
+        <S ID="S-55518">2007.</S>
+        <S ID="S-55519">Moses: open</S>
+      </P>
+      <P>
+        <S ID="S-55520">source toolkit for statistical machine translation.</S>
+        <S ID="S-55521">In Proceedings of the 45th Annual Meeting of the ACL on Interactive Poster and Demonstration Sessions, ACL &#8217;07, pages 177&#8211;180, Stroudsburg, PA, USA.</S>
+        <S ID="S-55522">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55523">Philipp Koehn.</S>
+        <S ID="S-55524">2005.</S>
+        <S ID="S-55525">Europarl: A parallel corpus for statistical machine translation.</S>
+        <S ID="S-55526">In Proceedings of Machine Translation Summit, pages 79&#8211;86.</S>
+      </P>
+      <P>
+        <S ID="S-55527">Shankar Kumar and William Byrne.</S>
+        <S ID="S-55528">2004.</S>
+        <S ID="S-55529">Minimum Bayes Risk Decoding for Statistical Machine Translation.</S>
+        <S ID="S-55530">In Joint Conference of Human Language Technologies and the North American chapter of the Association for Computational Linguistics (HLT-NAACL 2004).</S>
+      </P>
+      <P>
+        <S ID="S-55531">Mark-Jan Nederhof and Giorgio Satta.</S>
+        <S ID="S-55532">2008.</S>
+        <S ID="S-55533">Probabilistic parsing.</S>
+        <S ID="S-55534">In M. Dolores Jimnez-Lpez G. Bel- Enguix and C. Martn-Vide, editors, New Developments in Formal Languages and Applications, Studies in Computational Intelligence, volume 113, pages 229&#8211;258.</S>
+        <S ID="S-55535">Springer.</S>
+      </P>
+      <P>
+        <S ID="S-55536">Franz Josef Och.</S>
+        <S ID="S-55537">2003.</S>
+        <S ID="S-55538">Minimum error rate training in statistical machine translation.</S>
+        <S ID="S-55539">In Proceedings of the 41st Annual Meeting on Association for Computational Linguistics, volume 1 of ACL &#8217;03, pages 160&#8211; 167, Stroudsburg, PA, USA.</S>
+        <S ID="S-55540">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55541">Christian P. Robert and George Casella.</S>
+        <S ID="S-55542">2004.</S>
+        <S ID="S-55543">Monte Carlo Statistical Methods (Springer Texts in Statistics).</S>
+        <S ID="S-55544">Springer-Verlag New York, Inc., Secaucus, NJ, USA.</S>
+      </P>
+      <P>
+        <S ID="S-55545">Alexander M. Rush and Michael Collins.</S>
+        <S ID="S-55546">2011.</S>
+        <S ID="S-55547">Exact decoding of syntactic translation models through lagrangian relaxation.</S>
+        <S ID="S-55548">In Proceedings of the 49th Annual Meeting of the Association for Computational Linguistics: Human Language Technologies - Volume 1, HLT &#8217;11, pages 72&#8211;82, Stroudsburg, PA, USA.</S>
+        <S ID="S-55549">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55550">David A. Smith and Jason Eisner.</S>
+        <S ID="S-55551">2006.</S>
+        <S ID="S-55552">Minimum risk annealing for training log-linear models.</S>
+        <S ID="S-55553">In Proceedings of the COLING/ACL on Main conference poster sessions, COLING-ACL &#8217;06, pages 787&#8211;794, Stroudsburg, PA, USA.</S>
+        <S ID="S-55554">Association for Computational Linguistics.</S>
+      </P>
+      <P>
+        <S ID="S-55555">Taro Watanabe, Jun Suzuki, Hajime Tsukada, and Hideki Isozaki.</S>
+        <S ID="S-55556">2007.</S>
+        <S ID="S-55557">Online large-margin training for statistical machine translation.</S>
+        <S ID="S-55558">In Proceedings of the 2007 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning (EMNLP- CoNLL), pages 764&#8211;773, Prague, Czech Republic, June.</S>
+        <S ID="S-55559">Association for Computational Linguistics.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES/>
+</PAPER>

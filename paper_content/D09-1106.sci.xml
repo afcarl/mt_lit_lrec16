@@ -1,0 +1,881 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Weighted Alignment Matrices for Statistical Machine Translation</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-6458">Current statistical machine translation systems usually extract rules from bilingual corpora annotated with 1-best alignments.</A-S>
+    <A-S ID="S-6459">They are prone to learn noisy rules due to alignment mistakes.</A-S>
+    <A-S ID="S-6460">We propose a new structure called weighted alignment matrix to encode all possible alignments for a parallel text compactly.</A-S>
+    <A-S ID="S-6461">The key idea is to assign a probability to each word pair to indicate how well they are aligned.</A-S>
+    <A-S ID="S-6462">We design new algorithms for extracting phrase pairs from weighted alignment matrices and estimating their probabilities.</A-S>
+    <A-S ID="S-6463">Our experiments on multiple language pairs show that using weighted matrices achieves consistent improvements over using n-best lists in significant less extraction time.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-6464">Statistical machine translation (SMT) relies heavily on annotated bilingual corpora.</S>
+        <S ID="S-6465">Word alignment, which indicates the correspondence between the words in a parallel text, is one of the most important annotations in SMT.</S>
+        <S ID="S-6466">Word-aligned corpora have been found to be an excellent source for translation-related knowledge, not only for phrase-based models (<REF ID="R-21" RPTR="34">Och and Ney, 2004</REF>; <REF ID="R-10" RPTR="17">Koehn et al., 2003</REF>), but also for syntax-based models (e.g., (<REF ID="R-03" RPTR="1">Chiang, 2007</REF>; <REF ID="R-09" RPTR="13">Galley et al., 2006</REF>; <REF ID="R-23" RPTR="41">Shen et al., 2008</REF>; <REF ID="R-15" RPTR="26">Liu et al., 2006</REF>)).</S>
+        <S ID="S-6467"><REF ID="R-20" RPTR="33">Och and Ney (2003)</REF> indicate that the quality of machine translation output depends directly on the quality of initial word alignment.</S>
+      </P>
+      <P>
+        <S ID="S-6468">Modern alignment methods can be divided into two major categories: generative methods and discriminative methods.</S>
+        <S ID="S-6469">Generative methods (Brown et al., 1993; Vogel and Ney, 1996) treat word alignment as a hidden process and maximize the likelihood of bilingual training corpus using the expectation maximization (EM) algorithm.</S>
+        <S ID="S-6470">In contrast, discriminative methods (e.g., (<REF ID="R-18" RPTR="31">Moore et al., 2006</REF>; <REF ID="R-26" RPTR="49">Taskar et al., 2005</REF>; <REF ID="R-14" RPTR="24">Liu et al., 2005</REF>; <REF ID="R-00" RPTR="0">Blunsom and Cohn, 2006</REF>)) have the freedom to define arbitrary feature functions that describe various characteristics of an alignment.</S>
+        <S ID="S-6471">They usually optimize feature weights on manually-aligned data.</S>
+        <S ID="S-6472">While discriminative methods show superior alignment accuracy in benchmarks, generative methods are still widely used to produce word alignments for large sentence-aligned corpora.</S>
+      </P>
+      <P>
+        <S ID="S-6473">However, neither generative nor discriminative alignment methods are reliable enough to yield high quality alignments for SMT, especially for distantly-related language pairs such as Chinese- English and Arabic-English.</S>
+        <S ID="S-6474">The F-measures for Chinese-English and Arabic-English are usually around 80% (<REF ID="R-14" RPTR="25">Liu et al., 2005</REF>) and 70% (<REF ID="R-08" RPTR="12">Fraser and Marcu, 2007</REF>), respectively.</S>
+        <S ID="S-6475">As most current SMT systems only use 1-best alignments for extracting rules, alignment errors might impair translation quality.</S>
+      </P>
+      <P>
+        <S ID="S-6476">Recently, several studies have shown that offering more alternatives of annotations to SMT systems will result in significant improvements, such as replacing 1-best trees with packed forests (<REF ID="R-17" RPTR="29">Mi et al., 2008</REF>) and replacing 1-best word segmentations with word lattices (<REF ID="R-06" RPTR="4">Dyer et al., 2008</REF>).</S>
+        <S ID="S-6477">Similarly, <REF ID="R-28" RPTR="54">Venugopal et al. (2008)</REF><REF ID="R-07" RPTR="6">(2008)</REF><REF ID="R-24" RPTR="42">(2008)</REF> use n-best alignments instead of 1-best alignments for translation rule extraction.</S>
+        <S ID="S-6478">While they achieve significant improvements on the IWSLT data, extracting rules from n-best alignments might be computationally expensive.</S>
+      </P>
+      <P>
+        <S ID="S-6479">In this paper, we propose a new structure named weighted alignment matrix to represent the alignment distribution for a sentence pair compactly.</S>
+        <S ID="S-6480">In a weighted matrix, each element that corresponds to a word pair is assigned a probability to measure the confidence of aligning the two words.</S>
+        <S ID="S-6481">Therefore, a weighted matrix is capable of using a lin-</S>
+      </P>
+      <P>
+        <S ID="S-6482">economy</S>
+      </P>
+      <P>
+        <S ID="S-6483">&#8217;s China</S>
+      </P>
+      <P>
+        <S ID="S-6484">of development the</S>
+      </P>
+      <P>
+        <S ID="S-6485">zhongguo</S>
+      </P>
+      <P>
+        <S ID="S-6486">de jingji</S>
+      </P>
+      <P>
+        <S ID="S-6487">fazhan</S>
+      </P>
+      <P>
+        <S ID="S-6488">ear space to encode the probabilities of exponentially many alignments.</S>
+        <S ID="S-6489">We develop a new algorithm for extracting phrase pairs from weighted matrices and show how to estimate their relative frequencies and lexical weights.</S>
+        <S ID="S-6490">Experimental results show that using weighted matrices achieves consistent improvements in translation quality and significant reduction in extraction time over using n-best lists.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Background</HEADER>
+      <P>
+        <S ID="S-6491">Figure 1 shows an example of word alignment between a pair of Chinese and English sentences.</S>
+        <S ID="S-6492">The Chinese and English words are listed horizontally and vertically, respectively.</S>
+        <S ID="S-6493">The dark points indicate the correspondence between the words in two languages.</S>
+        <S ID="S-6494">For example, the first Chinese word &#8220;zhongguo&#8221; is aligned to the fourth English word &#8220;China&#8221;.</S>
+      </P>
+      <P>
+        <S ID="S-6495">Formally, given a source sentence f = f1 J = f 1 , .</S>
+        <S ID="S-6496">.</S>
+        <S ID="S-6497">.</S>
+        <S ID="S-6498">, f j , .</S>
+        <S ID="S-6499">.</S>
+        <S ID="S-6500">.</S>
+        <S ID="S-6501">, f J and a target sentence e = e I 1 = e 1 , .</S>
+        <S ID="S-6502">.</S>
+        <S ID="S-6503">.</S>
+        <S ID="S-6504">, e i , .</S>
+        <S ID="S-6505">.</S>
+        <S ID="S-6506">.</S>
+        <S ID="S-6507">, e I , we define a link l = (j, i) to exist if f j and e i are translation (or part of translation) of one another.</S>
+        <S ID="S-6508">Then, an alignment a is a subset of the Cartesian product of word positions:</S>
+      </P>
+      <P>
+        <S ID="S-6509">a &#8838; {(j, i) : j = 1, .</S>
+        <S ID="S-6510">.</S>
+        <S ID="S-6511">.</S>
+        <S ID="S-6512">, J; i = 1, .</S>
+        <S ID="S-6513">.</S>
+        <S ID="S-6514">.</S>
+        <S ID="S-6515">, I} (1)</S>
+      </P>
+      <P>
+        <S ID="S-6516">Usually, SMT systems only use the 1-best alignments for extracting translation rules.</S>
+        <S ID="S-6517">For example, given a source phrase &#732;f and a target phrase &#7869;, the phrase pair ( &#732;f, &#7869;) is said to be consistent (<REF ID="R-21" RPTR="35">Och and Ney, 2004</REF>) with the alignment if and only if: (1) there must be at least one word inside one phrase aligned to a word inside the other phrase and (2) no words inside one phrase can be aligned to a word outside the other phrase.</S>
+        <S ID="S-6518">After all phrase pairs are extracted from the training corpus, their translation probabilities can be estimated as relative frequencies (<REF ID="R-21" RPTR="36">Och and Ney, 2004</REF>):</S>
+      </P>
+      <P>
+        <S ID="S-6519">&#966;(&#7869;| &#732;f) = count( &#732;f, &#7869;) &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-6520">&#7869; &#8242; count( &#732;f, &#7869; &#8242; )</S>
+      </P>
+      <P>
+        <S ID="S-6521">(2)</S>
+      </P>
+      <P>
+        <S ID="S-6522">where count( &#732;f, &#7869;) indicates how often the phrase pair ( &#732;f, &#7869;) occurs in the training corpus.</S>
+      </P>
+      <P>
+        <S ID="S-6523">Besides relative frequencies, lexical weights (<REF ID="R-10" RPTR="18">Koehn et al., 2003</REF>) are widely used to estimate how well the words in &#732;f translate the words in &#7869;.</S>
+        <S ID="S-6524">To do this, one needs first to estimate a lexical translation probability distribution w(e|f) by relative frequency from the same word alignments in the training corpus:</S>
+      </P>
+      <P>
+        <S ID="S-6525">w(e|f) =</S>
+      </P>
+      <P>
+        <S ID="S-6526">count(f, e) &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-6527">e &#8242; count(f, e&#8242; )</S>
+      </P>
+      <P>
+        <S ID="S-6528">(3)</S>
+      </P>
+      <P>
+        <S ID="S-6529">Note that a special source NULL token is added to each source sentence and aligned to each unaligned target word.</S>
+      </P>
+      <P>
+        <S ID="S-6530">As the alignment &#227; between a phrase pair ( &#732;f, &#7869;) is retained during extraction, the lexical weight can be calculated as</S>
+      </P>
+      <P>
+        <S ID="S-6531">p w (&#7869;| &#732;f, &#227;) =</S>
+      </P>
+      <P>
+        <S ID="S-6532">|&#7869;|</S>
+      </P>
+      <P>
+        <S ID="S-6533">&#8719;</S>
+      </P>
+      <P>
+        <S ID="S-6534">i=1</S>
+      </P>
+      <P>
+        <S ID="S-6535">1 &#8721; w(ei |f j ) (4) |{j|(j, i) &#8712; &#227;}|</S>
+      </P>
+      <P>
+        <S ID="S-6536">If there are multiple alignments &#227; for a phrase pair ( &#732;f, &#7869;), <REF ID="R-10" RPTR="15">Koehn et al. (2003)</REF> choose the one with the highest lexical weight:</S>
+      </P>
+      <P>
+        <S ID="S-6537">p w (&#7869;| &#732;f) = max</S>
+      </P>
+      <P>
+        <S ID="S-6538">&#227;</S>
+      </P>
+      <P>
+        <S ID="S-6539">{ p w (&#7869;| &#732;f, &#227;) } (5)</S>
+      </P>
+      <P>
+        <S ID="S-6540">Simple and effective, relative frequencies and lexical weights have become the standard features in modern discriminative SMT systems.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Weighted Alignment Matrix</HEADER>
+      <P>
+        <S ID="S-6541">We believe that offering more candidate alignments to extracting translation rules might help improve translation quality.</S>
+        <S ID="S-6542">Instead of using n- best lists (<REF ID="R-28" RPTR="51">Venugopal et al., 2008</REF>), we propose a new structure called weighted alignment matrix.</S>
+      </P>
+      <P>
+        <S ID="S-6543">We use an example to illustrate our idea.</S>
+        <S ID="S-6544">Figure 2(a) and Figure 2(b) show two alignments of a Chinese-English sentence pair.</S>
+        <S ID="S-6545">We observe that some links (e.g., (1,4) corresponding to the word</S>
+      </P>
+      <P>
+        <S ID="S-6546">economy</S>
+      </P>
+      <P>
+        <S ID="S-6547">&#8217;s China</S>
+      </P>
+      <P>
+        <S ID="S-6548">of development the economy</S>
+      </P>
+      <P>
+        <S ID="S-6549">&#8217;s China</S>
+      </P>
+      <P>
+        <S ID="S-6550">of development the economy</S>
+      </P>
+      <P>
+        <S ID="S-6551">&#8217;s China</S>
+      </P>
+      <P>
+        <S ID="S-6552">of development the</S>
+      </P>
+      <P>
+        <S ID="S-6553">0 0 0 0.4 1.0 0</S>
+      </P>
+      <P>
+        <S ID="S-6554">zhongguo</S>
+      </P>
+      <P>
+        <S ID="S-6555">de jingji</S>
+      </P>
+      <P>
+        <S ID="S-6556">fazhan</S>
+      </P>
+      <P>
+        <S ID="S-6557">zhongguo</S>
+      </P>
+      <P>
+        <S ID="S-6558">de jingji</S>
+      </P>
+      <P>
+        <S ID="S-6559">fazhan</S>
+      </P>
+      <P>
+        <S ID="S-6560">zhongguo</S>
+      </P>
+      <P>
+        <S ID="S-6561">de jingji</S>
+      </P>
+      <P>
+        <S ID="S-6562">fazhan</S>
+      </P>
+      <P>
+        <S ID="S-6563">(a) (b) (c)</S>
+      </P>
+      <P>
+        <S ID="S-6564">pair (&#8220;zhongguo&#8221;, &#8220;China&#8221;)) occur in both alignments, some links (e.g., (2,3) corresponding to the word pair (&#8220;de&#8221;,&#8220;of&#8221;)) occur only in one alignment, and some links (e.g., (1,1) corresponding to the word pair (&#8220;zhongguo&#8221;, &#8220;the&#8221;)) do not occur.</S>
+        <S ID="S-6565">Intuitively, we can estimate how well two words are aligned by calculating its relative frequency, which is the probability sum of alignments in which the link occurs divided by the probability sum of all possible alignments.</S>
+        <S ID="S-6566">Suppose that the probabilities of the two alignments in Figures 2(a) and 2(b) are 0.6 and 0.4, respectively.</S>
+        <S ID="S-6567">We can estimate the relative frequencies for every word pair and obtain a weighted matrix shown in Figure 2(c).</S>
+        <S ID="S-6568">Therefore, each word pair is associated with a probability to indicate how well they are aligned.</S>
+        <S ID="S-6569">For example, in Figure 2(c), we say that the word pair (&#8220;zhongguo&#8221;, &#8220;China&#8221;) is definitely aligned, (&#8220;zhongguo&#8221;, &#8220;the&#8221;) is definitely unaligned, and (&#8220;de&#8221;, &#8220;of&#8221;) has a 60% chance to get aligned.</S>
+      </P>
+      <P>
+        <S ID="S-6570">Formally, a weighted alignment matrix m is a J &#215; I matrix, in which each element stores a link probability p m (j, i) to indicate how well f j and e i are aligned.</S>
+        <S ID="S-6571">Currently, we estimate link probabilities from an n-best list by calculating relative frequencies:</S>
+      </P>
+      <P>
+        <S ID="S-6572">p m (j, i) = &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-6573">a&#8712;N p(a) &#215; &#948;(a, j, i) &#8721;a&#8712;N p(a) (6)</S>
+      </P>
+      <P>
+        <S ID="S-6574">= &#8721; p(a) &#215; &#948;(a, j, i) (7)</S>
+      </P>
+      <P>
+        <S ID="S-6575">a&#8712;N</S>
+      </P>
+      <P>
+        <S ID="S-6576">where</S>
+      </P>
+      <P>
+        <S ID="S-6577">&#948;(a, j, i) =</S>
+      </P>
+      <P>
+        <S ID="S-6578">{ 1 (j, i) &#8712; a 0 otherwise (8)</S>
+      </P>
+      <P>
+        <S ID="S-6579">Note that N is an n-best list, p(a) is the probability of an alignment a in the n-best list, &#948;(a, j, i) indicates whether a link (j, i) occurs in the alignment a or not.</S>
+        <S ID="S-6580">We assign 0 to any unseen alignment.</S>
+        <S ID="S-6581">As p(a) is usually normalized (i.e., &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-6582">a&#8712;N p(a) &#8801; 1), we remove the denominator in</S>
+      </P>
+      <P>
+        <S ID="S-6583">Eq.</S>
+        <S ID="S-6584">(6).</S>
+      </P>
+      <P>
+        <S ID="S-6585">Accordingly, the probability that the two words f j and e i are not aligned is</S>
+      </P>
+      <P>
+        <S ID="S-6586">&#175;p m (j, i) = 1.0 &#8722; p m (j, i) (9)</S>
+      </P>
+      <P>
+        <S ID="S-6587">For example, as shown in Figure 2(c), the probability for the two words &#8220;de&#8221; and &#8220;of&#8221; being aligned is 0.6 and the probability that they are not aligned is 0.4.</S>
+      </P>
+      <P>
+        <S ID="S-6588">Intuitively, the probability of an alignment a is the product of link probabilities.</S>
+        <S ID="S-6589">If a link (j, i) occurs in a, we use p m (j, i); otherwise we use &#175;p m (j, i).</S>
+        <S ID="S-6590">Formally, given a weighted alignment matrix m, the probability of an alignment a can be calculated as</S>
+      </P>
+      <P>
+        <S ID="S-6591">J&#8719; I&#8719; p m (a) = (p m (j, i) &#215; &#948;(a, j, i) +</S>
+      </P>
+      <P>
+        <S ID="S-6592">j=1 i=1</S>
+      </P>
+      <P>
+        <S ID="S-6593">&#175;p m (j, i) &#215; (1 &#8722; &#948;(a, j, i))) (10)</S>
+      </P>
+      <P>
+        <S ID="S-6594">It proves that the sum of all alignment probabilities is always 1: &#8721; a&#8712;A p m(a) &#8801; 1, where A</S>
+      </P>
+      <P>
+        <S ID="S-6595">is the set of all possible alignments.</S>
+        <S ID="S-6596">Therefore, a weighted alignment matrix is capable of encoding the probabilities of 2 J&#215;I alignments using only a J &#215; I space.</S>
+      </P>
+      <P>
+        <S ID="S-6597">Note that p m (a) is not necessarily equal to p(a) because the encoding of a weighted alignment matrix changes the alignment probability distribution.</S>
+        <S ID="S-6598">For example, while the initial probability of the alignment in Figure 2(a) (i.e., p(a)) is 0.6, the probability of the same alignment encoded in the matrix shown in Figure 2(c) (i.e., p m (a)) becomes 0.1296 according to Eq.</S>
+        <S ID="S-6599">(10).</S>
+        <S ID="S-6600">It should be emphasized that a weighted matrix encodes all possible alignments rather than the input n-best list, although the link probabilities are estimated from the n-best list.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Phrase Pair Extraction</HEADER>
+      <P>
+        <S ID="S-6696">In this section, we describe how to extract phrase pairs from the training corpus annotated with weighted alignment matrices (Section 4.1) and how to estimate their relative frequencies (Section 4.2) and lexical weights (Section 4.3).</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Extraction Algorithm</HEADER>
+        <P>
+          <S ID="S-6601"><REF ID="R-21" RPTR="38">Och and Ney (2004)</REF> describe a &#8220;phrase-extract&#8221; algorithm for extracting phrase pairs from a sentence pair annotated with a 1-best alignment.</S>
+          <S ID="S-6602">Given a source phrase, they first identify the target phrase that is consistent with the alignment.</S>
+          <S ID="S-6603">Then, they expand the boundaries of the target phrase if the boundary words are unaligned.</S>
+        </P>
+        <P>
+          <S ID="S-6604">Unfortunately, this algorithm cannot be directly used to manipulate a weighted alignment matrix, which is a compact representation of all possible alignments.</S>
+          <S ID="S-6605">The major difference is that the &#8220;tight&#8221; phrase that has both boundary words aligned is not necessarily the smallest candidate in a weighted matrix.</S>
+          <S ID="S-6606">For example, in Figure 2(a), the &#8220;tight&#8221; target phrase corresponding to the source phrase &#8220;zhongguo de&#8221; is &#8220;of China&#8221;.</S>
+          <S ID="S-6607">According to Och&#8217;s algorithm, the target phrase &#8220;China&#8221; breaks the alignment consistency and therefore is not valid candidate.</S>
+          <S ID="S-6608">However, this is not true for using the weighted matrix shown in Figure 2(c).</S>
+          <S ID="S-6609">The target phrase &#8220;China&#8221; is treated as a &#8220;potential&#8221; candidate 1 , although it might be assigned only a small fractional count (see Table 1).</S>
+          <S ID="S-6610">Therefore, we enumerate all potential phrase pairs and calculate their fractional counts for eliminating less promising candidates.</S>
+          <S ID="S-6611">Figure 3 shows the algorithm for extracting phrases from a weighted matrix.</S>
+          <S ID="S-6612">The input of the algorithm is a source sentence f1 J, a target sentence eI 1 , a weighted alignment matrix m, and a phrase length limit l (line 1).</S>
+          <S ID="S-6613">After initializing R that stores collected phrase pairs (line 2), we identify the corresponding target phrases for all possible source phrases (lines 3-5).</S>
+          <S ID="S-6614">Given a source phrase f j 2</S>
+        </P>
+        <P>
+          <S ID="S-6615">j 1</S>
+        </P>
+        <P>
+          <S ID="S-6616">, we find the lower and upper bounds of target positions (i.e., i l and i u ) that have positive link probabilities (lines 6-8).</S>
+          <S ID="S-6617">For example, the lower bound is 3 and the upper bound is 5 for the source phrase &#8220;zhongguo de&#8221; in Figure 2(c).</S>
+          <S ID="S-6618">Finally, we enumerate all target phrases that allow for unaligned boundary words with varying phrase lengths (lines 9-14).</S>
+          <S ID="S-6619">Note that we need to ensure that 1 &#8804; i 1 &#8804; I and 1 &#8804; i 2 &#8804; I in lines 10-11, which are omitted for simplicity.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Calculating Relative Frequencies</HEADER>
+        <P>
+          <S ID="S-6620">To estimate the relative frequency of a phrase pair, we need to estimate how often it occurs in the training corpus.</S>
+          <S ID="S-6621">Given an n-best list, the fractional count of a phrase pair is the probability sum of the alignments with which the phrase pair is consistent.</S>
+          <S ID="S-6622">Obviously, it is unrealistic for a weighted alignment matrix to enumerate all possible alignments explicitly to calculate fractional counts.</S>
+          <S ID="S-6623">Instead, we resort to link probabilities to calculate</S>
+        </P>
+        <P>
+          <S ID="S-6624">1 By potential, we mean that the fractional count of a</S>
+        </P>
+        <P>
+          <S ID="S-6625">phrase pair is positive.</S>
+          <S ID="S-6626">Section 4.2 describes how to calculate fractional counts.</S>
+        </P>
+        <P>
+          <S ID="S-6627">economy</S>
+        </P>
+        <P>
+          <S ID="S-6628">&#8217;s China</S>
+        </P>
+        <P>
+          <S ID="S-6629">of development the</S>
+        </P>
+        <P>
+          <S ID="S-6630">zhongguo</S>
+        </P>
+        <P>
+          <S ID="S-6631">de jingji 0 0 0 0.4 1.0 0</S>
+        </P>
+        <P>
+          <S ID="S-6632">fazhan</S>
+        </P>
+        <P>
+          <S ID="S-6633">counts efficiently.</S>
+          <S ID="S-6634">Equivalent to explicit enumeration, we interpret the fractional count of a phrase pair as the probability that it satisfies the two alignment consistency conditions (see Section 2).</S>
+        </P>
+        <P>
+          <S ID="S-6635">Given a phrase pair, we divide the elements of a weighted alignment matrix into three categories: (1) inside elements that fall inside the phrase pair, (2) outside elements that fall outside the phrase pair while fall in the same row or the same column, and (3) irrelevant elements that fall outside the phrase pair while fall in neither the same row nor the same column.</S>
+          <S ID="S-6636">Figure 4 shows an example.</S>
+          <S ID="S-6637">Given the phrase pair (&#8220;zhongguo de&#8221;, &#8220;of China&#8221;), we divide the matrix into three areas: inside (heavy shading), outside (light shading), and irrelevant (no shading).</S>
+        </P>
+        <P>
+          <S ID="S-6638">To what extent a phrase pair satisfies the alignment consistency is measured by calculating inside and outside probabilities.</S>
+          <S ID="S-6639">Although there are the same terms in the parsing literature, they have different meanings here.</S>
+          <S ID="S-6640">The inside probability indicates the chance that there is at least one word inside one phrase aligned to a word inside the other phrase.</S>
+          <S ID="S-6641">The outside probability indicates the chance that no words inside one phrase are aligned to a word outside the other phrase.</S>
+        </P>
+        <P>
+          <S ID="S-6642">Given a phrase pair (f j 2</S>
+        </P>
+        <P>
+          <S ID="S-6643">j 1</S>
+        </P>
+        <P>
+          <S ID="S-6644">, e i 2</S>
+        </P>
+        <P>
+          <S ID="S-6645">i1</S>
+        </P>
+        <P>
+          <S ID="S-6646">), we denote the inside area as in(j 1 , j 2 , i 1 , i 2 ) and the outside area as out(j 1 , j 2 , i 1 , i 2 ).</S>
+          <S ID="S-6647">Therefore, the inside probability of a phrase pair is calculated as</S>
+        </P>
+        <P>
+          <S ID="S-6648">&#945;(j 1 , j 2 , i 1 , i 2 ) = 1 &#8722; &#8719;</S>
+        </P>
+        <P>
+          <S ID="S-6649">(j,i)&#8712;in(j 1 ,j 2 ,i 1 ,i 2 )</S>
+        </P>
+        <P>
+          <S ID="S-6650">&#175;p m (j, i) (11)</S>
+        </P>
+        <P>
+          <S ID="S-6651">For example, the inside probability for (&#8220;zhongguo de&#8221;, &#8220;of China&#8221;) in Figure 4 is 1.0, which means that there always exists at least one aligned word pair inside.</S>
+        </P>
+        <P>
+          <S ID="S-6652">Accordingly, the outside probability of a phrase pair is calculated as &#8719; &#946;(j 1 , j 2 , i 1 , i 2 ) = &#175;p m (j, i) (12)</S>
+        </P>
+        <P>
+          <S ID="S-6653">(j,i)&#8712;out(j 1 ,j 2 ,i 1 ,i 2 )</S>
+        </P>
+        <P>
+          <S ID="S-6654">For example, the outside probability for (&#8220;zhongguo de&#8221;, &#8220;of China&#8221;) in Figure 4 is 0.36, which means the probability that there are no aligned word pairs outside is 0.36.</S>
+        </P>
+        <P>
+          <S ID="S-6655">Finally, we use the product of inside and outside probabilities as the fractional count of a phrase pair:</S>
+        </P>
+        <P>
+          <S ID="S-6656">count(f j 2</S>
+        </P>
+        <P>
+          <S ID="S-6657">j 1</S>
+        </P>
+        <P>
+          <S ID="S-6658">, e i 2</S>
+        </P>
+        <P>
+          <S ID="S-6659">i1</S>
+        </P>
+        <P>
+          <S ID="S-6660">) = &#945;(j 1 , j 2 , i 1 , i 2 ) &#215;</S>
+        </P>
+        <P>
+          <S ID="S-6661">&#946;(j 1 , j 2 , i 1 , i 2 ) (13)</S>
+        </P>
+        <P>
+          <S ID="S-6662">Table 1 lists some candidate target phrases of the source phrase &#8220;zhongguo de&#8221; in Figure 4.</S>
+          <S ID="S-6663">We also give their inside probabilities, outside probabilities, and fractional counts.</S>
+          <S ID="S-6664">After collecting the fractional counts from the training corpus, we then use Eq.</S>
+          <S ID="S-6665">(2) to calculate relative frequencies in two translation directions.</S>
+        </P>
+        <P>
+          <S ID="S-6666">Often, our approach extracts a large amount of phrase pairs from training corpus as we soften the alignment consistency constraint.</S>
+          <S ID="S-6667">To maintain a reasonable phrase table size, we discard any phrase pair that has a fractional count lower than a threshold t.</S>
+          <S ID="S-6668">During extraction, we first obtain a list of candidate target phrases for each source phrase, as shown in Table 1.</S>
+          <S ID="S-6669">Then, we prune the list according to the threshold t.</S>
+          <S ID="S-6670">For example, we only retain the top two candidates in Table 1 if t = 0.3.</S>
+          <S ID="S-6671">Note that we perform the pruning locally.</S>
+          <S ID="S-6672">Although it is more reasonable to prune a phrase table after accumulating all fractional counts from</S>
+        </P>
+        <P>
+          <S ID="S-6673">training corpus, such global pruning strategy usually leads to very large disk and memory requirements.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Calculating Lexical Weights</HEADER>
+        <P>
+          <S ID="S-6674">Recall that we need to obtain two translation probability tables w(e|f) and w(f |e) before calculating lexical weights (see Section 2).</S>
+          <S ID="S-6675">Following <REF ID="R-10" RPTR="16">Koehn et al. (2003)</REF>, we estimate the two distributions by relative frequencies from the training corpus annotated with weighted alignment matrices.</S>
+          <S ID="S-6676">In other words, we still use Eq.</S>
+          <S ID="S-6677">(3) but the way of calculating fractional counts is different now.</S>
+        </P>
+        <P>
+          <S ID="S-6678">Given a source word f j , a target word e i , and a weighted alignment matrix, the fractional count count(f j , e i ) is p m (j, i).</S>
+          <S ID="S-6679">For NULL words, the fractional counts can be calculated as I&#8719; count(f j , e 0 ) = &#175;p m (j, i) (14)</S>
+        </P>
+        <P>
+          <S ID="S-6680">count(f 0 , e i ) =</S>
+        </P>
+        <P>
+          <S ID="S-6681">i=1</S>
+        </P>
+        <P>
+          <S ID="S-6682">J&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-6683">j=1</S>
+        </P>
+        <P>
+          <S ID="S-6684">&#175;p m (j, i) (15)</S>
+        </P>
+        <P>
+          <S ID="S-6685">i=1</S>
+        </P>
+        <P>
+          <S ID="S-6686">&#8721;</S>
+        </P>
+        <P>
+          <S ID="S-6687">&#8704;j:p m(j,i)&gt;0</S>
+        </P>
+        <P>
+          <S ID="S-6688">p(e i |f 0 ) &#215;</S>
+        </P>
+        <P>
+          <S ID="S-6689">) p(e i |f j ) &#215; p m (j, i) +</S>
+        </P>
+        <P>
+          <S ID="S-6690">| &#732;f| &#8719;</S>
+        </P>
+        <P>
+          <S ID="S-6691">j=1</S>
+        </P>
+        <P>
+          <S ID="S-6692">&#175;p m (j, i)</S>
+        </P>
+        <P>
+          <S ID="S-6693">For example, for the target word &#8220;of&#8221; in Figure 4, the sum of aligned and unaligned probabilities is 1</S>
+        </P>
+        <P>
+          <S ID="S-6694">&#215; (p(of|de) &#215; 0.6 + p(of|fazhan) &#215; 0.4) + 2 p(of|NULL) &#215; 0.24</S>
+        </P>
+        <P>
+          <S ID="S-6695">Note that we take link probabilities into account and calculate the probability that a target word translates a source NULL token explicitly.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiments</HEADER>
+      <P>
+        <S ID="S-6780"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Data Preparation</HEADER>
+        <P>
+          <S ID="S-6697">We evaluated our approach on Chinese-to-English translation.</S>
+          <S ID="S-6698">We used the FBIS corpus (6.9M )</S>
+        </P>
+        <P>
+          <S ID="S-6699">(16)</S>
+        </P>
+        <P>
+          <S ID="S-6700">+ 8.9M words) as the training data.</S>
+          <S ID="S-6701">For language model, we used the SRI Language Modeling Toolkit (<REF ID="R-25" RPTR="48">Stolcke, 2002</REF>) to train a 4-gram model on the Xinhua portion of GIGAWORD corpus.</S>
+          <S ID="S-6702">We used the NIST 2002 MT evaluation test set as our development set, and used the NIST 2005 test set as our test set.</S>
+          <S ID="S-6703">We evaluated the translation quality using case-insensitive BLEU metric (<REF ID="R-22" RPTR="40">Papineni et al., 2002</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-6704">To obtain weighted alignment matrices, we followed <REF ID="R-28" RPTR="55">Venugopal et al. (2008)</REF><REF ID="R-07" RPTR="7">(2008)</REF><REF ID="R-24" RPTR="43">(2008)</REF> to produce n- best lists via GIZA++.</S>
+          <S ID="S-6705">We first ran GIZA++ to produce 50-best lists in two translation directions.</S>
+          <S ID="S-6706">Then, we used the refinement technique &#8220;grow-diag-final-and&#8221; (<REF ID="R-10" RPTR="19">Koehn et al., 2003</REF>) to all 50 &#215; 50 bidirectional alignment pairs.</S>
+          <S ID="S-6707">Suppose that p s2t and p t2s are the probabilities of an alignment pair assigned by GIZA++, respectively.</S>
+          <S ID="S-6708">We used p s2t &#215; p t2s as the probability of the resulting symmetric alignment.</S>
+          <S ID="S-6709">As different alignment pairs might produce the same symmetric alignments, we followed <REF ID="R-28" RPTR="56">Venugopal et al. (2008)</REF><REF ID="R-07" RPTR="8">(2008)</REF><REF ID="R-24" RPTR="44">(2008)</REF> to remove duplicate alignments and retain only the alignment with the highest probability.</S>
+          <S ID="S-6710">Therefore, there were 550 candidate alignments on average for each sentence pair in the training data.</S>
+          <S ID="S-6711">We obtained n-best lists by selecting the top n alignments from the 550-best lists.</S>
+          <S ID="S-6712">The probability of each alignment in the n-best list was re-estimated by re-normalization (<REF ID="R-28" RPTR="52">Venugopal et al., 2008</REF>).</S>
+          <S ID="S-6713">Finally, these n-best alignments served as samples for constructing weighted alignment matrices.</S>
+          <S ID="S-6714">After extracting phrase pairs from n-best lists and weighted alignment matrices, we ran Moses (<REF ID="R-11" RPTR="21">Koehn et al., 2007</REF>) to translate the development and test sets.</S>
+          <S ID="S-6715">We used the simple distance-based reordering model to remove the dependency of lexicalization on word alignments for Moses.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Effect of Pruning Threshold</HEADER>
+        <P>
+          <S ID="S-6716">Our first experiment investigated the effect of pruning threshold on translation quality (BLEU scores on the test set) and the phrase table size (filtered for the test set), as shown in Figure 5.</S>
+          <S ID="S-6717">To save time, we extracted phrase pairs just from the first 10K sentence pairs of the FBIS corpus.</S>
+          <S ID="S-6718">We used 12 different thresholds: 0.0001, 0.001, 0.01, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, and 0.9.</S>
+          <S ID="S-6719">Obviously, the lower the threshold is, the more phrase pairs are extracted.</S>
+          <S ID="S-6720">When t = 0.0001, the number of phrase pairs used on the test set was 460,284</S>
+        </P>
+        <P>
+          <S ID="S-6721">and the BLEU score was 20.55.</S>
+          <S ID="S-6722">Generally, both the number of phrase pairs and the BLEU score went down with the increase of t.</S>
+          <S ID="S-6723">However, this trend did not hold within the range [0.1, 0.9].</S>
+          <S ID="S-6724">To achieve a good tradeoff between translation quality and phrase table size, we set t = 0.01 for the following experiments.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 N-best lists Vs. Weighted Matrices</HEADER>
+        <P>
+          <S ID="S-6725">Figure 6 shows the BLEU scores and average extraction time using n-best alignments and weighted matrices, respectively.</S>
+          <S ID="S-6726">We used the entire training data for phrase extraction.</S>
+          <S ID="S-6727">When using 1-best alignments, Moses achieved a BLEU score of 0.2826 and the average extraction time was 4.19 milliseconds per sentence pair (see point n = 1).</S>
+          <S ID="S-6728">The BLEU scores rose with the increase of n for using n-best alignments.</S>
+          <S ID="S-6729">However, the score went down slightly when n = 50.</S>
+          <S ID="S-6730">This suggests that including more noisy alignments might be harmful.</S>
+          <S ID="S-6731">These improvements over 1-best alignments are not statistically significant.</S>
+          <S ID="S-6732">This finding failed to echo the promising results reported by Venogopal et al. <REF ID="R-07" RPTR="9">(2008)</REF><REF ID="R-24" RPTR="45">(2008)</REF>.</S>
+          <S ID="S-6733">We think that there are two possible reasons.</S>
+          <S ID="S-6734">First, they evaluated their approach on the IWSLT data while we used the NIST data.</S>
+          <S ID="S-6735">It might be easier to obtain significant improvements on the IWSLT data in which the sentences are shorter.</S>
+          <S ID="S-6736">Second, they used the hierarchical phrase-based system while we used the phrase-based system, which might be less sensitive to word alignments because the alignments inside the phrase pairs hardly have an effect.</S>
+          <S ID="S-6737">When using weighted alignment matrices, we Figure 6: Comparison of n-best alignments and weighted alignment matrices.</S>
+          <S ID="S-6738">We use m(n) to denote the matrices that take n-best lists as samples.</S>
+        </P>
+        <P>
+          <S ID="S-6739">obtained higher BLEU scores than using n-best lists with much less extraction time.</S>
+          <S ID="S-6740">We achieved a BLEU score of 0.2901 when using the weighted matrices estimated from 10-best lists.</S>
+          <S ID="S-6741">The absolute improvement of 0.75 over using 1-best alignments (from 0.2826 to 0.2901) is statistically significant at p &lt; 0.05 by using sign-test (Collins et al., 2005).</S>
+          <S ID="S-6742">Although the improvements over n- best lists are not always statistically significant, weighted alignment matrices maintain consistent superiority in both translation quality and extraction speed.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Comparison of Parameter Estimation</HEADER>
+        <P>
+          <S ID="S-6743">In theory, the set of phrase pairs extracted from n- best alignments is the subset of the set extracted from the corresponding weighted matrices.</S>
+          <S ID="S-6744">In practice, however, this is not true because we use the pruning threshold t to maintain a reasonable table size.</S>
+          <S ID="S-6745">Even so, the phrase tables produced by n-best lists and weighted matrices still share many phrase pairs.</S>
+          <S ID="S-6746">Table 2 gives some statistics.</S>
+          <S ID="S-6747">We use m(10) to represent the weighted matrices estimated from 10-best lists.</S>
+          <S ID="S-6748">&#8220;all&#8221; denotes the full phrase table, &#8220;shared&#8221; denotes the intersection of two tables, and &#8220;non-shared&#8221; denotes the complement.</S>
+          <S ID="S-6749">Note that the probabilities of &#8220;shared&#8221; phrase pairs are different for the two approaches.</S>
+          <S ID="S-6750">We obtained 6.13M and 6.34M phrase pairs for the test set by using 10-best lists and the corresponding matrices, respectively.</S>
+          <S ID="S-6751">There were 4.58M phrase pairs included by both tables.</S>
+          <S ID="S-6752">Note that the relative frequencies and lexical weights for the same phrase</S>
+        </P>
+        <P>
+          <S ID="S-6753">BLEU score</S>
+        </P>
+        <P>
+          <S ID="S-6754">0.290 0.280 0.270 0.260 0.250 0.240 0.230 0.220 0.210 0.200 1-best 10-best m(10)</S>
+        </P>
+        <P>
+          <S ID="S-6755">0 50 100 150 200 250</S>
+        </P>
+        <P>
+          <S ID="S-6756">training corpus size (10 3 )</S>
+        </P>
+        <P>
+          <S ID="S-6757">pairs might be different in two tables.</S>
+          <S ID="S-6758">We found that using matrices outperformed using n-best lists even with the same phrase pairs.</S>
+          <S ID="S-6759">This suggests that our methods for parameter estimation make better use of noisy data.</S>
+          <S ID="S-6760">Another interesting finding was that using the shared phrase pairs achieved almost the same results with using full phrase tables.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.5 Effect of Training Corpus Size</HEADER>
+        <P>
+          <S ID="S-6761">To investigate the effect of training corpus size on our approach, we extracted phrase pairs from n- best lists and weighted matrices trained on five training corpora with varying sizes: 10K, 50K, 100K, 150K, and 239K sentence pairs.</S>
+          <S ID="S-6762">As shown in Figure 7, our approach outperformed both 1- best and n-best lists consistently.</S>
+          <S ID="S-6763">More importantly, the gains seem increase when more training data are used.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.6 Results on Other Language Pairs</HEADER>
+        <P>
+          <S ID="S-6764">To further examine the efficacy of the proposed approach, we scaled our experiments to large data with multiple language pairs.</S>
+          <S ID="S-6765">We used the Europarl training corpus from the WMT07 shared</S>
+        </P>
+        <P>
+          <S ID="S-6766">task.</S>
+          <S ID="S-6767">2 Table 3 shows the statistics of the training data.</S>
+          <S ID="S-6768">There are four languages (Spanish, French, German, and English) and six translation directions (Foreign-to-English and Englishto-Foreign).</S>
+          <S ID="S-6769">We used the &#8220;dev2006&#8221; data in the &#8220;dev&#8221; directory as the development set and the &#8220;test2006&#8221; data in the &#8220;devtest&#8221; directory as the test set.</S>
+          <S ID="S-6770">Both the development and test sets contain 2,000 sentences with single reference translations.</S>
+          <S ID="S-6771">We tokenized and lowercased all the training, development, and test data.</S>
+          <S ID="S-6772">We trained a 4-gram language model using SRI Language Modeling Toolkit on the target side of the training corpus for each task.</S>
+          <S ID="S-6773">We ran GIZA++ on the entire training data to obtain n-best alignments and weighted matrices.</S>
+          <S ID="S-6774">To save time, we just used the first 100K sentences of each aligned training corpus to extract phrase pairs.</S>
+        </P>
+        <P>
+          <S ID="S-6775">2 http://www.statmt.org/wmt07/shared-task.html</S>
+        </P>
+        <P>
+          <S ID="S-6776">Table 4 lists the case-insensitive BLEU scores of 1-best, 10-best, and m(10) on the Europarl data.</S>
+          <S ID="S-6777">Using weighted packed matrices continued to show advantage over using 1-best alignments on multiple language pairs.</S>
+          <S ID="S-6778">However, these improvements were very small and not significant.</S>
+          <S ID="S-6779">We attribute this to the fact that GIZA++ usually produces high quality 1-best alignments for closelyrelated European language pairs, especially when trained on millions of sentences.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Related Work</HEADER>
+      <P>
+        <S ID="S-6781">Recent studies has shown that SMT systems can benefit from making the annotation pipeline wider: using packed forests instead of 1-best trees (<REF ID="R-17" RPTR="30">Mi et al., 2008</REF>), word lattices instead of 1-best segmentations (<REF ID="R-06" RPTR="5">Dyer et al., 2008</REF>), and n-best alignments instead of 1-best alignments (<REF ID="R-28" RPTR="53">Venugopal et al., 2008</REF>).</S>
+        <S ID="S-6782">We propose a compact representation of multiple word alignments that enables SMT systems to make a better use of noisy alignments.</S>
+      </P>
+      <P>
+        <S ID="S-6783"><REF ID="R-16" RPTR="28">Matusov et al. (2004)</REF> propose &#8220;cost matrices&#8221; for producing symmetric alignments.</S>
+        <S ID="S-6784"><REF ID="R-13" RPTR="23">Kumar et al. (2007)</REF><REF ID="R-12" RPTR="22">(2007)</REF> describe how to use &#8220;posterior probability matrices&#8221; to improve alignment accuracy via a bridge language.</S>
+        <S ID="S-6785">Although not using the term &#8221;weighted matrices&#8221; directly, they both assign a probability to each word pair.</S>
+      </P>
+      <P>
+        <S ID="S-6786">We follow <REF ID="R-21" RPTR="39">Och and Ney (2004)</REF> to develop a new phrase extraction algorithm for weighted alignment matrices.</S>
+        <S ID="S-6787">The methods for calculating relative frequencies (<REF ID="R-21" RPTR="37">Och and Ney, 2004</REF>) and lexical weights (<REF ID="R-10" RPTR="20">Koehn et al., 2003</REF>) are also adapted for the weighted matrix case.</S>
+      </P>
+      <P>
+        <S ID="S-6788">Many researchers (e.g., (<REF ID="R-27" RPTR="50">Venugopal et al., 2003</REF>; <REF ID="R-05" RPTR="3">Deng et al., 2008</REF>)) observe that softening the alignment consistency constraint help improve translation quality.</S>
+        <S ID="S-6789">For example, Deng et al. <REF ID="R-07" RPTR="10">(2008)</REF><REF ID="R-24" RPTR="46">(2008)</REF> define a feature named &#8220;within phrase pair consistency ratio&#8221; to measure the degree of consistency.</S>
+        <S ID="S-6790">As each link is associated with a probability in a weighted matrix, we use these probabilities to evaluate the validity of a phrase pair.</S>
+      </P>
+      <P>
+        <S ID="S-6791">We estimate the link probabilities by calculating relative frequencies over n-best lists.</S>
+        <S ID="S-6792"><REF ID="R-19" RPTR="32">Niehues and Vogel (2008)</REF><REF ID="R-07" RPTR="11">(2008)</REF><REF ID="R-24" RPTR="47">(2008)</REF> propose a discriminative approach to modeling the alignment matrix directly.</S>
+        <S ID="S-6793">The difference is that they assign a boolean value instead of a probability to each word pair.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion and Future Work</HEADER>
+      <P>
+        <S ID="S-6794">We have presented a new structure called weighted alignment matrix that encodes the alignment distribution for a sentence pair.</S>
+        <S ID="S-6795">Accordingly, we develop new methods for extracting phrase pairs and estimating their probabilities.</S>
+        <S ID="S-6796">Our experiments show that the proposed approach achieves better translation quality over using n-best lists in less extraction time.</S>
+        <S ID="S-6797">An interesting finding is that our approach performs better than the baseline even they use the same phrase pairs.</S>
+        <S ID="S-6798">Although our approach consistently outperforms using 1-best alignments for varying language pairs, the improvements are comparatively small.</S>
+        <S ID="S-6799">One possible reason is that taking n-best lists as samples sometimes might change alignment probability distributions inappropriately.</S>
+        <S ID="S-6800">A more principled solution is to directly model the weighted alignment matrices, either in a generative or a discriminative way.</S>
+        <S ID="S-6801">We believe that better estimation of alignment distributions will result in more significant improvements.</S>
+        <S ID="S-6802">Another interesting direction is applying our approach to extracting translation rules with hierarchical structures such as hierarchical phrases (<REF ID="R-03" RPTR="2">Chiang, 2007</REF>) and tree-to-string rules (<REF ID="R-09" RPTR="14">Galley et al., 2006</REF>; <REF ID="R-15" RPTR="27">Liu et al., 2006</REF>).</S>
+        <S ID="S-6803">We expect that these syntax-based systems could benefit more from our approach.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>Acknowledgement</HEADER>
+      <P>
+        <S ID="S-6804"></S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Phil Blunsom</RAUTHOR>
+      <REFTITLE>Discriminative word alignment with conditional random fields.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>F Brown</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Della Pietra</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: Parameter estimation.</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Michael Collins</RAUTHOR>
+      <REFTITLE>Clause restructuring for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>Phrase table training for precision and recall: What makes a good phrase and a good phrase pair?</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Christopher Dyer</RAUTHOR>
+      <REFTITLE>Generalizing word lattice translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Alexander Fraser</RAUTHOR>
+      <REFTITLE>Measuring word alignment quality for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Scalable inference and training of context-rich syntactic translation models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: Open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Shankar Kumar</RAUTHOR>
+      <REFTITLE>Improving word alignment with bridge languages.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Loglinear models for word alignment.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Treeto-string alignment template for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Evgeny Matusov</RAUTHOR>
+      <REFTITLE>Symmetric word alignments for statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Haitao Mi</RAUTHOR>
+      <REFTITLE>Forestbased translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Robert C Moore</RAUTHOR>
+      <REFTITLE>Improved discriminative bilingual word alignment.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Jan Niehues</RAUTHOR>
+      <REFTITLE>Discriminative word alignment via alignment matrix modeling.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>The alignment template approach to statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Libin Shen</RAUTHOR>
+      <REFTITLE>A new string-to-dependency machine translation algorithm with a target dependency language model.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>Srilm - an extension language model modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Ben Taskar</RAUTHOR>
+      <REFTITLE>A discriminative matching approach to word alignment.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Ashish Venugopal</RAUTHOR>
+      <REFTITLE>Effective phrase translation extraction from alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Ashish Venugopal</RAUTHOR>
+      <REFTITLE>Wider pipelines: nbest alignments and parses in mt training.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

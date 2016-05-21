@@ -1,0 +1,709 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Word Lattices for Multi-Source Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>Josh Schroeder</AUTHOR>
+    <AUTHOR>Trevor Cohn</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-18752">Multi-source statistical machine translation is the process of generating a single translation from multiple inputs.</A-S>
+    <A-S ID="S-18753">Previous work has focused primarily on selecting from potential outputs of separate translation systems, and solely on multi-parallel corpora and test sets.</A-S>
+    <A-S ID="S-18754">We demonstrate how multi-source translation can be adapted for multiple monolingual inputs.</A-S>
+    <A-S ID="S-18755">We also examine different approaches to dealing with multiple sources, including consensus decoding, and we present a novel method of input combination to generate lattices for multi-source translation within a single translation model.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-18756">Multi-source statistical machine translation was first formally defined by <REF ID="R-11" RPTR="13">Och and Ney (2001)</REF> as the process of translating multiple meaningequivalent source language texts into a single target language.</S>
+        <S ID="S-18757">Multi-source translation is of particular use when translating a document that has already been translated into several languages, either by humans or machines, and needs to be further translated into other target languages.</S>
+        <S ID="S-18758">This situation occurs often in large multi-lingual organisations such as the United Nations and the European Parliament, which must translate their proceedings into the languages of the member institutions.</S>
+        <S ID="S-18759">It is also common in multi-national companies, which need to translate product and marketing documentation for their different markets.</S>
+        <S ID="S-18760">Clearly, any existing translations for a document can help automatic translation into other languages.</S>
+        <S ID="S-18761">These different versions of the input can resolve deficiencies and ambiguities (e.g., syntactic and semantic ambiguity) present in a single input, resulting in higher quality translation output.</S>
+      </P>
+      <P>
+        <S ID="S-18762">In this paper, we present three models of multisource translation, with increasing degrees of sophistication, which we compare empirically on a number of different corpora.</S>
+        <S ID="S-18763">We generalize the definition of multi-source translation to include any translation case with multiple inputs and a single output, allowing for, e.g., multiple paraphrased inputs in a single language.</S>
+        <S ID="S-18764">Our methods include simple output selection, which treats the multisource translation task as many independent translation steps followed by selection of one of their outputs (<REF ID="R-11" RPTR="16">Och and Ney, 2001</REF>), and output combination, which uses consensus decoding to construct a string from n-gram fragments of the translation outputs (<REF ID="R-00" RPTR="1">Bangalore et al., 2001</REF>).</S>
+        <S ID="S-18765">We also present a novel method, input combination, in which we compile the input texts into a compact lattice, over which we perform a single decoding pass.</S>
+        <S ID="S-18766">We show that as we add additional inputs, the simplest output selection method performs quite poorly relative to a single input translation system, while the latter two methods are able to make better use of the additional inputs.</S>
+      </P>
+      <P>
+        <S ID="S-18767">The paper is structured as follows.</S>
+        <S ID="S-18768">&#167;2 presents the three methods for multi-source translation in detail: output selection, output combination, and our novel lattice-based method for input combination.</S>
+        <S ID="S-18769">We report experiments applying these techniques to three different corpora, with both monolingual inputs (&#167;3) and multilingual inputs (&#167;4).</S>
+        <S ID="S-18770">We finish in &#167;5 by analyzing the benefits and drawbacks of these approaches.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Approaches to Multi-Source Translation</HEADER>
+      <P>
+        <S ID="S-18899">We now present three ways to combine multiple inputs into a single output translation, in the context of related work for each technique.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Output Selection</HEADER>
+        <P>
+          <S ID="S-18771">The most straightforward approach to multisource translation, proposed by <REF ID="R-11" RPTR="14">Och and Ney (2001)</REF>, is to independently translate each of the N source languages and then select a single translation from the outputs.</S>
+          <S ID="S-18772">Given N sources s N 1 = s 1, .</S>
+          <S ID="S-18773">.</S>
+          <S ID="S-18774">.</S>
+          <S ID="S-18775">, s N , first translate each with a separate translation system, p 1 , .</S>
+          <S ID="S-18776">.</S>
+          <S ID="S-18777">.</S>
+          <S ID="S-18778">, p N , to obtain N target translations, t N 1 = t 1, .</S>
+          <S ID="S-18779">.</S>
+          <S ID="S-18780">.</S>
+          <S ID="S-18781">, t N .</S>
+          <S ID="S-18782">Och and Ney present two approaches for selecting a single target from these outputs.</S>
+          <S ID="S-18783">The first, PROD, finds the maximiser of the p(t) &#8719; N</S>
+        </P>
+        <P>
+          <S ID="S-18784">n=1 p n(s n |t), where</S>
+        </P>
+        <P>
+          <S ID="S-18785">product, arg max t&#8712;t N</S>
+        </P>
+        <P>
+          <S ID="S-18786">p(t) is the language model probability.</S>
+          <S ID="S-18787">For reasons of tractability, the maximisation is performed only over targets generated by the translation systems, t N 1 , not the full space of all translations.</S>
+          <S ID="S-18788">The PROD method requires each model to provide a model score for each t n generated by the other models.</S>
+          <S ID="S-18789">However, this is often impossible due to the models&#8217; highly divergent output spaces (<REF ID="R-17" RPTR="26">Schwartz, 2008</REF>), and therefore the technique cannot be easily applied.</S>
+        </P>
+        <P>
+          <S ID="S-18790">The second approach, MAX, solves arg max t&#8712;t N max N 1 n=1 p(t)p n(s n |t), which is much easier to calculate.</S>
+          <S ID="S-18791">As with PROD, the translation models&#8217; outputs are used for the candidate translations.</S>
+          <S ID="S-18792">While different models may have different score ranges, <REF ID="R-11" RPTR="15">Och and Ney (2001)</REF> state that there is little benefit in weighting these scores to normalise the output range.</S>
+          <S ID="S-18793">In their experiments, they show that MAX used on pairs or triples of language inputs can outperform a model with single language input, but that performance degrades as more languages are added.</S>
+        </P>
+        <P>
+          <S ID="S-18794">These methods limit the explored space to a full translation output of one of the inputs, and therefore cannot make good use of the full diversity of the translations.</S>
+          <S ID="S-18795">In this paper we present MAX scores as a baseline for output selection, and approximate an oracle using the BLEU metric as an upper bound for the output selection technique.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Output Combination</HEADER>
+        <P>
+          <S ID="S-18796">Consensus decoding as a form of system combination is typically used to integrate the outputs of multiple translation systems into a single synthetic output that seeks to combine the best fragments from each component system.</S>
+          <S ID="S-18797">Multi-source translation can be treated as a special case of consensus decoding.</S>
+          <S ID="S-18798">Indeed, several authors have seen</S>
+        </P>
+        <P>
+          <S ID="S-18799">&#949; big</S>
+        </P>
+        <P>
+          <S ID="S-18800">dog</S>
+        </P>
+        <P>
+          <S ID="S-18801">barked</S>
+        </P>
+        <P>
+          <S ID="S-18802">very &#949;</S>
+        </P>
+        <P>
+          <S ID="S-18803">loudly</S>
+        </P>
+        <P>
+          <S ID="S-18804">improvements in translation quality by performing multi-source translation using generic system combination techniques (<REF ID="R-10" RPTR="12">Matusov et al., 2006</REF>; <REF ID="R-13" RPTR="18">Paulik et al., 2007</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-18805">One class of approaches to consensus decoding focuses on construction of a confusion network or lattice 1 from translation outputs, from which new sentences can be created using different reorderings or combinations of translation fragments (e.g., <REF ID="R-00" RPTR="0">Bangalore et al. (2001)</REF>; <REF ID="R-15" RPTR="20">Rosti et al. (2007</REF><REF ID="R-16" RPTR="23">Rosti et al. (2007</REF>b)).</S>
+          <S ID="S-18806">These methods differ in the types of lattices used, their means of creation, and scoring method used to extract the best consensus output from the lattice.</S>
+          <S ID="S-18807">The system used in this paper is a variant of the one proposed in <REF ID="R-15" RPTR="21">Rosti et al. (2007</REF><REF ID="R-16" RPTR="24">Rosti et al. (2007</REF>a), which we now describe in detail.</S>
+        </P>
+        <P>
+          <S ID="S-18808">The first step in forming a lattice is to align the inputs.</S>
+          <S ID="S-18809">Consensus decoding systems often use the script of edit operations that minimises the translation edit rate (TER; <REF ID="R-18" RPTR="27">Snover et al. (2006)</REF>).</S>
+          <S ID="S-18810">TER is a word-based measure of edit distance which also allows n-gram shifts when calculating the best match between a hypothesis and reference.</S>
+          <S ID="S-18811">Because TER describes the correspondence between the hypothesis and reference as a sequence of insertions, substitutions, deletions, and shifts, the edit script it produces can be used to create a confusion network.</S>
+          <S ID="S-18812">Consider a reference of &#8220;The dog barked very loudly&#8221; and a hypothesis &#8220;A big dog loudly barked.&#8221; The TER alignment is shown in Table 1, along with the edit operations.</S>
+          <S ID="S-18813">Note that the matching &#8220;barked&#8221; tokens are labelled shift, as one needs to be shifted for this match to occur.</S>
+          <S ID="S-18814">Using the shifted hypothesis, we can form a confusion</S>
+        </P>
+        <P>
+          <S ID="S-18815">1 Different authors refer to &#8220;lattices,&#8221; &#8220;confusion networks,&#8221; &#8220;word sausages,&#8221; etc. to describe these data structures, and specific terminology varies from author to author.</S>
+          <S ID="S-18816">We define a lattice as a weighted directed acyclic graph, and a confusion network as a special case where each node n in the ordered graph has word arcs only to node n + 1.</S>
+        </P>
+        <P>
+          <S ID="S-18817">Confusion Network 1</S>
+        </P>
+        <P>
+          <S ID="S-18818">Confusion Network 2</S>
+        </P>
+        <P>
+          <S ID="S-18819">Confusion Network 3</S>
+        </P>
+        <P>
+          <S ID="S-18820">network as in Figure 1.</S>
+          <S ID="S-18821">Additional sentences can be added by aligning them to the reference as well.</S>
+          <S ID="S-18822">Each link is weighted by the number of component sentences sharing that particular word at the given location.</S>
+        </P>
+        <P>
+          <S ID="S-18823">Similar to <REF ID="R-15" RPTR="22">Rosti et al. (2007</REF><REF ID="R-16" RPTR="25">Rosti et al. (2007</REF>a), we let each hypothesis take a turn as the &#8220;reference&#8221; for TER, using it as a skeleton for a confusion network.</S>
+          <S ID="S-18824">We then form a lattice of confusion networks (Figure 2), assigning a prior weight to each confusion network based on the average TER of the selected skeleton with the other hypotheses.</S>
+          <S ID="S-18825">This allows each system to set the word order for a component confusion network, but at the cost of a more complex lattice structure.</S>
+        </P>
+        <P>
+          <S ID="S-18826">We can score paths P through these lattices with the assistance of a language model.</S>
+          <S ID="S-18827">Formally, the path score is given by:</S>
+        </P>
+        <P>
+          <S ID="S-18828">w(P) = &#957; log p LM (t(P))</S>
+        </P>
+        <P>
+          <S ID="S-18829">+ &#8721; [ &#8721; N</S>
+        </P>
+        <P>
+          <S ID="S-18830">&#955; n log p n (d|s n )</S>
+        </P>
+        <P>
+          <S ID="S-18831">d&#8712;P n=1</S>
+        </P>
+        <P>
+          <S ID="S-18832">]</S>
+        </P>
+        <P>
+          <S ID="S-18833">+ &#181;&#948;(d, &#603;) + &#958;(1 &#8722; &#948;(d, &#603;))</S>
+        </P>
+        <P>
+          <S ID="S-18834">where p LM is the language model probability of the target string specified by the lattice path, t(P), p n (d|s n ) is the proportion of system n&#8217;s k-best outputs that use arc d in path P, and the last two terms count the number of epsilon and non-epsilon transitions in the path.</S>
+          <S ID="S-18835">The model parameters are &#955; 1 , .</S>
+          <S ID="S-18836">.</S>
+          <S ID="S-18837">.</S>
+          <S ID="S-18838">, &#955; n , &#957;, &#181;, &#958;, which are trained using Powell&#8217;s search to maximise the BLEU score for the highest scoring path, arg max P w(P).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Input Combination</HEADER>
+        <P>
+          <S ID="S-18839">Loosely defined, input combination refers to finding a compact single representation of N translation inputs.</S>
+          <S ID="S-18840">The hope is that the new input preserves as many of the salient differences between the inputs as possible, while eliminating redundant information.</S>
+          <S ID="S-18841">Lattices are well suited to this task.</S>
+        </P>
+        <P>
+          <S ID="S-18842">&#949;</S>
+        </P>
+        <P>
+          <S ID="S-18843">watch it</S>
+        </P>
+        <P>
+          <S ID="S-18844">0 1</S>
+        </P>
+        <P>
+          <S ID="S-18845">&#949;</S>
+        </P>
+        <P>
+          <S ID="S-18846">out 's</S>
+        </P>
+        <P>
+          <S ID="S-18847">&#949; for</S>
+        </P>
+        <P>
+          <S ID="S-18848">the</S>
+        </P>
+        <P>
+          <S ID="S-18849">purse</S>
+        </P>
+        <P>
+          <S ID="S-18850">pick</S>
+        </P>
+        <P>
+          <S ID="S-18851">a</S>
+        </P>
+        <P>
+          <S ID="S-18852">&#949;</S>
+        </P>
+        <P>
+          <S ID="S-18853">robber</S>
+        </P>
+        <P>
+          <S ID="S-18854">thief</S>
+        </P>
+        <P>
+          <S ID="S-18855">snatcher burglar</S>
+        </P>
+        <P>
+          <S ID="S-18856">crook</S>
+        </P>
+        <P>
+          <S ID="S-18857">pocket</S>
+        </P>
+        <P>
+          <S ID="S-18858">When translating speech recognition output, previous work has shown that representing the ambiguity in the recognized text via confusion networks leads to better translations than simply translating the single best hypothesis of the speech recognition system (<REF ID="R-02" RPTR="3">Bertoldi et al., 2007</REF>).</S>
+          <S ID="S-18859">The application of input lattices to other forms of input ambiguity has been limited to encoding input reorderings, word segmentation, or morphological segmentation, all showing improvements in translation quality (Costa-juss&#224; et al., 2007; Xu et al., 2005; <REF ID="R-06" RPTR="6">Dyer et al., 2008</REF>).</S>
+          <S ID="S-18860">However, these applications encode the ambiguity arising from a single input, while in this work we combine distinct inputs into a more compact and expressive single input format.</S>
+        </P>
+        <P>
+          <S ID="S-18861">When given many monolingual inputs, we can apply TER and construct a confusion network as in Section 2.2.</S>
+          <S ID="S-18862">2 In this application of confusion networks, arc weights are calculated by summing votes from each input for a given word, and normalizing all arcs leaving a node to sum to 1.</S>
+        </P>
+        <P>
+          <S ID="S-18863">Figure 3 shows an example of a TER-derived input from IWSLT data.</S>
+          <S ID="S-18864">Because the decoder will handle reordering, we select the input with the lowest average TER against the other inputs to serve as the skeleton system, and do not create a lattice with multiple skeletons.</S>
+        </P>
+        <P>
+          <S ID="S-18865">The problem becomes more complex when we consider cases of multi-lingual multi-source translation.</S>
+          <S ID="S-18866">We cannot easily apply TER across languages because there is no clear notion of an exact match between words.</S>
+          <S ID="S-18867"><REF ID="R-10" RPTR="11">Matusov et al. (2006)</REF> propose using a statistical word alignment algorithm as a more robust way of aligning (monolingual) outputs into a confusion network for system com-</S>
+        </P>
+        <P>
+          <S ID="S-18868">2 <REF ID="R-01" RPTR="2">Barzilay and Lee (2003)</REF> construct lattices over paraphrases using an iterative pairwise multiple sequence alignment (MSA) algorithm.</S>
+          <S ID="S-18869">Unlike our approach, MSA does not allow reordering of inputs.</S>
+        </P>
+        <P>
+          <S ID="S-18870">.</S>
+        </P>
+        <P>
+          <S ID="S-18871">bination.</S>
+          <S ID="S-18872">We take a similar approach for multilingual lattice generation.</S>
+          <S ID="S-18873">Our process consists of four steps: (i) Align words for each of the N(N &#8722; 1) pairs of inputs; (ii) choose an input (or many inputs) to be the lattice skeleton; (iii) extract all minimal consistent alignments between the skeleton and the other inputs; and (iv) add links to the lattice for each aligned phrase pair.</S>
+        </P>
+        <P>
+          <S ID="S-18874">A multi-parallel corpus such as Europarl (<REF ID="R-08" RPTR="9">Koehn, 2005</REF>) is ideally suited for training this setup, as training data is available for each pair of input languages needed by the word aligner.</S>
+          <S ID="S-18875">We used the GIZA++ word alignment tool (<REF ID="R-12" RPTR="17">Och and Ney, 2003</REF>) for aligning inputs, trained on a portion of the Europarl training data for each pair.</S>
+        </P>
+        <P>
+          <S ID="S-18876">We select a skeleton input based on which single-language translation system performs the best when translating a development set.</S>
+          <S ID="S-18877">For our Europarl test condition, this was French.</S>
+        </P>
+        <P>
+          <S ID="S-18878">We define a minimal consistent alignment (MCA) as a member of the set of multi-word alignment pairs that can be extracted from a manyto-many word alignment between skeleton sentence x and non-skeleton sentence y with the following restrictions: (i) no word in x or y is used more than once in the set of MCAs; (ii) words and phrases selected from y cannot be aligned to null; and (iii) no smaller MCA can be decomposed from a given pair.</S>
+          <S ID="S-18879">This definition is similar to that of minimal translation units as described in <REF ID="R-14" RPTR="19">Quirk and Menezes (2006)</REF>, although they allow null words on either side.</S>
+        </P>
+        <P>
+          <S ID="S-18880">Different word alignment approaches will result in different sets of MCAs.</S>
+          <S ID="S-18881">For input lattices, we want sets of MCAs with as many aligned words as possible, while minimising the average number of words in each pair in the set.</S>
+          <S ID="S-18882">Experiments with GIZA++ on the Europarl data showed that the &#8220;grow-diag-final-and&#8221; word alignment symmetrization heuristic had the best balance between coverage and pair length: over 85% of skeleton words were part of a non-null minimal pair, and the average length of each pair was roughly 1.5 words.</S>
+          <S ID="S-18883">This indicates that our lattices will preserve most of the input space while collapsing easily alignable sub-segments.</S>
+        </P>
+        <P>
+          <S ID="S-18884">Once a set of phrase alignments has been found, we construct a lattice over the skeleton sentence x.</S>
+          <S ID="S-18885">For each additional input y n we add a set of links and nodes for each word in x to any relevant</S>
+        </P>
+        <P>
+          <S ID="S-18886">&#191; podr&#237;a darnos las cifras correspondientes a espa&#241;a y grecia ?</S>
+        </P>
+        <P>
+          <S ID="S-18887">pouvez-vous nous donner les chiffres pour l' espagne et la gr&#232;ce ?</S>
+        </P>
+        <P>
+          <S ID="S-18888">kan ni ge oss siffrorna f&#246;r spanien och grekland ?</S>
+        </P>
+        <P>
+          <S ID="S-18889">words in y n , rejoining at the last word in x that is covered by the pair.</S>
+          <S ID="S-18890">Figures 4 and 5 show an example of the alignments and lattice generated by using a French skeleton with Spanish and Swedish sentences.</S>
+        </P>
+        <P>
+          <S ID="S-18891">Once a lattice is created, we can submit it to a phrase-based decoder in place of text input.</S>
+          <S ID="S-18892">The decoder traverses lattice nodes in a manner similar to how words are traversed in text translation.</S>
+          <S ID="S-18893">Instead of one input word represented by each location in the coverage vector as in text input, with lattices there are a set of possible input word arcs, each with its own translation possibilities.</S>
+          <S ID="S-18894">The concept of compatible coverage vectors for the locations of translated words becomes the notion of reachability between frontier nodes in the lattice (<REF ID="R-06" RPTR="7">Dyer et al., 2008</REF>).</S>
+          <S ID="S-18895">It is possible to construct multi-skeleton lattices by connecting up a set of N lattices, each built around a different skeleton x n , in much the same manner as multiple confusion networks can be connected to form a lattice in output combination.</S>
+          <S ID="S-18896">With sufficient diversity in the input ordering of each skeleton, the decoder need not perform reordering.</S>
+          <S ID="S-18897">Because of the size and complexity of these multi-skeleton lattices, we attempt only monotonic decoding.</S>
+          <S ID="S-18898">In this scenario, as in consensus decoding, we hope to exploit the additional word order information provided by the alternative skeletons.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Experiments: Monolingual Input</HEADER>
+      <P>
+        <S ID="S-18958">We start our experimental evaluation by translating multiple monolingual inputs into a foreign language.</S>
+        <S ID="S-18959">This is a best-case scenario for testing and analytic purposes because we have a single translation model from one source language to one target language.</S>
+        <S ID="S-18960">While translating from multiple monolingual inputs is not a common use for machine translation, it could be useful in situations where we have a number of paraphrases of the input text, e.g., cross-language information retrieval and summarization.</S>
+      </P>
+      <P>
+        <S ID="S-18961">pouvez-vous darnos chiffres las</S>
+      </P>
+      <P>
+        <S ID="S-18962">5 &#191; podr&#237;a nous 9 cifras correspondientes a 13 espagne</S>
+      </P>
+      <P>
+        <S ID="S-18963">donner les 10 11 l'</S>
+      </P>
+      <P>
+        <S ID="S-18964">0 1 6 7</S>
+      </P>
+      <P>
+        <S ID="S-18965">kan oss pour espa&#241;a ni ge siffrorna f&#246;r 12</S>
+      </P>
+      <P>
+        <S ID="S-18966">2 3 4 8 spanien 14</S>
+      </P>
+      <P>
+        <S ID="S-18967">y</S>
+      </P>
+      <P>
+        <S ID="S-18968">et och</S>
+      </P>
+      <P>
+        <S ID="S-18969">la</S>
+      </P>
+      <P>
+        <S ID="S-18970">grekland</S>
+      </P>
+      <P>
+        <S ID="S-18971">grecia</S>
+      </P>
+      <P>
+        <S ID="S-18972">gr&#232;ce</S>
+      </P>
+      <P>
+        <S ID="S-18973">?</S>
+      </P>
+      <P>
+        <S ID="S-18974">?</S>
+        <S ID="S-18975">?</S>
+      </P>
+      <P>
+        <S ID="S-18976">Data sets for this condition are readily available in the form of test sets created for machine translation evaluation, which contains multiple target references for each source sentence.</S>
+        <S ID="S-18977">By flipping these test sets around, we create multiple monolingual inputs (the original references) and a single reference output (the original source text).</S>
+        <S ID="S-18978">We examine two datasets: the BTEC Italian-English corpus (<REF ID="R-20" RPTR="29">Takezawa et al., 2002</REF>), and the Multiple Translation Chinese to English (MTC) corpora, 3 as used in past years&#8217; NIST MT evaluations.</S>
+      </P>
+      <P>
+        <S ID="S-18979">All of our translation experiments use the Moses decoder (<REF ID="R-07" RPTR="8">Koehn et al., 2007</REF>), and are evaluated using BLEU-4.</S>
+        <S ID="S-18980">Moses is a phrase-based decoder with features for lexicalized reordering, distance-based reordering, phrase and word translation probabilities, phrase and word counts, and an n-gram language model.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 English to Italian</HEADER>
+        <P>
+          <S ID="S-18900">We use the portion of the BTEC data made available for the Italian-English translation task at IWSLT 2007, consisting of approximately 24,000 sentences.</S>
+          <S ID="S-18901">We also use the Europarl English- Italian parallel corpus to supplement our training data with approximately 1.2 million out-ofdomain sentences.</S>
+          <S ID="S-18902">We train a 5-gram language model over both training corpora using SRILM (<REF ID="R-19" RPTR="28">Stolcke, 2002</REF>) with Kneser-Ney smoothing and linear interpolation, the interpolation weight chosen to minimise perplexity on the Italian side of the development tuning set.</S>
+          <S ID="S-18903">For multiple translation data, we use IWSLT</S>
+        </P>
+        <P>
+          <S ID="S-18904">test sets devset1-3 which have sixteen English translations for each Italian sentence.</S>
+          <S ID="S-18905">The Italian version of the BTEC corpus was created after the original Japanese-English version, and only the first English translation was used to generate the Italian data.</S>
+          <S ID="S-18906">The other fifteen versions of each English sentence were generated as paraphrases of the primary English translation.</S>
+          <S ID="S-18907">We explore translation conditions using only the fifteen paraphrased inputs (&#8220;Para.&#8221; in Table 2), as well as using all sixteen English inputs (&#8220;All&#8221;).</S>
+        </P>
+        <P>
+          <S ID="S-18908">3 LDC2002T01, LDC2003T17, LDC2004T07 and</S>
+        </P>
+        <P>
+          <S ID="S-18909">LDC2006T04.</S>
+        </P>
+        <P>
+          <S ID="S-18910">We tune our translation models on devset1, system combination on devset2 and report results on devset3 for each condition.</S>
+        </P>
+        <P>
+          <S ID="S-18911">When tuning the single input &#8220;Para.&#8221; and &#8220;All&#8221; baselines, we include all relevant copies of the 506 lines of devset1 English data, and repeat the Italian reference fifteen or sixteen times on the target side, resulting in a total of 7,590 and 8,096 sentence pairs respectively.</S>
+        </P>
+        <P>
+          <S ID="S-18912">The results for devset3 are shown in Table 2.</S>
+          <S ID="S-18913">For comparison, we show the BEST score any input produced, as well as an approximated ORA-</S>
+        </P>
+        <P>
+          <S ID="S-18914">CLE output selection generated by choosing the</S>
+        </P>
+        <P>
+          <S ID="S-18915">best BLEU-scoring output for each sentence using a greedy search.</S>
+          <S ID="S-18916">Our output combination method,</S>
+        </P>
+        <P>
+          <S ID="S-18917">SYSCOMB, uses no system-specific weights to</S>
+        </P>
+        <P>
+          <S ID="S-18918">distinguish the inputs.</S>
+          <S ID="S-18919">For SYSCOMB and MAX, we translated all versions of the English input separately, and we use the top ten distinct hypotheses from each input sentence for n-best input to</S>
+        </P>
+        <P>
+          <S ID="S-18920">SYSCOMB.</S>
+        </P>
+        <P>
+          <S ID="S-18921">For input combination, CN INPUT, we used the TER-based monolingual input lattice approach described in Section 2.3, choosing as a skeleton the input with the lowest average TER score when compared with the other inputs (assessed separately for each sentence).</S>
+          <S ID="S-18922">Each input was given equal probability in the confusion network links.</S>
+          <S ID="S-18923">Note that the quality of output from translating the primary English input is much higher than from translating any of the paraphrases.</S>
+          <S ID="S-18924">The primary input sentence scores a BLEU of 40.06, while the highest scoring paraphrased input manages only a 24.02.</S>
+          <S ID="S-18925">When we look at &#8220;Para.&#8221; the difference in the scores when using a single input</S>
+        </P>
+        <P>
+          <S ID="S-18926">(BEST) versus all the inputs (SYSCOMB and CN</S>
+        </P>
+        <P>
+          <S ID="S-18927">INPUT) is striking &#8211; clearly there is considerable</S>
+        </P>
+        <P>
+          <S ID="S-18928">information in the other inputs which can radically improve the translation output.</S>
+          <S ID="S-18929">Removing the primary input from ORACLE reinforces this observation: the score drops by only 4.37 BLEU despite the nearly 16 BLEU drop for the single best input.</S>
+        </P>
+        <P>
+          <S ID="S-18930">Interestingly, the output selection technique,</S>
+        </P>
+        <P>
+          <S ID="S-18931">MAX, performs at a similar level to the combination techniques when we include the primary input, but degrades when given only the lower quality translations of paraphrased input under condition &#8220;Para.&#8221; In previous work on multi-lingual output selection, the MAX score degraded after two or three outputs were combined, but even without the primary reference it maintains a score near the best single paraphrased input when combining fifteen outputs.</S>
+          <S ID="S-18932">One possible explanation for this is that the inputs are all being translated with the same translation model, so comparing their scores can give a more accurate ranking of their relative translation quality according to the model.</S>
+          <S ID="S-18933">The input combination method, CN INPUT, performs better than MAX and only slightly worse than the output combination approach.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 English to Chinese</HEADER>
+        <P>
+          <S ID="S-18934">We can add an extra dimension to monolingual multi-source translation by considering inputs of differing quality.</S>
+          <S ID="S-18935">A multi-source translation system can exploit features indicating the origin of the input to improve output quality.</S>
+          <S ID="S-18936">For these experiments, we use the MTC English-Chinese corpus, parts 1&#8211;4.</S>
+          <S ID="S-18937">This data was translated from Chinese into English by four teams of annotators, denoted E01&#8211;E04.</S>
+          <S ID="S-18938">This allows us to examine the results for translating the same team&#8217;s work over multiple years.</S>
+        </P>
+        <P>
+          <S ID="S-18939">We train on the news domain portion of the official NIST data 4 (excluding the UN and Hong Kong data) for both the translation model and the 5-gram Chinese language model.</S>
+        </P>
+        <P>
+          <S ID="S-18940">While we still have a single translation model, all of our inputs are now of a traceable origin and are known to have quality differences when judged by human evaluators.</S>
+          <S ID="S-18941">With this information we can tune one of two ways: We can create a set of all input systems and replicate the reference as we did for English to Italian translation (&#8220;All tuned&#8221;),</S>
+        </P>
+        <P>
+          <S ID="S-18942">4 http://www.nist.gov/speech/tests/mt/</S>
+        </P>
+        <P>
+          <S ID="S-18943">or we can tune each input using only the version of the tuning data generated by the same translation team (&#8220;Self tuned&#8221;).</S>
+          <S ID="S-18944">5 For example, we can tune a system with the MTC Part 2 data provided by translation team E01, and then decode E01&#8217;s translations of parts 3 and 4 with the weights obtained in tuning.</S>
+          <S ID="S-18945">The results for each system are shown in Table 3.</S>
+          <S ID="S-18946">Despite the different tuning conditions, there is no clear advantage to tuning to all inputs versus tuning to each input separately &#8211; on average we see a 0.06 BLEU score advantage by using &#8220;All&#8221; weights.</S>
+          <S ID="S-18947">With four different inputs to our multi-source translation system, and two ways of weighting the features for each input, how can we best utilize these systems in output selection and combination?</S>
+          <S ID="S-18948">We perform system combination and MAX selection and obtain the scores shown in Table 4.</S>
+          <S ID="S-18949">The consensus decoding approach uses systemspecific features as described in Section 2.2 to distinguish between E01-E04.</S>
+        </P>
+        <P>
+          <S ID="S-18950">As with English to Italian, output combination performs the best of the multi-source techniques.</S>
+        </P>
+        <P>
+          <S ID="S-18951">MAX performs better with translations generated</S>
+        </P>
+        <P>
+          <S ID="S-18952">by &#8220;All&#8221; weights than with &#8220;Self&#8221;, and the con-</S>
+        </P>
+        <P>
+          <S ID="S-18953">5 Note that in the &#8220;Self tuned&#8221; setting we have only a quarter as much tuning data as for &#8220;All tuned&#8221;.</S>
+        </P>
+        <P>
+          <S ID="S-18954">verse is true for SYSCOMB.</S>
+          <S ID="S-18955">Given the robust performance of MAX when translation scores originated from the same translation model in English to Italian, it is not surprising that it favors the case where all the outputs are scored by the same model (&#8220;All tuned&#8221;).</S>
+          <S ID="S-18956">On the other hand, diversity amongst the system outputs has been shown to be important to the performance of system combination techniques (<REF ID="R-09" RPTR="10">Macherey and Och, 2007</REF>).</S>
+          <S ID="S-18957">This may give an indication as to why the &#8220;Self tuned&#8221; data produced higher scores in consensus decoding &#8211; the outputs will be more highly divergent due to their different tuning conditions.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments: Multilingual Input</HEADER>
+      <P>
+        <S ID="S-19023">Multilingual cases are the traditional realm of multi-source translation.</S>
+        <S ID="S-19024">We no longer have directly comparable translation models; instead each input language has a separate set of rules for translating to the output language.</S>
+        <S ID="S-19025">However, the availability of (and demand for) multi-parallel corpora makes this form of multi-source translation of great practical use.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Lattice Inputs</HEADER>
+        <P>
+          <S ID="S-18981">As described in Section 2.3, lattices can be used to provide a compact format for translating multilingual inputs to a multi-source translation system.</S>
+          <S ID="S-18982">We trim all non-skeleton node paths to a maximum length of four to reduce complexity when decoding.</S>
+          <S ID="S-18983">Such long paths are mostly a result of errors in the original word alignments, and therefore pruning these links is largely innocuous.</S>
+        </P>
+        <P>
+          <S ID="S-18984">We train on the Europarl corpus and use the</S>
+        </P>
+        <P>
+          <S ID="S-18985">BLEU</S>
+        </P>
+        <P>
+          <S ID="S-18986">0.15 0.20 0.25 0.30 0.35 0.40 0.45</S>
+        </P>
+        <P>
+          <S ID="S-18987">Oracle MAX Solo</S>
+        </P>
+        <P>
+          <S ID="S-18988">FR SV ES DA PT IT EL NL DE FI</S>
+        </P>
+        <P>
+          <S ID="S-18989">MAX score, or just a single language input (Solo).</S>
+        </P>
+        <P>
+          <S ID="S-18990">in-domain test sets provided for previous years&#8217; Workshops on Statistical Machine Translation.</S>
+          <S ID="S-18991">Because of the computational complexity of dealing with so many models, we train on only the first 100,000 sentences of each parallel corpus.</S>
+          <S ID="S-18992">Single system baseline scores for each language are shown in Table 5.</S>
+        </P>
+        <P>
+          <S ID="S-18993">Besides comparing the different multi-source translation methods discussed above, in this task we also want to examine what happens when we use different numbers of input languages.</S>
+          <S ID="S-18994">To determine the best order to add languages, we performed a greedy search over oracle BLEU scores for test set test2005.</S>
+          <S ID="S-18995">We started with the best scoring single system, French to English, and in each iteration picked one additional system that would maximise BLEU if we always selected the translation system output closest to the reference.</S>
+          <S ID="S-18996">The results are shown in Figure 6.</S>
+        </P>
+        <P>
+          <S ID="S-18997">The oracle selection order differs from the order of the best performing systems, which could be due to the high scoring systems having very similar output while lower scoring systems exhibit greater diversity.</S>
+          <S ID="S-18998">Interestingly, the order of the languages chosen iterates between the Roman and Germanic language families and includes Greek early on.</S>
+          <S ID="S-18999">This supports our claim that diversity is important.</S>
+          <S ID="S-19000">Note though that Finnish, which is also in a separate language family, is selected last, most likely due to difficulties in word alignment and translation stemming from its morphological complexity (<REF ID="R-03" RPTR="4">Birch et al., 2008</REF>).</S>
+          <S ID="S-19001">This finding might also carry over to phrase-table triangulation (<REF ID="R-04" RPTR="5">Cohn and Lapata, 2007</REF>), where multi-parallel data is used in training to augment a standard translation</S>
+        </P>
+        <P>
+          <S ID="S-19002">system.</S>
+        </P>
+        <P>
+          <S ID="S-19003">We choose to evaluate translation performance at three combination levels: two languages (French and Swedish), three languages (+Spanish), and six languages (+Danish, Portuguese, Italian).</S>
+          <S ID="S-19004">For each combination we apply MAX, SYSCOMB, French skeleton lattice input translation LATTICE, and monotone decoding over multiple skeleton lattices, MULTILATTICE.</S>
+          <S ID="S-19005">Results are shown in Table 6.</S>
+        </P>
+        <P>
+          <S ID="S-19006">To enable the decoder used in LATTICE and</S>
+        </P>
+        <P>
+          <S ID="S-19007">MULTILATTICE to learn weights for different</S>
+        </P>
+        <P>
+          <S ID="S-19008">sources, we add a feature to the phrase table for each of the languages being translated.</S>
+          <S ID="S-19009">This feature takes as its value the number of words on the source side of the phrase.</S>
+          <S ID="S-19010">By weighting this feature up or down for each language, the decoder can prefer word links from specific languages.</S>
+        </P>
+        <P>
+          <S ID="S-19011">As seen in previous work in multi-source translation, MAX output selection performs well with two or three languages but degrades as more languages are added to the input.</S>
+          <S ID="S-19012">Conversely, our lattice input method shows upward trends: LAT-</S>
+        </P>
+        <P>
+          <S ID="S-19013">TICE is comparable with MAX on three inputs and</S>
+        </P>
+        <P>
+          <S ID="S-19014">scores increase in the six language case.</S>
+        </P>
+        <P>
+          <S ID="S-19015">Given the higher scores for output combination over input combination, what differences can we observe between the systems?</S>
+          <S ID="S-19016">Both systems have features that indicate the contributions of each input language to the final output.</S>
+          <S ID="S-19017">With input combination, we are forced by the decoder to take the maximum scoring path through the lattice, but in output combination we have the aggregate vote of word confidences generated by each system.</S>
+          <S ID="S-19018">If we could combine word arc scores across inputs, as in output combination, we might get a more robust solution for taking advantage of the available similarities on the target side of the translation.</S>
+          <S ID="S-19019">This points to a direction for future research.</S>
+        </P>
+        <P>
+          <S ID="S-19020">Other differences between the systems may explain the score gap between our input and output combination approaches.</S>
+          <S ID="S-19021">Consensus decoding allows you to mix and match fragments that aren&#8217;t necessarily stored as fragments in the phrase table.</S>
+          <S ID="S-19022">Another difference is the richer space of reorderings in TER-based lattices, due to the ability of the metric to handle long-distance alignments.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusion</HEADER>
+      <P>
+        <S ID="S-19026">We analyzed three approaches for dealing with multi-source translation.</S>
+        <S ID="S-19027">While MAX is mostly a poor performer, the upper bound of output selection is stunning.</S>
+        <S ID="S-19028">The very positive results for output system combination across all data conditions are quite promising.</S>
+        <S ID="S-19029">Output combination achieves these results while the using the limited expressive power of n-best inputs.</S>
+        <S ID="S-19030">The potential of using a more expressive format &#8211; such as lattices that represent the joint search space of multiple models &#8211; is high.</S>
+        <S ID="S-19031">Our first attempts at adapting lattices to multi-source translation input show promise for future development.</S>
+        <S ID="S-19032">We have only scratched the surface of methods for constructing input lattices, and plan to actively continue research into improving these methods.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-19033">Thanks to Chris Callison-Burch for many insightful discussions, and to Chris Dyer for his implementation of lattice decoding in Moses.</S>
+      <S ID="S-19034">This work was supported by the EuroMatrix project funded by the European Commission (6th Framework Programme), and has made use of the resources provided by the Edinburgh Compute and Data Facility (http://www.ecdf.</S>
+      <S ID="S-19035">ed.ac.uk/), which is partially supported by the eDIKT initiative (http://www.edikt.org).</S>
+      <S ID="S-19036">We also acknowledge the support of the EPSRC (grant GR/T04557/01).</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Srinivas Bangalore</RAUTHOR>
+      <REFTITLE>Computing consensus translation from multiple machine translation systems.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Regina Barzilay</RAUTHOR>
+      <REFTITLE>Learning to paraphrase: An unsupervised approach using multiple-sequence alignment.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Nicola Bertoldi</RAUTHOR>
+      <REFTITLE>Speech translation by confusion network decoding.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Alexandra Birch</RAUTHOR>
+      <REFTITLE>Predicting success in machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Trevor Cohn</RAUTHOR>
+      <REFTITLE>Machine translation by triangulation: Making effective use of multi-parallel corpora.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Mario</RAUTHOR>
+      <REFTITLE>Ngram-based statistical machine translation enhanced with multiple weighted reordering hypotheses.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Christopher J Dyer</RAUTHOR>
+      <REFTITLE>Generalizing word lattice translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Ond&#345;ej Bojar,</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Europarl: A parallel corpus for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Wolfgang Macherey</RAUTHOR>
+      <REFTITLE>An empirical study on computing consensus translations from multiple machine translation systems.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Evgeny Matusov</RAUTHOR>
+      <REFTITLE>Computing consensus translation for multiple machine translation systems using enhanced hypothesis alignment.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Statistical multi-source translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Matthias Paulik</RAUTHOR>
+      <REFTITLE>The ISL phrase-based MT system for the 2007 ACL workshop on statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Chris Quirk</RAUTHOR>
+      <REFTITLE>Do we need phrases? Challenging the conventional wisdom in statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Antti-Veikko I Rosti</RAUTHOR>
+      <REFTITLE>Improved word-level system combination for machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Antti-Veikko I Rosti</RAUTHOR>
+      <REFTITLE>Combining output from multiple machine translation systems.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Lane Schwartz</RAUTHOR>
+      <REFTITLE>Multi-source translation methods.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Matthew Snover</RAUTHOR>
+      <REFTITLE>A study of translation edit rate with targeted human annotation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>SRILM - an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Toshiyuki Takezawa</RAUTHOR>
+      <REFTITLE>Toward a broad-coverage bilingual corpus for speech translation of travel conversations in the real world.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

@@ -1,0 +1,511 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Combining Quality Prediction and System Selection for Improved Automatic Translation Output</TITLE>
+  <AUTHORS>
+    <AUTHOR>Radu Soricut</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-50020">This paper presents techniques for referencefree, automatic prediction of Machine Translation output quality at both sentence- and document-level.</A-S>
+    <A-S ID="S-50021">In addition to helping with document-level quality estimation, sentencelevel predictions are used for system selection, improving the quality of the output translations.</A-S>
+    <A-S ID="S-50022">We present three system selection techniques and perform evaluations that quantify the gains across multiple domains and language pairs.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-50023">Aside from improving the performance of coretranslation models, there additionally exist two orthogonal approaches via which fully-automatic translations can achieve increased acceptance and better integration in real-world use cases.</S>
+        <S ID="S-50024">These two approaches are: improved translation accuracy via system combination (<REF ID="R-17" RPTR="19">Rosti et al., 2008</REF>; <REF ID="R-11" RPTR="13">Karakos et al., 2008</REF>; <REF ID="R-09" RPTR="10">Hildebrand and Vogel, 2008</REF>), and automatic quality-estimation techniques used as an additional layer on top of MT systems, which present the user only with translations that are predicted as being accurate (<REF ID="R-18" RPTR="21">Soricut and Echihabi, 2010</REF>; <REF ID="R-20" RPTR="30">Specia, 2011</REF>).</S>
+        <S ID="S-50025">In this paper, we describe new contributions to both these approaches.</S>
+        <S ID="S-50026">First, we present a novel and superior technique for performing quality estimation at document level.</S>
+        <S ID="S-50027">We achieve this by chang-</S>
+      </P>
+      <P>
+        <S ID="S-50028">&#8727;</S>
+      </P>
+      <P>
+        <S ID="S-50029">Research was completed before the author started in his current role at Google Inc.</S>
+        <S ID="S-50030">The opinions stated are his own and not of Google Inc.</S>
+      </P>
+      <P>
+        <S ID="S-50031">ing the granularity of the prediction mechanism from document-level (<REF ID="R-18" RPTR="22">Soricut and Echihabi, 2010</REF>) to sentence-level, and predicting BLEU scores via directly modeling the sufficient statistics for BLEU computation.</S>
+        <S ID="S-50032">A document-level score is then recreated based on the predicted sentence-level sufficient statistics.</S>
+        <S ID="S-50033">A second contribution is related to system combination (or, to be more precise, system selection).</S>
+        <S ID="S-50034">This is an intended side-effect of the granularity change: since the sentence-level statistics allow us to make quality predictions at sentence level, we can use these predictions to perform system combination by selecting among various sentence-level translations produced by different MT systems.</S>
+        <S ID="S-50035">That is, instead of presenting the user with a document with sentences translated entirely by a single system, we can present documents for which, say, 60% of the sentences were translated by system A, and 40% were translated by system B.</S>
+        <S ID="S-50036">We contribute a novel set of features and several techniques for choosing between competing machine translation outputs.</S>
+        <S ID="S-50037">The evaluation results show better output quality, across multiple domains and language pairs.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related Work</HEADER>
+      <P>
+        <S ID="S-50038">Several approaches to reference-free automatic MT quality assessment have been proposed, using classification (<REF ID="R-13" RPTR="16">Kulesza and Shieber, 2004</REF>), regression (<REF ID="R-00" RPTR="0">Albrecht and Hwa, 2007</REF>), and ranking (Ye et al., 2007; <REF ID="R-06" RPTR="6">Duh, 2008</REF>).</S>
+        <S ID="S-50039">The focus of these approaches is on system performance evaluation, as they use a constant test set and measure various MT systems against it.</S>
+        <S ID="S-50040">In contrast, we are interested in evaluating the quality of the translations themselves, while treat-</S>
+      </P>
+      <P>
+        <S ID="S-50041">ing the MT components as constants.</S>
+        <S ID="S-50042">In this respect, the goal is more related to the area of confidence estimation for MT (<REF ID="R-02" RPTR="2">Blatz et al., 2004</REF>).</S>
+        <S ID="S-50043">Confidence estimation is usually concerned with identifying words/phrases for which one can be confident in the quality of the translation.</S>
+        <S ID="S-50044">A sentencelevel approach to quality estimation is taken on the classification-based work of <REF ID="R-07" RPTR="7">Gamon et al. (2005)</REF> and regression-based work of <REF ID="R-19" RPTR="28">Specia et al. (2009)</REF>.</S>
+        <S ID="S-50045">Our approach to quality estimation focuses on both sentence-level and document-level estimation.</S>
+        <S ID="S-50046">We improve on the quality estimation technique that is proposed for document-level estimation in (<REF ID="R-18" RPTR="23">Soricut and Echihabi, 2010</REF>).</S>
+        <S ID="S-50047">Furthermore, we exploit the availability of multiple translation hypotheses to perform system combination.</S>
+        <S ID="S-50048">Our system combination methods are based on generic Machine Learning techniques, applied on 1-best output strings.</S>
+        <S ID="S-50049">In contrast, most of the approaches to MT system combination combine N-best lists from multiple MT systems via confusion network decoding (<REF ID="R-11" RPTR="14">Karakos et al., 2008</REF>; <REF ID="R-17" RPTR="20">Rosti et al., 2008</REF>).</S>
+        <S ID="S-50050">The closest system combination approach to our work is (<REF ID="R-09" RPTR="11">Hildebrand and Vogel, 2008</REF>), where an ensemble of hypotheses is generated by combining N-best lists from all the participating systems, and a log-linear model is trained to select the best translation from all the possible candidates.</S>
+      </P>
+      <P>
+        <S ID="S-50051">In our work, we show that it is possible to gain significant translation quality by taking advantage of only two participating systems.</S>
+        <S ID="S-50052">This makes the system-combination proposition much more palatable in real production deployment scenarios for Machine Translation, as opposed to pure research scenarios as the ones used in the previous NIST and DARPA/GALE MT efforts (Olive et al., 2011).</S>
+        <S ID="S-50053">As our evaluations show, the two participating systems can be at very similar performance levels, and yet a system-selection procedure using Machine Learning techniques can achieve significant translation improvements in quality.</S>
+        <S ID="S-50054">In addition, in a scenario where quality estimation needs to happen as a requirement for MT integration in large applications, having two translation systems producing translations for the same inputs is part of the deployment set-up (<REF ID="R-18" RPTR="24">Soricut and Echihabi, 2010</REF>).</S>
+        <S ID="S-50055">The improvement in overall translation quality comes in these cases at near-zero cost.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Sentence-level Quality Predictions</HEADER>
+      <P>
+        <S ID="S-50164">The requirement for document-level quality estimation comes from the need to present a fullyautomated translation solution, in which translated documents are either good enough to be directly published (or otherwise must undergo, say, a humandriven post-processing pipeline).</S>
+        <S ID="S-50165">In the proposal of Soricut and Echihabi (2010), regression models predict BLEU-like scores for each document, based on document-level features.</S>
+      </P>
+      <P>
+        <S ID="S-50166">However, even if the predicted value is at document-level, the actual feature computation and model prediction does not necessarily need to happen at document-level.</S>
+        <S ID="S-50167">It is one of the goals of this work to determine if the models of prediction work better at a coarser granularity (such as document level) or finer granularity (such as sentence-level).</S>
+      </P>
+      <P>
+        <S ID="S-50168">We describe here a mechanism for predicting BLEU scores at sentence level, and then combining these scores into document-level scores.</S>
+        <S ID="S-50169">To make explicit our prediction mechanism, we present here in detail the formula for computing BLEU scores (<REF ID="R-16" RPTR="18">Papineni et al., 2002</REF>).</S>
+        <S ID="S-50170">First, n-gram precision scores P n are computed as follows:</S>
+      </P>
+      <P>
+        <S ID="S-50171">&#8721; &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-50172">C&#8712;Candidates n-gram&#8712;C</S>
+      </P>
+      <P>
+        <S ID="S-50173">P n = Count clip(n-gram) &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-50174">C&#8712;Candidates</S>
+      </P>
+      <P>
+        <S ID="S-50175">&#8721; n-gram&#8712;C Count(n-gram) (1)</S>
+      </P>
+      <P>
+        <S ID="S-50176">where Count clip (n-gram) is the maximum number of n-grams co-occurring in a candidate translation and a reference translation, and Count(n-gram) is the number of n-grams in the candidate translation.</S>
+        <S ID="S-50177">To prevent very short translations that try to maximize their precision scores, BLEU adds a brevity penalty, BP, to the formula:</S>
+      </P>
+      <P>
+        <S ID="S-50178">{ 1 if |c| &gt; |r| BP = e (1&#8722;|r|/|c|) if |c| &#8804; |r| (2)</S>
+      </P>
+      <P>
+        <S ID="S-50179">where |c| is the length of the candidate translation and |r| is the length of the reference translation.</S>
+        <S ID="S-50180">The BLEU formula is then written as follows:</S>
+      </P>
+      <P>
+        <S ID="S-50181">N&#8721; BLEU = BP &#183; exp( w n log p n ) (3)</S>
+      </P>
+      <P>
+        <S ID="S-50182">n=1</S>
+      </P>
+      <P>
+        <S ID="S-50183">where the weighting factors w n are set to 1/N, for all 1 &#8804; n &#8804; 4.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 The learning method</HEADER>
+        <P>
+          <S ID="S-50056">The results we report in this section are obtained using the freely-available Weka engine.</S>
+        </P>
+        <P>
+          <S ID="S-50057">For both sentence-level and document-level quality prediction, we report all the results using Weka implementation of M5P regression trees (weka.classifiers.trees.M5P).</S>
+        </P>
+        <P>
+          <S ID="S-50058">We use the components of the BLEU score (Equations 1 and 2) to train fine-granularity M5P models using our set of features (Section 3.2), for a total of five individual regression-tree models (four for the sentence-level precision scores P n , 1 &#8804; n &#8804; 4 factors, and one for the BP factor).</S>
+          <S ID="S-50059">The numbers produced individually by our models are then combined using the BLEU equation 3 into a sentence-level BLEU score.</S>
+          <S ID="S-50060">The sentence-level predicted BLEU scores play an important role in our system combination mechanism (see Section 4).</S>
+        </P>
+        <P>
+          <S ID="S-50061">At the same time, we sum up the sufficient statistics for the sentence-level precision scores P n (Equation 1) over all the sentences in a document, thus obtaining document-level precision scores.</S>
+          <S ID="S-50062">A document-level BP score (Equation 2) is similarly obtained by summing over all sentences.</S>
+          <S ID="S-50063">Finally, we plug the predicted document-level P n and BP scores in the BLEU formula (Equation 3) and arrive at a document-level predicted BLEU score.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 The features</HEADER>
+        <P>
+          <S ID="S-50064">Most of the features we use in this work are not internal features of the MT system, but rather derived starting from input/output strings.</S>
+          <S ID="S-50065">Therefore, they can be applied for a large variety of MT approaches, from statistical-based to rule-based approaches.</S>
+          <S ID="S-50066">The features we use can be divided into text-based, language-model&#8211;based, pseudoreference&#8211;based, example-based, and training-data&#8211; based feature types (these latter features assume that the engine is statistical and one has access to the training data).</S>
+          <S ID="S-50067">These feature types can be computed both on the source-side (MT input) and on the targetside (MT output).</S>
+        </P>
+        <P>
+          <S ID="S-50068">Text-based features</S>
+        </P>
+        <P>
+          <S ID="S-50069">These features compute the length of the input in terms of (tokenized) number of words.</S>
+          <S ID="S-50070">The source-</S>
+        </P>
+        <P>
+          <S ID="S-50071">1 Weka software at http://www.cs.waikato.ac.nz/ml/weka/.</S>
+        </P>
+        <P>
+          <S ID="S-50072">side text feature is computed on the input string, while the target-side text feature is computed to the output translation string.</S>
+          <S ID="S-50073">These two features are useful in modeling the relationship between the number of words in the input and output and the expected BLEU score for these sizes.</S>
+        </P>
+        <P>
+          <S ID="S-50074">Language-model&#8211;based features These features are among the ones that were first proposed as possible differentiators between good and bad translations (<REF ID="R-07" RPTR="8">Gamon et al., 2005</REF>).</S>
+          <S ID="S-50075">They are a measure of how likely a collection of strings is under a language model trained on monolingual data (either on the source or target side).</S>
+        </P>
+        <P>
+          <S ID="S-50076">The language-model&#8211;based feature values we use here are computed as perplexity numbers using a 5- gram language model trained on the MT training set.</S>
+          <S ID="S-50077">This can be achieved, for instance, by using the publicly-available SRILM toolkit 2 .</S>
+          <S ID="S-50078">These two features are useful in modeling the relationship between the likelihood of a string (or set of strings) under an n-gram language model and the expected BLEU score for that input/output pair.</S>
+        </P>
+        <P>
+          <S ID="S-50079">Pseudo-reference&#8211;based features Previous work has shown that, in the absence of human-produced references, automaticallyproduced ones are still helpful in differentiating between good and bad translations (<REF ID="R-01" RPTR="1">Albrecht and Hwa, 2008</REF>).</S>
+          <S ID="S-50080">When computed on the target side, this type of features requires one (or possibly more) secondary MT system(s), used to generate translations starting from the same input.</S>
+          <S ID="S-50081">These pseudoreferences are useful in gauging translation convergence, using BLEU scores as feature values.</S>
+          <S ID="S-50082">In intuitive terms, their usefulness can be summarized as follows: &#8220;if system X produced a translation A and system Y produced a translation B starting from the same input, and A and B are similar, then A is probably a good translation&#8221;.</S>
+        </P>
+        <P>
+          <S ID="S-50083">An important property here is that systems X and Y need to be as different as possible from each other.</S>
+          <S ID="S-50084">This property ensures that a convergence on similar translations is not just an artifact of the systems sharing the same translation model/resources, but a true indication that the translations converge.</S>
+          <S ID="S-50085">The secondary systems we use in this work are</S>
+        </P>
+        <P>
+          <S ID="S-50086">2 Available at www-speech.sri.com/projects/srilm.</S>
+        </P>
+        <P>
+          <S ID="S-50087">still phrase-based, but equipped with linguisticallyoriented modules similar with the ones proposed in (<REF ID="R-05" RPTR="4">Collins et al., 2005</REF>; <REF ID="R-21" RPTR="32">Xu et al., 2009</REF>).</S>
+          <S ID="S-50088">Our experiments indicate that this single feature is one of the most powerful ones in terms of its predictive power.</S>
+        </P>
+        <P>
+          <S ID="S-50089">Example-based features</S>
+        </P>
+        <P>
+          <S ID="S-50090">For example-based features, we use a development set of parallel sentences, for which we produce translations and compute sentence-level BLEU scores.</S>
+          <S ID="S-50091">We set aside the top BLEU scoring sentences and bottom BLEU scoring sentences.</S>
+          <S ID="S-50092">These sets are used as positive examples (with better-thanaverage BLEU) and negative examples (with worsethan-average BLEU), respectively.</S>
+          <S ID="S-50093">We define a positive-example&#8211;based feature function as a geometric mean of 1-to-4&#8211;gram precision scores (i.e., the BLEU equation 3 with the BP term set to 1) between a string (on either source or target side) and the positive examples used as references.</S>
+          <S ID="S-50094">That is, we compute precision scores against all the positive examples at the same time, similar with how multiple references are used to increase the precision of the BLEU metric.</S>
+          <S ID="S-50095">(The negative-example&#8211;based features are defined in an analogous way.</S>
+          <S ID="S-50096">) The set of positive and negative examples is a fixed set that is used in the same manner both at training-time (to compute the example-based feature values for the training examples) and at test-time (to compute the example-based feature values for the test examples).</S>
+          <S ID="S-50097">The intuition behind these features can be summarized as follows: &#8220;if system X translated A well/poorly, and A and B are similar, then system X probably translates B well/poorly&#8221;.</S>
+          <S ID="S-50098">The total number of features on this type is 4 (2 for positive examples against source/target strings, 2 for negative examples against source/target strings).</S>
+        </P>
+        <P>
+          <S ID="S-50099">Training-data&#8211;based features</S>
+        </P>
+        <P>
+          <S ID="S-50100">If the system for which we make the predictions is trained on a parallel corpus, the data in this corpus can be exploited towards assessing translation quality (<REF ID="R-19" RPTR="29">Specia et al., 2009</REF>; <REF ID="R-18" RPTR="25">Soricut and Echihabi, 2010</REF>; <REF ID="R-20" RPTR="31">Specia, 2011</REF>).</S>
+          <S ID="S-50101">In our context, the documents that make up this corpus can be used in a fashion similar with the positive examples.</S>
+          <S ID="S-50102">One type of trainingdata&#8211;based features operates by computing the number of out-of-vocabulary (OOV) tokens with respect to the training data (on source side).</S>
+        </P>
+        <P>
+          <S ID="S-50103">A more powerful type of training-data&#8211;based features operates by computing a geometric mean of 1- to-4&#8211;gram precision score between a string (source or target side) and the training-data strings used as references.</S>
+          <S ID="S-50104">Intuitively, these features assess the coverage of the candidate strings with respect to the training data: &#8220;if the n-grams of input string A are well covered by the source-side of the training data, then the translation of A is probably good&#8221; (on the source side); &#8220;if the n-grams in the output translation B are well covered by the target-side of the parallel training data, then B is probably a good translation&#8221; (on the target side).</S>
+          <S ID="S-50105">The total number of features on this type is 3 (1 for the OOV counts, and 2 for the source/target-side n-gram coverage).</S>
+        </P>
+        <P>
+          <S ID="S-50106">Given the described 12 feature functions, the training for our five M5P prediction models is done using the feature-function values at sentence-level, and associating these values with reference labels that are automatically-produced from parallel-text using the sufficient-statistics of the BLEU score (Equations 1 and 2).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Metrics for Quality Prediction Performance</HEADER>
+        <P>
+          <S ID="S-50107">The metrics we use here are designed to answer the following question: how well can we automatically separate better translations from worse translations (in the absence of human-produced references)?</S>
+        </P>
+        <P>
+          <S ID="S-50108">A first metric we use is Ranking Accuracy (rAcc), see (<REF ID="R-08" RPTR="9">Gunawardana and Shani, 2009</REF>; <REF ID="R-18" RPTR="26">Soricut and Echihabi, 2010</REF>).</S>
+          <S ID="S-50109">In the general case, it measures how well N elements are assigned into n quantiles as a result of a ranking procedure.</S>
+          <S ID="S-50110">The formula is:</S>
+        </P>
+        <P>
+          <S ID="S-50111">rAcc[n] = Avg n TP i</S>
+        </P>
+        <P>
+          <S ID="S-50112">i=1 N n</S>
+        </P>
+        <P>
+          <S ID="S-50113">= 1 n N &#215; &#8721; TP i</S>
+        </P>
+        <P>
+          <S ID="S-50114">i=1</S>
+        </P>
+        <P>
+          <S ID="S-50115">where TP i (True-Positive i ) is the number of correctly-assigned documents in quantile i.</S>
+          <S ID="S-50116">Intuitively, this formula is an average of the ratio of elements correctly assigned in each quantile.</S>
+          <S ID="S-50117">For simplicity, we present here results using only 2 quantiles (n = 2), which effectively makes the rAcc[2] metric equivalent with binary classification accuracy when the two sets are required to have equal size.</S>
+          <S ID="S-50118">That is, we measure the accuracy of placing the 50%</S>
+        </P>
+        <P>
+          <S ID="S-50119">best-translated documents (as measured by BLEU against human reference) in the top 50% of ranked documents.</S>
+          <S ID="S-50120">Note that a random assignment gives a performance lower bound of 50% accuracy.</S>
+        </P>
+        <P>
+          <S ID="S-50121">A second metric we use here is the DeltaAvg metric (<REF ID="R-03" RPTR="3">Callison-Burch et al., 2012</REF>).</S>
+          <S ID="S-50122">The goal of the DeltaAvg metric is to measure how valuable a proposed ranking (hypothesis) is from the perspective of an extrinsic metric associated with the test entries (in our case, the BLEU scores).</S>
+          <S ID="S-50123">The following notations are used: for a given entry sentence s, V (s) represents the function that associates an extrinsic value to that entry; we extend this notation to a set S, with V (S) representing the average of all V (s), s &#8712; S.</S>
+          <S ID="S-50124">Intuitively, V (S) is a quantitative measure of the &#8220;quality&#8221; of the set S, as induced by the extrinsic values associated with the entries in S.</S>
+          <S ID="S-50125">For a set of ranked entries S and a parameter n, we denote by S 1 the first quantile of set S (the highestranked entries), S 2 the second quantile, and so on, for n quantiles of equal sizes.</S>
+          <S ID="S-50126">3 We also use the notation S i,j = &#8899; j</S>
+        </P>
+        <P>
+          <S ID="S-50127">k=i S k.</S>
+          <S ID="S-50128">Using these notations, the</S>
+        </P>
+        <P>
+          <S ID="S-50129">metric is defined as:</S>
+        </P>
+        <P>
+          <S ID="S-50130">DeltaAvg V [n] = &#8721; n&#8722;1</S>
+        </P>
+        <P>
+          <S ID="S-50131">k=1 V (S 1,k)</S>
+        </P>
+        <P>
+          <S ID="S-50132">&#8722; V (S) (4) n &#8722; 1</S>
+        </P>
+        <P>
+          <S ID="S-50133">When the valuation function V is clear from the context, we write DeltaAvg[n] for DeltaAvg V [n].</S>
+          <S ID="S-50134">The parameter n represents the number of quantiles we want to split the set S into.</S>
+          <S ID="S-50135">For simplicity, we consider there only the case for n = 2, which gives DeltaAvg[2] = V (S 1 ) &#8722; V (S).</S>
+          <S ID="S-50136">This measures the difference between the quality of the top quantile (top half) S 1 and the overall quality (represented by</S>
+        </P>
+        <P>
+          <S ID="S-50137">3 If the size |S| is not divisible by n, then the last quantile</S>
+        </P>
+        <P>
+          <S ID="S-50138">S n is assumed to contain the rest of the entries.</S>
+        </P>
+        <P>
+          <S ID="S-50139">V (S)).</S>
+          <S ID="S-50140">For the results presented here, the valuation function V is taken to be the BLEU function (Equation 3).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.4 Experimental Results</HEADER>
+        <P>
+          <S ID="S-50141">We measure the impact in ranking accuracy using a variety of European and Asian language pairs, using parallel data from various domains.</S>
+          <S ID="S-50142">One domain we use is the publicly available WMT09 data (<REF ID="R-12" RPTR="15">Koehn and Haddow, 2009</REF>), a combination of European parliament and news data.</S>
+          <S ID="S-50143">Another domain, called Travel, consists of user-generated reviews and descriptions; and a third domain, called HiTech, consists of parallel data from customer support for the high-tech industry.</S>
+          <S ID="S-50144">Using these parallel data sets, we train statistical phrase-based MT system similar to (<REF ID="R-14" RPTR="17">Och and Ney, 2004</REF>) as primary systems (Sys1).</S>
+          <S ID="S-50145">As secondary systems (Sys2) we use phrase-based systems equipped with linguistically-oriented modules similar with the ones proposed in (<REF ID="R-05" RPTR="5">Collins et al., 2005</REF>; <REF ID="R-21" RPTR="33">Xu et al., 2009</REF>).</S>
+          <S ID="S-50146">Table 1 lists the size of the parallel training data on which the MT systems were trained in the first column, and BLEU scores for the primary and secondary systems on held-out 1000-sentence test sets in the next two columns.</S>
+        </P>
+        <P>
+          <S ID="S-50147">The training material for the regression-tree models consists of 1000-document held-out sets.</S>
+          <S ID="S-50148">(For parallel data for which we do not have document boundaries, we simply simulate document boundaries after every 10 consecutive sentences.</S>
+          <S ID="S-50149">) Similarly, the Ranking test sets we use consist of 1000- document held-out sets (see column 4 in Table 1 for size).</S>
+          <S ID="S-50150">In the last four columns of Table 1, we show the results for ranking the translations produced by the primary MT system (Sys1).</S>
+          <S ID="S-50151">We measure the ranking performance for the two granularity cases.</S>
+          <S ID="S-50152">The one labeled as &#8220;Doc&#8221; is an implementation of</S>
+        </P>
+        <P>
+          <S ID="S-50153">the work described in (<REF ID="R-18" RPTR="27">Soricut and Echihabi, 2010</REF>), where the BLEU prediction is done using documentlevel feature values and models.</S>
+          <S ID="S-50154">The one labeled as &#8220;Sent&#8221; is the novel one proposed in this paper, where the BLEU prediction is done using sentencelevel feature values and models, which are then aggregated into document-level BLEU scores.</S>
+        </P>
+        <P>
+          <S ID="S-50155">Both rAcc[2] and DeltaAvg[2] numbers support the choice of making document-level BLEU prediction at a finer, sentence-based granularity level.</S>
+          <S ID="S-50156">For Travel English-French, for instance, the accuracy of the ranking improves from 77% to 80%.</S>
+          <S ID="S-50157">To put some intuition behind these numbers, it means that 4 out of every 5 sentences that the ranker places in the top 50% do belong there.</S>
+          <S ID="S-50158">At the same time, the DeltaAvg[2] numbers for Travel English-French indicate that the translation quality of the top 50% of the 1000 Ranking Test documents exceeds by 10.1 BLEU points the overall quality of the translations (up from 9.1 BLEU points for the documentlevel prediction).</S>
+          <S ID="S-50159">This large gap in the BLEU score of the top 50% ranked sentences and the overallcorpus BLEU indicates that these top-ranked translations are indeed of much better quality (closer to the human-produced references).</S>
+          <S ID="S-50160">The same large numbers are measured on the WMT09 data for Hungarian-English.</S>
+          <S ID="S-50161">This is a set for which it is hard to obtain significant improvements via core-model translation improvements.</S>
+          <S ID="S-50162">Our quality-estimation method allows one to automatically identify the top 50% of the sentences with 89% accuracy.</S>
+          <S ID="S-50163">This set of top 50% sentences also has an overall BLEU score of 35.3, which is better by +8.4 BLEU-points compared to the overall BLEU score of 26.9 (we only show the base overall BLEU score and the BLEUpoint gain in Table 2 to avoid displaying redundant information).</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 System Combination at Sentence Level</HEADER>
+      <P>
+        <S ID="S-50210">Since we produce two translations for every input sentence for the purpose of quality estimation, we exploit the availability of these competing hypotheses in order to choose the best one.</S>
+        <S ID="S-50211">In this section we describe three system combination schemes that choose between the output of the primary and secondary MT systems.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 System Combination using Regression</HEADER>
+        <P>
+          <S ID="S-50184">This combination scheme makes use of the regression-based sentence-level BLEU prediction mechanism described in Section 3.</S>
+          <S ID="S-50185">It requires that we also train and use an additional BLEU prediction mechanism for which the secondary MT system is now considered primary, and vice-versa.</S>
+          <S ID="S-50186">As a consequence, we can predict a sentence-level BLEU score for each of the two competing hypotheses.</S>
+          <S ID="S-50187">We then simply choose the hypothesis with the highest predicted BLEU score.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 System Combination using Ranking</HEADER>
+        <P>
+          <S ID="S-50188">This approach is based on ranking the candidate translations and then selecting the highest-ranked translation as the final output.</S>
+          <S ID="S-50189">To this end we use SVM-rank (<REF ID="R-10" RPTR="12">Joachims, 1999</REF>), a ranking algorithm built on SVM.</S>
+          <S ID="S-50190">We use SVM-rank with a linear kernel and the same feature set as the regression-based method (we make the observation here that only the target-based features have discriminative power in this context).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 System Combination using Classification</HEADER>
+        <P>
+          <S ID="S-50191">In this approach, we model the problem of selecting the best output from the two candidate translations into a binary classification problem.</S>
+          <S ID="S-50192">We use the same feature set as before for each candidate translation (again, only the target-based features have discriminative power in this context).</S>
+        </P>
+        <P>
+          <S ID="S-50193">The final feature vectors are obtained by subtracting the values of the primary-system feature vector from the values of the secondary-system feature vector.</S>
+          <S ID="S-50194">The binary classifier is trained to predict &#8221;0&#8221; if the primary-system is better, and &#8221;1&#8221; if the secondary-system is better.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.4 Experimental Results</HEADER>
+        <P>
+          <S ID="S-50195">In Table 2, we summarize the results for the three system combination techniques discussed before across our domains (WMT09, Travel, and Hi-Tech).</S>
+          <S ID="S-50196">To get an upper bound on the performance of these system combination techniques, we also compute an oracle function which selects the translation with highest BLEU score computed against humanproduced references.</S>
+        </P>
+        <P>
+          <S ID="S-50197">The results in Table 2 indicate that the BLEU improvements obtained by our system combina-</S>
+        </P>
+        <P>
+          <S ID="S-50198">tion techniques are significant.</S>
+          <S ID="S-50199">For instance, both the Regression-based system combination and the Ranking-based system combination achieve a BLEU score of 29.0 on the WMT09 Hungarian- English test set, an increase of +2.1 BLEU points.</S>
+          <S ID="S-50200">In the case of Travel English-French, an increase of +1.6 BLEU points is obtained by the Regressionbased system combination, in spite of the fact that one of the systems is measured to be 2.3 BLEU points lower in translation accuracy.</S>
+          <S ID="S-50201">Increases in the range of +1.5-2.0 BLEU points are obtained across all the experimental conditions that we tried: three different domains, various language pairs (both in and out of English), and various training data sizes (from 0.4Mw to 40Mw).</S>
+        </P>
+        <P>
+          <S ID="S-50202">Since our system-combination methods chose one system translation over another system translation, we can also measure the distribution of choices made between the two participating systems.</S>
+          <S ID="S-50203">These bimodal distributions can help us gauge the performance of various methods, when compared against the BLEU Oracle distribution.</S>
+        </P>
+        <P>
+          <S ID="S-50204">In Table 3, we report the percentages of sentences selected from each system in the oracle combination and each of the described system combination methods.</S>
+          <S ID="S-50205">We also report the Kullback-Liebler divergence (KL) between the BLEU Oracle distribution and the distribution induced by each of the system combination methods.</S>
+          <S ID="S-50206">The results indicate that, for both English-French cases that we considered (in the Travel and HiTech domains), the choice distribution of the Regression-based system combination method is much closer to the oracle distribution (KL of 0.68 and 0.11, respectively), compared to the other two methods.</S>
+          <S ID="S-50207">Note that this does not necessarily correlate with the evaluation based on overall BLEU score of the system-combination methods (Table 2).</S>
+          <S ID="S-50208">For instance, for HiTech English- French the best BLEU improvement is obtained by the Rank-based method with +1.7 BLEU points, but the KL divergence score of 3.31 is higher than the one for the Regression-based method (KL score of 0.11).</S>
+          <S ID="S-50209">Nevertheless, the choice distributions are an important factor in judging the performance of a given system selection method.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusions</HEADER>
+      <P>
+        <S ID="S-50212">Document-level quality estimation is an important component for building fully-automated translation solutions where the translated documents are directly published, without the need for human intervention.</S>
+        <S ID="S-50213">Such approaches are the only possible solu- 169 tion to mitigate the imperfection of current MT technology and the need to translate large volumes of data on a continuous basis.</S>
+        <S ID="S-50214">We show in this paper that sentence-level predictions, when aggregated to document-level predictions, outperform previously-proposed documentlevel quality estimation algorithms.</S>
+        <S ID="S-50215">In addition to that, these finer-granularity, sentence-level predictions can be used as part of a system selection scheme.</S>
+        <S ID="S-50216">The three alternative system selection techniques we describe here are intuitive, computationally cheap, and bring significant BLEU gains across multiple domains and language pairs.</S>
+        <S ID="S-50217">The finding that the regression-based system selection technique performs as well (or sometimes better) compared to the discriminative methods fits well with the overall theme of using two systems for both improved quality estimation and improved MT performance.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Joshua Albrecht</RAUTHOR>
+      <REFTITLE>Regression for sentence-level MT evaluation with pseudo references.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Joshua Albrecht</RAUTHOR>
+      <REFTITLE>The role of pseudo references in MT evaluation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>John Blatz</RAUTHOR>
+      <REFTITLE>Confidence estimation for machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Chris Callison-Burch</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Findings of the 2012 workshop on statistical machine translation.</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Michael Collins</RAUTHOR>
+      <REFTITLE>Clause restructuring for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Kevin Duh</RAUTHOR>
+      <REFTITLE>Ranking vs. regression in machine translation evaluation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Michael Gamon</RAUTHOR>
+      <REFTITLE>Sentence-level MT evaluation without reference translations: Beyond language modeling.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Asela Gunawardana</RAUTHOR>
+      <REFTITLE>A survey of accuracy evaluation metrics of recommendation tasks.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Almut Silja Hildebrand</RAUTHOR>
+      <REFTITLE>Combination of machine translation systems via hypothesis selection.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>T Joachims</RAUTHOR>
+      <REFTITLE>Making large-Scale SVM Learning Practical.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Damianos Karakos</RAUTHOR>
+      <REFTITLE>Machine translation system combination using ITG-based alignments.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Edinburgh&#8217;s submission to all tracks of the WMT2009 shared task with reordering and speed improvements to Moses.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Alex Kulesza</RAUTHOR>
+      <REFTITLE>A learning approach to improving sentence-level MT evaluation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>The alignment template approach to statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Antti-Veikko Rosti</RAUTHOR>
+      <REFTITLE>Incremental hypothesis alignment for building confusion networks with application to machine translation system combination.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Radu Soricut</RAUTHOR>
+      <REFTITLE>Trustrank: Inducing trust in automatic translations via ranking.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Lucia Specia</RAUTHOR>
+      <REFTITLE>Estimating the sentence-level quality of machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Lucia Specia</RAUTHOR>
+      <REFTITLE>Exploiting objective annotations for measuring translation post-editing effort.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Peng Xu</RAUTHOR>
+      <REFTITLE>Using a dependency parser to improve SMT for Subject-Object-Verb languages.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

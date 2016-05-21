@@ -1,0 +1,2720 @@
+<document>
+  <filename>D11-1017</filename>
+  <authors/>
+  <title>Training a Parser for Machine Translation Reordering</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>We propose a simple training regime that can improve the extrinsic performance of a parser, given only a corpus of sentences and a way to automatically evaluate the extrinsic quality of a candidate parse. We apply our method to train parsers that excel when used as part of a reordering component in a statistical machine translation system. We use a corpus of weakly-labeled reference reorderings to guide parser training. Our best parsers contribute significant improvements in subjective translation quality while their intrinsic attachment scores typically regress.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We propose a simple training regime that can improve the extrinsic performance of a parser, given only a corpus of sentences and a way to automatically evaluate the extrinsic quality of a candidate parse.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We apply our method to train parsers that excel when used as part of a reordering component in a statistical machine translation system.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use a corpus of weakly-labeled reference reorderings to guide parser training.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our best parsers contribute significant improvements in subjective translation quality while their intrinsic attachment scores typically regress.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>The field of syntactic parsing has received a great deal of attention and progress since the creation of the Penn Treebank (Marcus et al., 1993; Collins, 1997; Charniak, 2000; McDonald et al., 2005; Petrov et al., 2006; Nivre, 2008). A common&#8212; and valid&#8212;criticism, however, is that parsers typically get evaluated only on Section 23 of the Wall Street Journal portion of the Penn Treebank. This is problematic for many reasons. As previously observed, this test set comes from a very narrow domain that does not necessarily reflect parser performance on text coming from more varied domains (Gildea, 2001), especially web text (Foster, 2010). There is also evidence that after so much repeated testing, parsers are indirectly over-fitting to this set (Petrov and Klein, 2007). Furthermore, parsing was never meant as a stand-alone task, but is rather a 183
+means to an end, towards the goal of building systems that can process natural language input.
+This is not to say that parsers are not used in larger systems. All to the contrary, as parsing technology has become more mature, parsers have become efficient and accurate enough to be useful in many natural language processing systems, most notably in machine translation (Yamada and Knight, 2001; Galley et al., 2004; Xu et al., 2009). While it has been repeatedly shown that using a parser can bring net gains on downstream application quality, it is often unclear how much intrinsic parsing accuracy actually matters.
+In this paper we try to shed some light on this issue by comparing different parsers in the context of machine translation (MT). We present experiments on translation from English to three Subject-Object- Verb (SOV) languages, 1 because those require extensive syntactic reordering to produce grammatical translations. We evaluate parse quality on a number of extrinsic metrics, including word reordering accuracy, BLEU score and a human evaluation of final translation quality. We show that while there is a good correlation between those extrinsic metrics, parsing quality as measured on the Penn Treebank is not a good indicator of the final downstream application quality. Since the word reordering metric can be computed efficiently offline (i.e. without the use of the final MT system), we then propose to tune parsers specifically for that metric, with the goal of improving the performance of the overall system.
+To this end we propose a simple training regime
+1 We experiment with Japanese, Korean and Turkish, but
+there is nothing language specific in our approach.
+which we refer to as targeted self-training (Section 2). Similar to self-training, a baseline model is used to produce predictions on an unlabeled data set. However, rather than directly training on the output of the baseline model, we generate a list of hypotheses and use an external signal to select the best candidate. The selected parse trees are added to the training data and the model is then retrained. The experiments in Section 5 show that this simple procedure noticeably improves our parsers for the task at hand, resulting in significant improvements in downstream translation quality, as measured in a human evaluation on web text.
+This idea is similar in vein to McClosky. et al. (2006) and Petrov et al. (2010), except that we use an extrinsic quality metric instead of a second parsing model for making the selection. It is also similar to Burkett and Klein (2008) and Burkett et al. (2010), but again avoiding the added complexity introduced by the use of additional (bilingual) models for candidate selection.
+It should be noted that our extrinsic metric is computed from data that has been manually annotated with reference word reorderings. Details of the reordering metric and the annotated data we used are given in Sections 3 and 4. While this annotation requires some effort, such annotations are much easier to obtain than full parse trees. In our experiments in Section 6 we show that we can obtain similar improvements on downstream translation quality by targeted self-training with weakly labeled data (in form of word reorderings), as with training on the fully labeled data (with full syntactic parse trees).</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The field of syntactic parsing has received a great deal of attention and progress since the creation of the Penn Treebank (Marcus et al., 1993; Collins, 1997; Charniak, 2000; McDonald et al., 2005; Petrov et al., 2006; Nivre, 2008).</text>
+              <doc_id>4</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>A common&#8212; and valid&#8212;criticism, however, is that parsers typically get evaluated only on Section 23 of the Wall Street Journal portion of the Penn Treebank.</text>
+              <doc_id>5</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is problematic for many reasons.</text>
+              <doc_id>6</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>As previously observed, this test set comes from a very narrow domain that does not necessarily reflect parser performance on text coming from more varied domains (Gildea, 2001), especially web text (Foster, 2010).</text>
+              <doc_id>7</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>There is also evidence that after so much repeated testing, parsers are indirectly over-fitting to this set (Petrov and Klein, 2007).</text>
+              <doc_id>8</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Furthermore, parsing was never meant as a stand-alone task, but is rather a 183</text>
+              <doc_id>9</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>means to an end, towards the goal of building systems that can process natural language input.</text>
+              <doc_id>10</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>This is not to say that parsers are not used in larger systems.</text>
+              <doc_id>11</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>All to the contrary, as parsing technology has become more mature, parsers have become efficient and accurate enough to be useful in many natural language processing systems, most notably in machine translation (Yamada and Knight, 2001; Galley et al., 2004; Xu et al., 2009).</text>
+              <doc_id>12</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>While it has been repeatedly shown that using a parser can bring net gains on downstream application quality, it is often unclear how much intrinsic parsing accuracy actually matters.</text>
+              <doc_id>13</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper we try to shed some light on this issue by comparing different parsers in the context of machine translation (MT).</text>
+              <doc_id>14</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We present experiments on translation from English to three Subject-Object- Verb (SOV) languages, 1 because those require extensive syntactic reordering to produce grammatical translations.</text>
+              <doc_id>15</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We evaluate parse quality on a number of extrinsic metrics, including word reordering accuracy, BLEU score and a human evaluation of final translation quality.</text>
+              <doc_id>16</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We show that while there is a good correlation between those extrinsic metrics, parsing quality as measured on the Penn Treebank is not a good indicator of the final downstream application quality.</text>
+              <doc_id>17</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since the word reordering metric can be computed efficiently offline (i.e. without the use of the final MT system), we then propose to tune parsers specifically for that metric, with the goal of improving the performance of the overall system.</text>
+              <doc_id>18</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>To this end we propose a simple training regime</text>
+              <doc_id>19</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 We experiment with Japanese, Korean and Turkish, but</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>there is nothing language specific in our approach.</text>
+              <doc_id>21</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>which we refer to as targeted self-training (Section 2).</text>
+              <doc_id>22</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Similar to self-training, a baseline model is used to produce predictions on an unlabeled data set.</text>
+              <doc_id>23</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, rather than directly training on the output of the baseline model, we generate a list of hypotheses and use an external signal to select the best candidate.</text>
+              <doc_id>24</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The selected parse trees are added to the training data and the model is then retrained.</text>
+              <doc_id>25</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The experiments in Section 5 show that this simple procedure noticeably improves our parsers for the task at hand, resulting in significant improvements in downstream translation quality, as measured in a human evaluation on web text.</text>
+              <doc_id>26</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>This idea is similar in vein to McClosky.</text>
+              <doc_id>27</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>et al. (2006) and Petrov et al. (2010), except that we use an extrinsic quality metric instead of a second parsing model for making the selection.</text>
+              <doc_id>28</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is also similar to Burkett and Klein (2008) and Burkett et al. (2010), but again avoiding the added complexity introduced by the use of additional (bilingual) models for candidate selection.</text>
+              <doc_id>29</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>It should be noted that our extrinsic metric is computed from data that has been manually annotated with reference word reorderings.</text>
+              <doc_id>30</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Details of the reordering metric and the annotated data we used are given in Sections 3 and 4.</text>
+              <doc_id>31</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>While this annotation requires some effort, such annotations are much easier to obtain than full parse trees.</text>
+              <doc_id>32</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In our experiments in Section 6 we show that we can obtain similar improvements on downstream translation quality by targeted self-training with weakly labeled data (in form of word reorderings), as with training on the fully labeled data (with full syntactic parse trees).</text>
+              <doc_id>33</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Targeted Self-Training</title>
+        <text>Our technique for retraining a baseline parser is an extension of self-training. In standard parser selftraining, one uses the baseline parsing model to parse a corpus of sentences, and then adds the 1-best output of the baseline parser to the training data. To target the self-training, we introduce an additional step, given as Algorithm 1. Instead of taking the 1- best parse, we produce a ranked n-best list of predictions and select the parser which gives the best score according to an external evaluation function. That is, instead of relying on the intrinsic model score, we use an extrinsic score to select the parse towards 184
+Algorithm 1 Select parse that maximizes an extrinsic metric. Input: baseline parser B Input: sentence S Input: function COMPUTEEXTRINSIC(parse P ) Output: a parse for the input sentence
+P n = {P 1 , . . . , P n } &#8592; n-best parses of S by B maxScore = 0 bestParse = &#8709; for k = 1 to n do
+extrinsicScore = COMPUTEEXTRINSIC(P k ) if extrinsicScore &gt; maxScore then
+maxScore = extrinsicScore bestParse = P k
+end if end for return bestParse
+which to update. In the case of a tie, we prefer the parse ranked most highly in the n-best list.
+The motivation of this selection step is that good performance on the downstream external task, measured by the extrinsic metric, should be predictive of an intrinsically good parse. At the very least, even if the selected parse is not syntactically correct, or even if it goes against the original treebanking guidelines, it results in a higher extrinsic score and should therefore be preferred.
+One could imagine extending this framework by repeatedly running self-training on successively improving parsers in an EM-style algorithm. A recent work by Hall et al. (2011) on training a parser with multiple objective functions investigates a similar idea in the context of online learning.
+In this paper we focus our attention on machine translation as the final application, but one could envision applying our techniques to other applications such as information extraction or question answering. In particular, we explore one application of targeted self-training, where computing the extrinsic metric involves plugging the parse into an MT system&#8217;s reordering component and computing the accuracy of the reordering compared to a reference word order. We now direct our attention to the details of this application.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Our technique for retraining a baseline parser is an extension of self-training.</text>
+              <doc_id>34</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In standard parser selftraining, one uses the baseline parsing model to parse a corpus of sentences, and then adds the 1-best output of the baseline parser to the training data.</text>
+              <doc_id>35</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>To target the self-training, we introduce an additional step, given as Algorithm 1.</text>
+              <doc_id>36</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Instead of taking the 1- best parse, we produce a ranked n-best list of predictions and select the parser which gives the best score according to an external evaluation function.</text>
+              <doc_id>37</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>That is, instead of relying on the intrinsic model score, we use an extrinsic score to select the parse towards 184</text>
+              <doc_id>38</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Algorithm 1 Select parse that maximizes an extrinsic metric.</text>
+              <doc_id>39</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Input: baseline parser B Input: sentence S Input: function COMPUTEEXTRINSIC(parse P ) Output: a parse for the input sentence</text>
+              <doc_id>40</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>P n = {P 1 , .</text>
+              <doc_id>41</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>42</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>.</text>
+              <doc_id>43</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>, P n } &#8592; n-best parses of S by B maxScore = 0 bestParse = &#8709; for k = 1 to n do</text>
+              <doc_id>44</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>extrinsicScore = COMPUTEEXTRINSIC(P k ) if extrinsicScore &gt; maxScore then</text>
+              <doc_id>45</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>maxScore = extrinsicScore bestParse = P k</text>
+              <doc_id>46</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>end if end for return bestParse</text>
+              <doc_id>47</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>which to update.</text>
+              <doc_id>48</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the case of a tie, we prefer the parse ranked most highly in the n-best list.</text>
+              <doc_id>49</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The motivation of this selection step is that good performance on the downstream external task, measured by the extrinsic metric, should be predictive of an intrinsically good parse.</text>
+              <doc_id>50</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>At the very least, even if the selected parse is not syntactically correct, or even if it goes against the original treebanking guidelines, it results in a higher extrinsic score and should therefore be preferred.</text>
+              <doc_id>51</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>One could imagine extending this framework by repeatedly running self-training on successively improving parsers in an EM-style algorithm.</text>
+              <doc_id>52</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>A recent work by Hall et al. (2011) on training a parser with multiple objective functions investigates a similar idea in the context of online learning.</text>
+              <doc_id>53</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper we focus our attention on machine translation as the final application, but one could envision applying our techniques to other applications such as information extraction or question answering.</text>
+              <doc_id>54</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In particular, we explore one application of targeted self-training, where computing the extrinsic metric involves plugging the parse into an MT system&#8217;s reordering component and computing the accuracy of the reordering compared to a reference word order.</text>
+              <doc_id>55</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We now direct our attention to the details of this application.</text>
+              <doc_id>56</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 The MT Reordering Task</title>
+        <text>Determining appropriate target language word order for a translation is a fundamental problem in MT. When translating between languages with significantly different word order such as English and Japanese, it has been shown that metrics which explicitly account for word-order are much better correlated with human judgments of translation quality than those that give more weight to word choice, like BLEU (Lavie and Denkowski, 2009; Isozaki et al., 2010a; Birch and Osborne, 2010). This demonstrates the importance of getting reordering right.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Determining appropriate target language word order for a translation is a fundamental problem in MT.</text>
+              <doc_id>57</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>When translating between languages with significantly different word order such as English and Japanese, it has been shown that metrics which explicitly account for word-order are much better correlated with human judgments of translation quality than those that give more weight to word choice, like BLEU (Lavie and Denkowski, 2009; Isozaki et al., 2010a; Birch and Osborne, 2010).</text>
+              <doc_id>58</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This demonstrates the importance of getting reordering right.</text>
+              <doc_id>59</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Reordering as a separately evaluable component</title>
+            <text>One way to break down the problem of translating between languages with different word order is to handle reordering and translation separately: first reorder source-language sentences into targetlanguage word order in a preprocessing step, and then translate the reordered sentences. It has been shown that good results can be achieved by reordering each input sentence using a series of tree transformations on its parse tree. The rules for tree transformation can be manually written (Collins et al., 2005; Wang, 2007; Xu et al., 2009) or automatically learned (Xia and McCord, 2004; Habash, 2007; Genzel, 2010). Doing reordering as a preprocessing step, separately from translation, makes it easy to evaluate reordering performance independently from the MT system. Accordingly, Talbot et al. (2011) present a framework for evaluating the quality of reordering separately from the lexical choice involved in translation. They propose a simple reordering metric based on METEOR&#8217;s reordering penalty (Lavie and Denkowski, 2009). This metric is computed solely on the source language side. To compute it, one takes the candidate reordering of the input sentence and partitions it into a set C of contiguous spans whose content appears contiguously in the same order in the reference. The reordering score is then computed as
+&#961;(e sys , e ref ) = 1 &#8722; |C| &#8722; 1 |e| &#8722; 1 .
+This metric assigns a score between 0 and 1 where 1 185 indicates that the candidate reordering is identical to the reference and 0 indicates that no two words that are contiguous in the candidate reordering are contiguous in the reference. For example, if a reference reordering is A B C D E, candidate reordering A B E C D would get score 1&#8722;(3&#8722;1)/(5&#8722;1) = 0.5.
+Talbot et al. (2011) show that this reordering score is strongly correlated with human judgment of translation quality. Furthermore, they propose to evaluate the reordering quality of an MT system by computing its reordering score on a test set consisting of source language sentences and their reference reorderings. In this paper, we take the same approach for evaluation, and in addition, we use corpora of source language sentences and their reference reorderings for training the system, not just testing it. We describe in more detail how the reference reordering data was prepared in Section 4.1.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>One way to break down the problem of translating between languages with different word order is to handle reordering and translation separately: first reorder source-language sentences into targetlanguage word order in a preprocessing step, and then translate the reordered sentences.</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It has been shown that good results can be achieved by reordering each input sentence using a series of tree transformations on its parse tree.</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The rules for tree transformation can be manually written (Collins et al., 2005; Wang, 2007; Xu et al., 2009) or automatically learned (Xia and McCord, 2004; Habash, 2007; Genzel, 2010).</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Doing reordering as a preprocessing step, separately from translation, makes it easy to evaluate reordering performance independently from the MT system.</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Accordingly, Talbot et al. (2011) present a framework for evaluating the quality of reordering separately from the lexical choice involved in translation.</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>They propose a simple reordering metric based on METEOR&#8217;s reordering penalty (Lavie and Denkowski, 2009).</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This metric is computed solely on the source language side.</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To compute it, one takes the candidate reordering of the input sentence and partitions it into a set C of contiguous spans whose content appears contiguously in the same order in the reference.</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The reordering score is then computed as</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>8</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#961;(e sys , e ref ) = 1 &#8722; |C| &#8722; 1 |e| &#8722; 1 .</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>This metric assigns a score between 0 and 1 where 1 185 indicates that the candidate reordering is identical to the reference and 0 indicates that no two words that are contiguous in the candidate reordering are contiguous in the reference.</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, if a reference reordering is A B C D E, candidate reordering A B E C D would get score 1&#8722;(3&#8722;1)/(5&#8722;1) = 0.5.</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Talbot et al. (2011) show that this reordering score is strongly correlated with human judgment of translation quality.</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Furthermore, they propose to evaluate the reordering quality of an MT system by computing its reordering score on a test set consisting of source language sentences and their reference reorderings.</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In this paper, we take the same approach for evaluation, and in addition, we use corpora of source language sentences and their reference reorderings for training the system, not just testing it.</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We describe in more detail how the reference reordering data was prepared in Section 4.1.</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Reordering quality as predictor of parse quality</title>
+            <text>Figure 1 gives concrete examples of good and bad reorderings of an English sentence into Japanese word order. It shows that a bad parse leads to a bad reordering (lacking inversion of verb &#8220;wear&#8221; and object &#8220;sunscreen&#8221;) and a low reordering score. Could we flip this causality around, and perhaps try to identify a good parse tree based on its reordering score? With the experiments in this paper, we show that indeed a high reordering score is predictive of the underlying parse tree that was used to generate the reordering being a good parse (or, at least, being good enough for our purpose).
+In the case of translating English to Japanese or another SOV language, there is a large amount of reordering required, but with a relatively small number of reordering rules one can cover a large proportion of reordering phenomena. Isozaki et al. (2010b), for instance, were able to get impressive English&#8594;Japanese results with only a single reordering rule, given a suitable definition of a head. Hence, the reordering task depends crucially on a correct syntactic analysis and is extremely sensitive to parser errors.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Figure 1 gives concrete examples of good and bad reorderings of an English sentence into Japanese word order.</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It shows that a bad parse leads to a bad reordering (lacking inversion of verb &#8220;wear&#8221; and object &#8220;sunscreen&#8221;) and a low reordering score.</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Could we flip this causality around, and perhaps try to identify a good parse tree based on its reordering score?</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>With the experiments in this paper, we show that indeed a high reordering score is predictive of the underlying parse tree that was used to generate the reordering being a good parse (or, at least, being good enough for our purpose).</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In the case of translating English to Japanese or another SOV language, there is a large amount of reordering required, but with a relatively small number of reordering rules one can cover a large proportion of reordering phenomena.</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Isozaki et al. (2010b), for instance, were able to get impressive English&#8594;Japanese results with only a single reordering rule, given a suitable definition of a head.</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Hence, the reordering task depends crucially on a correct syntactic analysis and is extremely sensitive to parser errors.</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Experimental Setup Good parse</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>83</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 Treebank data</title>
+            <text>In our experiments the baseline training corpus is the Wall Street Journal (WSJ) section of the Penn Treebank (Marcus et al., 1993) using standard training/development/testing splits. We converted the treebank to match the tokenization expected by our MT system. In particular, we split tokens containing hyphens into multiple tokens and, somewhat simplistically, gave the original token&#8217;s part-of-speech tag to all newly created tokens. In Section 6 we make also use of the Question Treebank (QTB) (Judge et al., 2006), as a source of syntactically annotated out-of-domain data. Though we experiment with both dependency parsers and phrase structure parsers, our MT system assumes dependency parses as input. We use the Stanford converter (de Marneffe et al., 2006) to convert phrase structure parse trees to dependency parse trees (for both treebank trees and predicted trees).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In our experiments the baseline training corpus is the Wall Street Journal (WSJ) section of the Penn Treebank (Marcus et al., 1993) using standard training/development/testing splits.</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We converted the treebank to match the tokenization expected by our MT system.</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In particular, we split tokens containing hyphens into multiple tokens and, somewhat simplistically, gave the original token&#8217;s part-of-speech tag to all newly created tokens.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In Section 6 we make also use of the Question Treebank (QTB) (Judge et al., 2006), as a source of syntactically annotated out-of-domain data.</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Though we experiment with both dependency parsers and phrase structure parsers, our MT system assumes dependency parses as input.</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use the Stanford converter (de Marneffe et al., 2006) to convert phrase structure parse trees to dependency parse trees (for both treebank trees and predicted trees).</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 Reference reordering data</title>
+            <text>We aim to build an MT system that can accurately translate typical English text that one finds on the Internet to SOV langauges. To this end, we randomly sampled 13595 English sentences from the web and created Japanese-word-order reference reorderings for them. We split the sentences arbitrarily into a 6268-sentence Web-Train corpus and a 7327- sentence Web-Test corpus.
+To make the reference alignments we used the technique suggested by Talbot et al. (2011): ask annotators to translate each English sentence to Japanese extremely literally and annotate which English words align to which Japanese words. Golden reference reorderings can be made programmatically from these annotations. Creating a large set of reference reorderings is straightforward because annotators need little special background or training, as long as they can speak both the source and target languages. We chose Japanese as the target language through which to create the English reference reorderings because we had access to bilingual annotators fluent in English and Japanese. 186
+Reordered: 15 or greater of an SPF has that sunscreen Wear Reordering score: 1.0 (matches reference)
+Bad parse
+Reordered: 15 or greater of an SPF has that Wear sunscreen Reordering score: 0.78 (&#8220;Wear&#8221; is out of place)</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We aim to build an MT system that can accurately translate typical English text that one finds on the Internet to SOV langauges.</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To this end, we randomly sampled 13595 English sentences from the web and created Japanese-word-order reference reorderings for them.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We split the sentences arbitrarily into a 6268-sentence Web-Train corpus and a 7327- sentence Web-Test corpus.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>To make the reference alignments we used the technique suggested by Talbot et al. (2011): ask annotators to translate each English sentence to Japanese extremely literally and annotate which English words align to which Japanese words.</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Golden reference reorderings can be made programmatically from these annotations.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Creating a large set of reference reorderings is straightforward because annotators need little special background or training, as long as they can speak both the source and target languages.</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We chose Japanese as the target language through which to create the English reference reorderings because we had access to bilingual annotators fluent in English and Japanese.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>186</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Reordered: 15 or greater of an SPF has that sunscreen Wear Reordering score: 1.0 (matches reference)</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Bad parse</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Reordered: 15 or greater of an SPF has that Wear sunscreen Reordering score: 0.78 (&#8220;Wear&#8221; is out of place)</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>4.3 Parsers</title>
+            <text>The core dependency parser we use is an implementation of a transition-based dependency parser using an arc-eager transition strategy (Nivre, 2008). The parser is trained using the averaged perceptron algorithm with an early update strategy as described in Zhang and Clark (2008). The parser uses the following features: word identity of the first two words on the buffer, the top word on the stack and the head of the top word on the stack (if available); part-ofspeech identities of the first four words on the buffer and top two words on the stack; dependency arc label identities for the top word on the stack, the left and rightmost modifier of the top word on the stack, and the leftmost modifier of the first word in the buffer. We also include conjunctions over all nonlexical features.
+We also give results for the latent variable parser (a.k.a. BerkeleyParser) of Petrov et al. (2006). We convert the constituency trees output by the BerkeleyParser to labeled dependency trees using the same procedure that is applied to the treebanks. While the BerkeleyParser views part-of-speech (POS) tagging as an integral part of parsing, our dependency parser requires the input to be tagged
+with a separate POS tagger. We use the TnT tagger (Brants, 2000) in our experiments, because of its efficiency and ease of use. Tagger and parser are always trained on the same data.
+For all parsers, we lowercase the input at train and test time. We found that this improves performance in parsing web text. In addition to general uppercase/lowercase noisiness of the web text negatively impacting scores, we found that the baseline casesensitive parsers are especially bad at parsing imperative sentences, as discussed in Section 5.3.2.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The core dependency parser we use is an implementation of a transition-based dependency parser using an arc-eager transition strategy (Nivre, 2008).</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The parser is trained using the averaged perceptron algorithm with an early update strategy as described in Zhang and Clark (2008).</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The parser uses the following features: word identity of the first two words on the buffer, the top word on the stack and the head of the top word on the stack (if available); part-ofspeech identities of the first four words on the buffer and top two words on the stack; dependency arc label identities for the top word on the stack, the left and rightmost modifier of the top word on the stack, and the leftmost modifier of the first word in the buffer.</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We also include conjunctions over all nonlexical features.</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We also give results for the latent variable parser (a.k.a.</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>BerkeleyParser) of Petrov et al. (2006).</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We convert the constituency trees output by the BerkeleyParser to labeled dependency trees using the same procedure that is applied to the treebanks.</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>While the BerkeleyParser views part-of-speech (POS) tagging as an integral part of parsing, our dependency parser requires the input to be tagged</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>with a separate POS tagger.</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use the TnT tagger (Brants, 2000) in our experiments, because of its efficiency and ease of use.</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Tagger and parser are always trained on the same data.</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For all parsers, we lowercase the input at train and test time.</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We found that this improves performance in parsing web text.</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In addition to general uppercase/lowercase noisiness of the web text negatively impacting scores, we found that the baseline casesensitive parsers are especially bad at parsing imperative sentences, as discussed in Section 5.3.2.</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>4.4 Reordering rules</title>
+            <text>In this paper we focus on English to Japanese, Korean, and Turkish translation. We use a superset of the reordering rules proposed by Xu et al. (2009), which flatten a dependency tree into SOV word order that is suitable for all three languages. The rules define a precedence order for the dependents of each part of speech. For example, a slightly simplified version of the precedence order of child labels for a verbal head HEADVERB is: advcl, nsubj, prep, [other children], dobj, prt, aux, neg, HEADVERB, mark, ref, compl. Alternatively, we could have used an automatic reordering-rule learning framework like that of Genzel (2010). Because the reordering accuracy metric can be computed for any source/target language pair, this would have made our approach language completely independent and applicable to any language pair. We chose to use manually written rules to eliminate the variance induced by the automatic reordering-rule learning framework.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In this paper we focus on English to Japanese, Korean, and Turkish translation.</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use a superset of the reordering rules proposed by Xu et al. (2009), which flatten a dependency tree into SOV word order that is suitable for all three languages.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The rules define a precedence order for the dependents of each part of speech.</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, a slightly simplified version of the precedence order of child labels for a verbal head HEADVERB is: advcl, nsubj, prep, [other children], dobj, prt, aux, neg, HEADVERB, mark, ref, compl.</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Alternatively, we could have used an automatic reordering-rule learning framework like that of Genzel (2010).</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Because the reordering accuracy metric can be computed for any source/target language pair, this would have made our approach language completely independent and applicable to any language pair.</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We chose to use manually written rules to eliminate the variance induced by the automatic reordering-rule learning framework.</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>4</index>
+            <title>4.5 MT system</title>
+            <text>We carried out all our translation experiments on a state-of-the-art phrase-based statistical MT system. During both training and testing, the system reorders source-language sentences in a preprocessing step using the above-mentioned rules. During decoding, we used an allowed jump width of 4 words. In addition to the regular distance distortion model, we incorporate a maximum entropy based lexicalized phrase reordering model (Zens and Ney, 2006) as a feature used in decoding.
+Overall for decoding, we use between 20 to 30 features, whose weights are optimized using MERT (Och, 2003). All experiments for a given lan- 187
+guage pair use the same set of MERT weights tuned on a system using a separate parser (that is neither the baseline nor the experiment parser). This potentially underestimates the improvements that can be obtained, but also eliminates MERT as a possible source of improvement, allowing us to trace back improvements in translation quality directly to parser changes. 2
+For parallel training data, we use a custom collection of parallel documents. They come from various sources with a substantial portion coming from the web after using simple heuristics to identify potential document pairs. For all language pairs, we trained on approximately 300 million source words each.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We carried out all our translation experiments on a state-of-the-art phrase-based statistical MT system.</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>During both training and testing, the system reorders source-language sentences in a preprocessing step using the above-mentioned rules.</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>During decoding, we used an allowed jump width of 4 words.</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In addition to the regular distance distortion model, we incorporate a maximum entropy based lexicalized phrase reordering model (Zens and Ney, 2006) as a feature used in decoding.</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Overall for decoding, we use between 20 to 30 features, whose weights are optimized using MERT (Och, 2003).</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All experiments for a given lan- 187</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>guage pair use the same set of MERT weights tuned on a system using a separate parser (that is neither the baseline nor the experiment parser).</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This potentially underestimates the improvements that can be obtained, but also eliminates MERT as a possible source of improvement, allowing us to trace back improvements in translation quality directly to parser changes.</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>2</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For parallel training data, we use a custom collection of parallel documents.</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>They come from various sources with a substantial portion coming from the web after using simple heuristics to identify potential document pairs.</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For all language pairs, we trained on approximately 300 million source words each.</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Experiments Reordering Web Text</title>
+        <text>We experimented with parsers trained in three different ways:
+1. Baseline: trained only on WSJ-Train.
+2. Standard self-training: trained on WSJ-Train and 1-best parse of the Web-Train set by baseline parser.
+3. Targeted self-training: trained on WSJ-Train and, for each sentence in Web-Train, the parse from the baseline parser&#8217;s 512-best list that when reordered gives the highest reordering score. 3</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We experimented with parsers trained in three different ways:</text>
+              <doc_id>134</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.</text>
+              <doc_id>135</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Baseline: trained only on WSJ-Train.</text>
+              <doc_id>136</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2.</text>
+              <doc_id>137</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Standard self-training: trained on WSJ-Train and 1-best parse of the Web-Train set by baseline parser.</text>
+              <doc_id>138</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>3.</text>
+              <doc_id>139</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Targeted self-training: trained on WSJ-Train and, for each sentence in Web-Train, the parse from the baseline parser&#8217;s 512-best list that when reordered gives the highest reordering score.</text>
+              <doc_id>140</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>3</text>
+              <doc_id>141</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>5.1 Standard self-training vs targeted self-training</title>
+            <text>Table 1 shows that targeted self-training on Web- Train significantly improves Web-Test reordering score more than standard self-training for both the shift-reduce parser and for the BerkeleyParser. The reordering score is generally divorced from the attachment scores measured on the WSJ-Test treebank: for the shift-reduce parser, Web-Test reordering score and WSJ-Test labeled attachment score
+2 We also ran MERT on all systems and the pattern of improvement is consistent, but sometimes the improvement is bigger or smaller after MERT. For instance, the BLEU delta for Japanese is +0.0030 with MERT on both sides as opposed to +0.0025 with no MERT. 3 We saw consistent but diminishing improvements as we increased the size of the n-best list.
+Parser Web-Test reordering WSJ-Test LAS
+(LAS) are anti-correlated, but for BerkeleyParser they are correlated. Interestingly, weighting the selftraining data more seems to have a negative effect on both metrics. 4
+One explanation for the drops in LAS is that some parts of the parse tree are important for downstream reordering quality while others are not (or only to a lesser extent). Some distinctions between labels become less important; for example, arcs labeled &#8220;amod&#8221; and &#8220;advmod&#8221; are transformed identically by the reordering rules. Some semantic distinctions also become less important; for example, any sane interpretation of &#8220;red hot car&#8221; would be reordered the same, that is, not at all.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Table 1 shows that targeted self-training on Web- Train significantly improves Web-Test reordering score more than standard self-training for both the shift-reduce parser and for the BerkeleyParser.</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The reordering score is generally divorced from the attachment scores measured on the WSJ-Test treebank: for the shift-reduce parser, Web-Test reordering score and WSJ-Test labeled attachment score</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 We also ran MERT on all systems and the pattern of improvement is consistent, but sometimes the improvement is bigger or smaller after MERT.</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For instance, the BLEU delta for Japanese is +0.0030 with MERT on both sides as opposed to +0.0025 with no MERT.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>3 We saw consistent but diminishing improvements as we increased the size of the n-best list.</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Parser Web-Test reordering WSJ-Test LAS</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(LAS) are anti-correlated, but for BerkeleyParser they are correlated.</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Interestingly, weighting the selftraining data more seems to have a negative effect on both metrics.</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>4</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>One explanation for the drops in LAS is that some parts of the parse tree are important for downstream reordering quality while others are not (or only to a lesser extent).</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Some distinctions between labels become less important; for example, arcs labeled &#8220;amod&#8221; and &#8220;advmod&#8221; are transformed identically by the reordering rules.</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Some semantic distinctions also become less important; for example, any sane interpretation of &#8220;red hot car&#8221; would be reordered the same, that is, not at all.</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>5.2 Translation quality improvement</title>
+            <text>To put the improvement of the MT system in terms of BLEU score (Papineni et al., 2002), a widely used metric for automatic MT evaluation, we took 5000 sentences from Web-Test and had humans generate reference translations into Japanese, Korean, and
+4 We did not attempt this experiment for the BerkeleyParser
+since training was too slow.
+Turkish. We then trained MT systems varying only the parser used for reordering in training and decoding. Table 2 shows that targeted self-training data increases BLEU score for translation into all three languages.
+In addition to BLEU increase, a side-by-side human evaluation on 500 sentences (sampled from the 5000 used to compute BLEU scores) showed a statistically significant improvement for all three languages (see again Table 2). For each sentence, we asked annotators to simultaneously score both translations from 0 to 6, with guidelines that 6=&#8220;Perfect&#8221;, 4=&#8220;Most Meaning/Grammar&#8221;, 2=&#8220;Some Meaning/Grammar&#8221;, 0=&#8220;Nonsense&#8221;. We computed confidence intervals for the average score difference using bootstrap resampling; a difference is significant if the two-sided confidence interval does not include 0.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>To put the improvement of the MT system in terms of BLEU score (Papineni et al., 2002), a widely used metric for automatic MT evaluation, we took 5000 sentences from Web-Test and had humans generate reference translations into Japanese, Korean, and</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 We did not attempt this experiment for the BerkeleyParser</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>since training was too slow.</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Turkish.</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We then trained MT systems varying only the parser used for reordering in training and decoding.</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 2 shows that targeted self-training data increases BLEU score for translation into all three languages.</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In addition to BLEU increase, a side-by-side human evaluation on 500 sentences (sampled from the 5000 used to compute BLEU scores) showed a statistically significant improvement for all three languages (see again Table 2).</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each sentence, we asked annotators to simultaneously score both translations from 0 to 6, with guidelines that 6=&#8220;Perfect&#8221;, 4=&#8220;Most Meaning/Grammar&#8221;, 2=&#8220;Some Meaning/Grammar&#8221;, 0=&#8220;Nonsense&#8221;.</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We computed confidence intervals for the average score difference using bootstrap resampling; a difference is significant if the two-sided confidence interval does not include 0.</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>5.3 Analysis</title>
+            <text>As the divergence between the labeled attachment score on the WSJ-Test data and the reordering score on the WSJ-Test data indicates, parsing web text
+Parser Click as N Click as V Imperative rate
+poses very different challenges compared to parsing newswire. We show how our method improves parsing performance and reordering performance on two examples: the trendy word &#8220;click&#8221; and imperative sentences.
+5.3.1 Click
+The word &#8220;click&#8221; appears only once in the training portion of the WSJ (as a noun), but appears many times in our Web test data. Table 3 shows the distribution of part-of-speech tags that different parsers assign to &#8220;click&#8221;. The WSJ-only parsers tag &#8220;click&#8221; as a noun far too frequently. The WSJ-only shiftreduce parser refuses to tag &#8220;click&#8221; as a verb even with targeted self-training, but BerkeleyParser does learn to tag &#8220;click&#8221; more often as a verb. It turns out that the shift-reduce parser&#8217;s stubbornness is not due to a fundamental problem of the parser, but due to an artifact in TnT. To increase speed, TnT restricts the choices of tags for known words to previously-seen tags. This causes the parser&#8217;s n-best lists to never hypothesize &#8220;click&#8221; as a verb, and self-training doesn&#8217;t click no matter how targeted it is. This shows that the targeted selftraining approach heavily relies on the diversity of the baseline parser&#8217;s n-best lists.
+It should be noted here that it would be easy to combine our approach with the uptraining approach of Petrov et al. (2010). The idea would be to use the BerkeleyParser to generate the n-best lists; perhaps we could call this targeted uptraining. This way, the shift-reduce parser could benefit both from the generally higher quality of the parse trees produced by the BerkeleyParser, as well as from the information provided by the extrinsic scoring function. 189
+5.3.2 Imperatives
+As Table 3 shows, the WSJ training set contains only 0.7% imperative sentences. 5 In contrast, our test sentences from the web contain approximately 10% imperatives. As a result, parsers trained exclusively on the WSJ underproduce imperative parses, especially a case-sensitive version of the baseline. Targeted self-training helps the parsers to predict imperative parses more often. Targeted self-training works well for generating training data with correctly-annotated imperative constructions because the reordering of main subjects and verbs in an SOV language like Japanese is very distinct: main subjects stay at the beginning of the sentence, and main verbs are reordered to the end of the sentence. It is thus especially easy to know whether an imperative parse is correct or not by looking at the reference reordering. Figure 1 gives an example: the bad (WSJ-only) parse doesn&#8217;t catch on to the imperativeness and gets a low reordering score.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>As the divergence between the labeled attachment score on the WSJ-Test data and the reordering score on the WSJ-Test data indicates, parsing web text</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Parser Click as N Click as V Imperative rate</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>poses very different challenges compared to parsing newswire.</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We show how our method improves parsing performance and reordering performance on two examples: the trendy word &#8220;click&#8221; and imperative sentences.</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5.3.1 Click</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The word &#8220;click&#8221; appears only once in the training portion of the WSJ (as a noun), but appears many times in our Web test data.</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 3 shows the distribution of part-of-speech tags that different parsers assign to &#8220;click&#8221;.</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The WSJ-only parsers tag &#8220;click&#8221; as a noun far too frequently.</text>
+                  <doc_id>170</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The WSJ-only shiftreduce parser refuses to tag &#8220;click&#8221; as a verb even with targeted self-training, but BerkeleyParser does learn to tag &#8220;click&#8221; more often as a verb.</text>
+                  <doc_id>171</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It turns out that the shift-reduce parser&#8217;s stubbornness is not due to a fundamental problem of the parser, but due to an artifact in TnT.</text>
+                  <doc_id>172</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To increase speed, TnT restricts the choices of tags for known words to previously-seen tags.</text>
+                  <doc_id>173</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This causes the parser&#8217;s n-best lists to never hypothesize &#8220;click&#8221; as a verb, and self-training doesn&#8217;t click no matter how targeted it is.</text>
+                  <doc_id>174</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This shows that the targeted selftraining approach heavily relies on the diversity of the baseline parser&#8217;s n-best lists.</text>
+                  <doc_id>175</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>It should be noted here that it would be easy to combine our approach with the uptraining approach of Petrov et al. (2010).</text>
+                  <doc_id>176</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The idea would be to use the BerkeleyParser to generate the n-best lists; perhaps we could call this targeted uptraining.</text>
+                  <doc_id>177</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This way, the shift-reduce parser could benefit both from the generally higher quality of the parse trees produced by the BerkeleyParser, as well as from the information provided by the extrinsic scoring function.</text>
+                  <doc_id>178</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>189</text>
+                  <doc_id>179</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5.3.2 Imperatives</text>
+                  <doc_id>180</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>As Table 3 shows, the WSJ training set contains only 0.7% imperative sentences.</text>
+                  <doc_id>181</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>5 In contrast, our test sentences from the web contain approximately 10% imperatives.</text>
+                  <doc_id>182</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As a result, parsers trained exclusively on the WSJ underproduce imperative parses, especially a case-sensitive version of the baseline.</text>
+                  <doc_id>183</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Targeted self-training helps the parsers to predict imperative parses more often.</text>
+                  <doc_id>184</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Targeted self-training works well for generating training data with correctly-annotated imperative constructions because the reordering of main subjects and verbs in an SOV language like Japanese is very distinct: main subjects stay at the beginning of the sentence, and main verbs are reordered to the end of the sentence.</text>
+                  <doc_id>185</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is thus especially easy to know whether an imperative parse is correct or not by looking at the reference reordering.</text>
+                  <doc_id>186</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Figure 1 gives an example: the bad (WSJ-only) parse doesn&#8217;t catch on to the imperativeness and gets a low reordering score.</text>
+                  <doc_id>187</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 Targeted Self-Training vs Training on Treebanks for Domain Adaptation</title>
+        <text>If task-specific annotation is cheap, then it is reasonable to consider whether we could use targeted self-training to adapt a parser to a new domain as a cheaper alternative to making new treebanks. For example, if we want to build a parser that can reorder question sentences better than our baseline WSJonly parser, we have these two options:
+1. Manually construct PTB-style trees for 2000
+5 As an approximation, we count every parse that begins with
+a root verb as an imperative.
+questions and train on the resulting treebank.
+2. Create reference reorderings for 2000 questions and then do targeted self-training.
+To compare these approaches, we created reference reordering data for our train (2000 sentences) and test (1000 sentences) splits of the Question Treebank (Judge et al., 2006). Table 4 shows that both ways of training on QTB-Train sentences give similarly large improvements in reordering score on QTB-Test. Table 5 confirms that this corresponds to very large increases in English&#8594;Japanese BLEU score and subjective translation quality. In the human side-by-side comparison, the baseline translations achieved an average score of 2.12, while the targeted self-training translations received a score of 2.94, where a score of 2 corresponds to &#8220;some meaning/grammar&#8221; and &#8220;4&#8221; corresponds to &#8220;most meaning/grammar&#8221;. But which of the two approaches is better? In the shift-reduce parser, targeted self-training gives higher reordering scores than training on the treebank, and in BerkeleyParser, the opposite is true. Thus both approaches produce similarly good results. From a practical perspective, the advantage of targeted self-training depends on whether the extrinsic metric is cheaper to calculate than treebanking. For MT reordering, making reference reorderings is cheap, so targeted self-training is relatively advantageous. As before, we can examine whether labeled attachment score measured on the test set of the QTB is predictive of reordering quality. Table 4 shows that targeted self-training raises LAS from 64.78&#8594;69.17%. But adding the treebank leads to much larger increases, resulting in an LAS of 84.75%, without giving higher reordering score. We can conclude that high LAS is not necessary to achieve top reordering scores. Perhaps our reordering rules are somehow deficient when it comes to reordering correctly-parsed questions, and as a result the targeted self-training process steers the parser towards producing pathological trees with little intrinsic meaning. To explore this possibility, we computed reordering scores after reordering the QTB-Test treebank trees directly. Table 4 shows that this gives reordering scores similar to those of our best parsers. Therefore it is at least 190
+possible that the targeted self-training process could have resulted in a parser that achieves high reordering score by producing parses that look like those in the QuestionBank.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>If task-specific annotation is cheap, then it is reasonable to consider whether we could use targeted self-training to adapt a parser to a new domain as a cheaper alternative to making new treebanks.</text>
+              <doc_id>188</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, if we want to build a parser that can reorder question sentences better than our baseline WSJonly parser, we have these two options:</text>
+              <doc_id>189</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.</text>
+              <doc_id>190</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Manually construct PTB-style trees for 2000</text>
+              <doc_id>191</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>5 As an approximation, we count every parse that begins with</text>
+              <doc_id>192</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>a root verb as an imperative.</text>
+              <doc_id>193</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>questions and train on the resulting treebank.</text>
+              <doc_id>194</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2.</text>
+              <doc_id>195</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Create reference reorderings for 2000 questions and then do targeted self-training.</text>
+              <doc_id>196</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>To compare these approaches, we created reference reordering data for our train (2000 sentences) and test (1000 sentences) splits of the Question Treebank (Judge et al., 2006).</text>
+              <doc_id>197</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Table 4 shows that both ways of training on QTB-Train sentences give similarly large improvements in reordering score on QTB-Test.</text>
+              <doc_id>198</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Table 5 confirms that this corresponds to very large increases in English&#8594;Japanese BLEU score and subjective translation quality.</text>
+              <doc_id>199</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the human side-by-side comparison, the baseline translations achieved an average score of 2.12, while the targeted self-training translations received a score of 2.94, where a score of 2 corresponds to &#8220;some meaning/grammar&#8221; and &#8220;4&#8221; corresponds to &#8220;most meaning/grammar&#8221;.</text>
+              <doc_id>200</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>But which of the two approaches is better?</text>
+              <doc_id>201</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the shift-reduce parser, targeted self-training gives higher reordering scores than training on the treebank, and in BerkeleyParser, the opposite is true.</text>
+              <doc_id>202</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Thus both approaches produce similarly good results.</text>
+              <doc_id>203</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>From a practical perspective, the advantage of targeted self-training depends on whether the extrinsic metric is cheaper to calculate than treebanking.</text>
+              <doc_id>204</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>For MT reordering, making reference reorderings is cheap, so targeted self-training is relatively advantageous.</text>
+              <doc_id>205</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>As before, we can examine whether labeled attachment score measured on the test set of the QTB is predictive of reordering quality.</text>
+              <doc_id>206</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+            <sentence>
+              <text>Table 4 shows that targeted self-training raises LAS from 64.78&#8594;69.17%.</text>
+              <doc_id>207</doc_id>
+              <sec_id>10</sec_id>
+            </sentence>
+            <sentence>
+              <text>But adding the treebank leads to much larger increases, resulting in an LAS of 84.75%, without giving higher reordering score.</text>
+              <doc_id>208</doc_id>
+              <sec_id>11</sec_id>
+            </sentence>
+            <sentence>
+              <text>We can conclude that high LAS is not necessary to achieve top reordering scores.</text>
+              <doc_id>209</doc_id>
+              <sec_id>12</sec_id>
+            </sentence>
+            <sentence>
+              <text>Perhaps our reordering rules are somehow deficient when it comes to reordering correctly-parsed questions, and as a result the targeted self-training process steers the parser towards producing pathological trees with little intrinsic meaning.</text>
+              <doc_id>210</doc_id>
+              <sec_id>13</sec_id>
+            </sentence>
+            <sentence>
+              <text>To explore this possibility, we computed reordering scores after reordering the QTB-Test treebank trees directly.</text>
+              <doc_id>211</doc_id>
+              <sec_id>14</sec_id>
+            </sentence>
+            <sentence>
+              <text>Table 4 shows that this gives reordering scores similar to those of our best parsers.</text>
+              <doc_id>212</doc_id>
+              <sec_id>15</sec_id>
+            </sentence>
+            <sentence>
+              <text>Therefore it is at least 190</text>
+              <doc_id>213</doc_id>
+              <sec_id>16</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>possible that the targeted self-training process could have resulted in a parser that achieves high reordering score by producing parses that look like those in the QuestionBank.</text>
+              <doc_id>214</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>7</index>
+        <title>7 Related Work</title>
+        <text>Our approach to training parsers for reordering is closely related to self/up-training (McClosky. et al., 2006; Petrov et al., 2010). However, unlike uptraining, our method does not use only the 1-best output of the first-stage parser, but has access to the n-best list. This makes it similar to the work of McClosky. et al. (2006), except that we use an extrinsic metric (MT reordering score) to select a high quality parse tree, rather than a second, reranking model that has access to additional features. Targeted self-training is also similar to the retraining of Burkett et al. (2010) in which they jointly parse unannotated bilingual text using a multiview learning objective, then retrain the monolingual parser models to include each side of the jointly parsed bitext as monolingual training data. Our approach is different in that it doesn&#8217;t use a second parser and bitext to guide the creation of new training data, and instead relies on n-best lists and an extrinsic metric.
+Our method can be considered an instance of weakly or distantly supervised structured prediction (Chang et al., 2007; Chang et al., 2010; Clarke et al., 2010; Ganchev et al., 2010). Those methods attempt to learn structure models from related external signals or aggregate data statistics. This work differs in two respects. First, we use the external signals not as explicit constraints, but to compute an oracle score used to re-rank a set of parses. As such, there are no requirements that it factor by the structure of the parse tree and can in fact be any arbitrary metric. Second, our final objective is different. In weakly/distantly supervised learning, the objective is to use external knowledge to build better structured predictors. In our case this would mean using the reordering metric as a means to train better dependency parsers. Our objective, on the other hand, is to use the extrinsic metric to train parsers that are specifically better at the reordering task, and, as a result, better suited for MT. This makes our work more in the spirit of Liang et al. (2006), who train a per-
+Parser QTB-Test reordering QTB-Test LAS
+ceptron model for an end-to-end MT system where the alignment parameters are updated based on selecting an alignment from a n-best list that leads to highest BLEU score. As mentioned earlier, this also makes our work similar to Hall et al. (2011) who train a perceptron algorithm on multiple objective functions with the goal of producing parsers that are optimized for extrinsic metrics. It has previously been observed that parsers often perform differently for downstream applications. Miyao et al. (2008) compared parser quality in the biomedical domain using a protein-protein interaction (PPI) identification accuracy metric. This allowed them to compare the utility of extant dependency parsers, phrase structure parsers, and deep structure parsers for the PPI identification task. One could apply the targeted self-training technique we describe to optimize any of these parsers for the PPI task, similar to how we have optimized our parser for the MT reordering task.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Our approach to training parsers for reordering is closely related to self/up-training (McClosky.</text>
+              <doc_id>215</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>et al., 2006; Petrov et al., 2010).</text>
+              <doc_id>216</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, unlike uptraining, our method does not use only the 1-best output of the first-stage parser, but has access to the n-best list.</text>
+              <doc_id>217</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>This makes it similar to the work of McClosky.</text>
+              <doc_id>218</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>et al. (2006), except that we use an extrinsic metric (MT reordering score) to select a high quality parse tree, rather than a second, reranking model that has access to additional features.</text>
+              <doc_id>219</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Targeted self-training is also similar to the retraining of Burkett et al. (2010) in which they jointly parse unannotated bilingual text using a multiview learning objective, then retrain the monolingual parser models to include each side of the jointly parsed bitext as monolingual training data.</text>
+              <doc_id>220</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our approach is different in that it doesn&#8217;t use a second parser and bitext to guide the creation of new training data, and instead relies on n-best lists and an extrinsic metric.</text>
+              <doc_id>221</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our method can be considered an instance of weakly or distantly supervised structured prediction (Chang et al., 2007; Chang et al., 2010; Clarke et al., 2010; Ganchev et al., 2010).</text>
+              <doc_id>222</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Those methods attempt to learn structure models from related external signals or aggregate data statistics.</text>
+              <doc_id>223</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This work differs in two respects.</text>
+              <doc_id>224</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>First, we use the external signals not as explicit constraints, but to compute an oracle score used to re-rank a set of parses.</text>
+              <doc_id>225</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>As such, there are no requirements that it factor by the structure of the parse tree and can in fact be any arbitrary metric.</text>
+              <doc_id>226</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Second, our final objective is different.</text>
+              <doc_id>227</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>In weakly/distantly supervised learning, the objective is to use external knowledge to build better structured predictors.</text>
+              <doc_id>228</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>In our case this would mean using the reordering metric as a means to train better dependency parsers.</text>
+              <doc_id>229</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our objective, on the other hand, is to use the extrinsic metric to train parsers that are specifically better at the reordering task, and, as a result, better suited for MT.</text>
+              <doc_id>230</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>This makes our work more in the spirit of Liang et al. (2006), who train a per-</text>
+              <doc_id>231</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Parser QTB-Test reordering QTB-Test LAS</text>
+              <doc_id>232</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>ceptron model for an end-to-end MT system where the alignment parameters are updated based on selecting an alignment from a n-best list that leads to highest BLEU score.</text>
+              <doc_id>233</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>As mentioned earlier, this also makes our work similar to Hall et al. (2011) who train a perceptron algorithm on multiple objective functions with the goal of producing parsers that are optimized for extrinsic metrics.</text>
+              <doc_id>234</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>It has previously been observed that parsers often perform differently for downstream applications.</text>
+              <doc_id>235</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Miyao et al. (2008) compared parser quality in the biomedical domain using a protein-protein interaction (PPI) identification accuracy metric.</text>
+              <doc_id>236</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>This allowed them to compare the utility of extant dependency parsers, phrase structure parsers, and deep structure parsers for the PPI identification task.</text>
+              <doc_id>237</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>One could apply the targeted self-training technique we describe to optimize any of these parsers for the PPI task, similar to how we have optimized our parser for the MT reordering task.</text>
+              <doc_id>238</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>8</index>
+        <title>8 Conclusion</title>
+        <text>We introduced a variant of self-training that targets parser training towards an extrinsic evaluation metric. We use this targeted self-training approach to train parsers that improve the accuracy of the word
+reordering component of a machine translation system. This significantly improves the subjective quality of the system&#8217;s translations from English into three SOV languages. While the new parsers give improvements in these external evaluations, their intrinsic attachment scores go down overall compared to baseline parsers trained only on treebanks. We conclude that when using a parser as a component of a larger external system, it can be advantageous to incorporate an extrinsic metric into parser training and evaluation, and that targeted self-training is an effective technique for incorporating an extrinsic metric into parser training.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We introduced a variant of self-training that targets parser training towards an extrinsic evaluation metric.</text>
+              <doc_id>239</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use this targeted self-training approach to train parsers that improve the accuracy of the word</text>
+              <doc_id>240</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>reordering component of a machine translation system.</text>
+              <doc_id>241</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This significantly improves the subjective quality of the system&#8217;s translations from English into three SOV languages.</text>
+              <doc_id>242</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>While the new parsers give improvements in these external evaluations, their intrinsic attachment scores go down overall compared to baseline parsers trained only on treebanks.</text>
+              <doc_id>243</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We conclude that when using a parser as a component of a larger external system, it can be advantageous to incorporate an extrinsic metric into parser training and evaluation, and that targeted self-training is an effective technique for incorporating an extrinsic metric into parser training.</text>
+              <doc_id>244</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 1: English&#8594;Japanese reordering scores on Web-Test for standard self-training and targeted self-training on Web-Train. Label &#8220;10x&#8221; indicates that the self-training data was weighted 10x relative to the WSJ training data. Bolded reordering scores are different from WSJ-only baseline with 95% confidence but are not significantly different from each other within the same group.</caption>
+        <reference_text>In PAGE 5: ...3 5.1 Standard self-training vs targeted self-training  Table1  shows that targeted self-training on Web- Train significantly improves Web-Test reordering score more than standard self-training for both the shift-reduce parser and for the BerkeleyParser. The reordering score is generally divorced from the at- tachment scores measured on the WSJ-Test tree- bank: for the shift-reduce parser, Web-Test reorder- ing score and WSJ-Test labeled attachment score 2We also ran MERT on all systems and the pattern of im- provement is consistent, but sometimes the improvement is big- ger or smaller after MERT....</reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Parser</cell>
+              <cell>Web-Test reordering</cell>
+              <cell>WSJ-Test LAS</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Shift-reduce WSJ baseline</cell>
+              <cell>0.757</cell>
+              <cell>85.31%</cell>
+            </row>
+            <row>
+              <cell>+ self-training 1x</cell>
+              <cell>0.760</cell>
+              <cell>85.26%</cell>
+            </row>
+            <row>
+              <cell>+ self-training 10x</cell>
+              <cell>0.756</cell>
+              <cell>84.14%</cell>
+            </row>
+            <row>
+              <cell>+ targeted self-training 1x</cell>
+              <cell>0.770</cell>
+              <cell>85.19%</cell>
+            </row>
+            <row>
+              <cell>+ targeted self-training 10x</cell>
+              <cell>0.777</cell>
+              <cell>84.48%</cell>
+            </row>
+            <row>
+              <cell>Berkeley WSJ baseline</cell>
+              <cell>0.780</cell>
+              <cell>88.66%</cell>
+            </row>
+            <row>
+              <cell>+ self-training 1x</cell>
+              <cell>0.785</cell>
+              <cell>89.21%</cell>
+            </row>
+            <row>
+              <cell>+ targeted self-training 1x</cell>
+              <cell>0.790</cell>
+              <cell>89.32%</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TableSeer</source>
+        <caption>Table 2: BLEU scores and human evaluation results for translation between three language pairs, varying only the parser between systems. &#8220;WSJ-only&#8221; corresponds to the baseline WSJ-only shift-reduce parser; &#8220;Targeted&#8221; corresponds to the Web-Train targeted self-training 10x shift-reduce parser.</caption>
+        <reference_text>In PAGE 6: ... We then trained MT systems varying only the parser used for reordering in training and decod- ing.  Table2  shows that targeted self-training data increases BLEU score for translation into all three languages. In addition to BLEU increase, a side-by-side hu- man evaluation on 500 sentences (sampled from the 5000 used to compute BLEU scores) showed a statistically significant improvement for all three languages (see again Table 2)....</reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>English to</cell>
+              <cell>BLEU</cell>
+              <cell>BLEU#@#@Human evaluation (scores range 0 to 6)</cell>
+              <cell>Human evaluation (scores range 0 to 6)</cell>
+              <cell>Human evaluation (scores range 0 to 6)</cell>
+              <cell>Human evaluation (scores range 0 to 6)</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>WSJ-only</cell>
+              <cell>Targeted</cell>
+              <cell>WSJ-only</cell>
+              <cell>Targeted</cell>
+              <cell>Sig. difference?</cell>
+            </row>
+            <row>
+              <cell>Japanese</cell>
+              <cell>0.1777</cell>
+              <cell>0.1802</cell>
+              <cell>2.56</cell>
+              <cell>2.69</cell>
+              <cell>yes (at 95% level)</cell>
+            </row>
+            <row>
+              <cell>Korean</cell>
+              <cell>0.3229</cell>
+              <cell>0.3259</cell>
+              <cell>2.61</cell>
+              <cell>2.70</cell>
+              <cell>yes (at 90% level)</cell>
+            </row>
+            <row>
+              <cell>Turkish</cell>
+              <cell>0.1344</cell>
+              <cell>0.1370</cell>
+              <cell>2.10</cell>
+              <cell>2.20</cell>
+              <cell>yes (at 95% level)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TableSeer</source>
+        <caption>Table 3: Counts on Web-Test of &#8220;click&#8221; tagged as a noun and verb and percentage of sentences parsed imperatively.</caption>
+        <reference_text>In PAGE 7: ....3.1 Click The word  click  appears only once in the train- ing portion of the WSJ (as a noun), but appears many times in our Web test data.  Table3  shows the distri- bution of part-of-speech tags that different parsers assign to  click . The WSJ-only parsers tag  click  as a noun far too frequently....  In PAGE 7: ...3.2 Imperatives As  Table3  shows, the WSJ training set contains only 0.7% imperative sentences....</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Parser</cell>
+              <cell>Click as N</cell>
+              <cell>Click as V</cell>
+              <cell>Imperative rate</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>case-sensitive shift-reduce WSJ-only</cell>
+              <cell>74</cell>
+              <cell>0</cell>
+              <cell>6.3%</cell>
+            </row>
+            <row>
+              <cell>case-sensitive shift-reduce + Web-Train targeted self-training</cell>
+              <cell>75</cell>
+              <cell>0</cell>
+              <cell>10.5%</cell>
+            </row>
+            <row>
+              <cell>case-insensitive shift-reduce WSJ-only</cell>
+              <cell>75</cell>
+              <cell>0</cell>
+              <cell>10.3%</cell>
+            </row>
+            <row>
+              <cell>case-insensitive shift-reduce + Web-Train targeted self-training</cell>
+              <cell>75</cell>
+              <cell>0</cell>
+              <cell>11.6%</cell>
+            </row>
+            <row>
+              <cell>Berkeley WSJ-only</cell>
+              <cell>35</cell>
+              <cell>35</cell>
+              <cell>11.9%</cell>
+            </row>
+            <row>
+              <cell>Berkeley + Web-Train targeted self-training</cell>
+              <cell>13</cell>
+              <cell>58</cell>
+              <cell>12.5%</cell>
+            </row>
+            <row>
+              <cell>(WSJ-Train)</cell>
+              <cell>1</cell>
+              <cell>0</cell>
+              <cell>0.7%</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TableSeer</source>
+        <caption>Table 4: Reordering and labeled attachment scores on QTB-Test for treebank training and targeted self-training on QTB-Train.</caption>
+        <reference_text>In PAGE 8: ..., 2006).  Table4  shows that both ways of training on QTB-Train sentences give sim- ilarly large improvements in reordering score on QTB-Test. Table 5 confirms that this corresponds to very large increases in English?Japanese BLEU score and subjective translation quality....</reference_text>
+        <page_num>9</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Parser</cell>
+              <cell>QTB-Test reordering</cell>
+              <cell>QTB-Test LAS</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Shift-reduce WSJ baseline</cell>
+              <cell>0.663</cell>
+              <cell>64.78%</cell>
+            </row>
+            <row>
+              <cell>+ treebank 1x</cell>
+              <cell>0.704</cell>
+              <cell>77.12%</cell>
+            </row>
+            <row>
+              <cell>+ treebank 10x</cell>
+              <cell>0.768</cell>
+              <cell>84.75%</cell>
+            </row>
+            <row>
+              <cell>+ targeted self-training 1x</cell>
+              <cell>0.746</cell>
+              <cell>67.84%</cell>
+            </row>
+            <row>
+              <cell>+ targeted self-training 10x</cell>
+              <cell>0.779</cell>
+              <cell>69.17%</cell>
+            </row>
+            <row>
+              <cell>Berkeley WSJ baseline</cell>
+              <cell>0.733</cell>
+              <cell>76.50%</cell>
+            </row>
+            <row>
+              <cell>+ treebank 1x</cell>
+              <cell>0.800</cell>
+              <cell>87.79%</cell>
+            </row>
+            <row>
+              <cell>+ targeted self-training 1x</cell>
+              <cell>0.775</cell>
+              <cell>80.64%</cell>
+            </row>
+            <row>
+              <cell>(using treebank trees directly)</cell>
+              <cell>0.788</cell>
+              <cell>100%</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>5</id>
+        <source>TableSeer</source>
+        <caption>Table 5: BLEU scores and human evaluation results for English&#8594;Japanese translation of the QTB-Test corpus, varying only the parser between systems between the WSJ-only shift-reduce parser and the QTB-Train targeted self-training 10x shift-reduce parser.</caption>
+        <reference_text>In PAGE 8: ...ank (Judge et al., 2006). Table 4 shows that both ways of training on QTB-Train sentences give sim- ilarly large improvements in reordering score on QTB-Test.  Table5  confirms that this corresponds to very large increases in English?Japanese BLEU score and subjective translation quality. In the hu- man side-by-side comparison, the baseline transla- tions achieved an average score of 2....</reference_text>
+        <page_num>9</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>English to</cell>
+              <cell>QTB-Test BLEU</cell>
+              <cell>QTB-Test BLEU#@#@Human evaluation (scores range 0 to 6)</cell>
+              <cell>Human evaluation (scores range 0 to 6)</cell>
+              <cell>Human evaluation (scores range 0 to 6)</cell>
+              <cell>Human evaluation (scores range 0 to 6)</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>WSJ-only</cell>
+              <cell>Targeted</cell>
+              <cell>WSJ-only</cell>
+              <cell>Targeted</cell>
+              <cell>Sig. difference?</cell>
+            </row>
+            <row>
+              <cell>Japanese</cell>
+              <cell>0.2379</cell>
+              <cell>0.2615</cell>
+              <cell>2.12</cell>
+              <cell>2.94</cell>
+              <cell>yes (at 95% level)</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>A Birch</author>
+          <author>M Osborne</author>
+        </authors>
+        <title>LRscore for evaluating lexical and reordering quality in MT.</title>
+        <publication>In ACL-2010 WMT.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>T Brants</author>
+        </authors>
+        <title>TnT &#8211; a statistical part-of-speech tagger.</title>
+        <publication>In ANLP &#8217;00.</publication>
+        <pages>None</pages>
+        <date>2000</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>D Burkett</author>
+          <author>D Klein</author>
+        </authors>
+        <title>Two languages are better than one (for syntactic parsing).</title>
+        <publication>In EMNLP &#8217;08.</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>D Burkett</author>
+          <author>S Petrov</author>
+          <author>J Blitzer</author>
+          <author>D Klein</author>
+        </authors>
+        <title>None</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>L Ratinov Chang</author>
+          <author>D Roth</author>
+        </authors>
+        <title>Learning better monolingual models with unannotated bilingual text.</title>
+        <publication>In CoNLL &#8217;10.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>M Chang</author>
+          <author>D Goldwasser</author>
+          <author>D Roth</author>
+          <author>V Srikumar</author>
+        </authors>
+        <title>Structured output learning with indirect supervision.</title>
+        <publication>In ICML &#8217;10.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>E Charniak</author>
+        </authors>
+        <title>A maximum&#8211;entropy&#8211;inspired parser.</title>
+        <publication>In NAACL &#8217;00.</publication>
+        <pages>None</pages>
+        <date>2000</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>J Clarke</author>
+          <author>D Goldwasser</author>
+          <author>M Chang</author>
+          <author>D Roth</author>
+        </authors>
+        <title>Driving semantic parsing from the world&#8217;s response.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>M Collins</author>
+          <author>P Koehn</author>
+          <author>I Ku&#269;erov&#225;</author>
+        </authors>
+        <title>Clause restructuring for statistical machine translation.</title>
+        <publication>In ACL &#8217;05.</publication>
+        <pages>None</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>M Collins</author>
+        </authors>
+        <title>Three generative, lexicalised models for statistical parsing.</title>
+        <publication>In ACL &#8217;97.</publication>
+        <pages>None</pages>
+        <date>1997</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>M-C de Marneffe</author>
+          <author>B MacCartney</author>
+          <author>C Manning</author>
+        </authors>
+        <title>Generating typed dependency parses from phrase structure parses.</title>
+        <publication>In LREC &#8217;06.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>J Foster</author>
+        </authors>
+        <title>cba to check the spelling&#8221;: Investigating parser performance on discussion forum posts.</title>
+        <publication>In NAACL &#8217;10.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>M Galley</author>
+          <author>M Hopkins</author>
+          <author>K Knight</author>
+          <author>D Marcu</author>
+        </authors>
+        <title>What&#8217;s in a translation rule? In</title>
+        <publication>HLT-NAACL &#8217;04.</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>K Ganchev</author>
+          <author>J Gra&#231;a</author>
+          <author>J Gillenwater</author>
+          <author>B Taskar</author>
+        </authors>
+        <title>Posterior regularization for structured latent variable models.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>D Genzel</author>
+        </authors>
+        <title>Automatically learning source-side reordering rules for large scale machine translation.</title>
+        <publication>In COLING &#8217;10.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>D Gildea</author>
+        </authors>
+        <title>Corpus variation and parser performance.</title>
+        <publication>In EMNLP &#8217;01.</publication>
+        <pages>None</pages>
+        <date>2001</date>
+      </reference>
+      <reference>
+        <id>16</id>
+        <authors>
+          <author>N Habash</author>
+        </authors>
+        <title>Syntactic preprocessing for statistical machine translation.</title>
+        <publication>In MTS &#8217;07.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>17</id>
+        <authors>
+          <author>K Hall</author>
+          <author>R McDonald</author>
+          <author>J Katz-Brown</author>
+          <author>M Ringgaard</author>
+        </authors>
+        <title>Training dependency parsers by jointly optimizing multiple objectives.</title>
+        <publication>In EMNLP &#8217;11.</publication>
+        <pages>None</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>18</id>
+        <authors>
+          <author>H Isozaki</author>
+          <author>T Hirao</author>
+          <author>K Duh</author>
+          <author>K Sudoh</author>
+          <author>H Tsukada</author>
+        </authors>
+        <title>Automatic evaluation of translation quality for distant language pairs.</title>
+        <publication>In EMNLP &#8217;10.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>19</id>
+        <authors>
+          <author>H Isozaki</author>
+          <author>K Sudoh</author>
+          <author>H Tsukada</author>
+          <author>K Duh</author>
+        </authors>
+        <title>None</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>20</id>
+        <authors>
+          <author>Head finalization</author>
+        </authors>
+        <title>A simple reordering rule for SOV languages. In</title>
+        <publication>ACL-2010 WMT.</publication>
+        <pages>None</pages>
+        <date>None</date>
+      </reference>
+      <reference>
+        <id>21</id>
+        <authors>
+          <author>J Judge</author>
+          <author>A Cahill</author>
+          <author>J v Genabith</author>
+        </authors>
+        <title>QuestionBank: creating a corpus of parse-annotated questions.</title>
+        <publication>In ACL &#8217;06.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>22</id>
+        <authors>
+          <author>A Lavie</author>
+          <author>M Denkowski</author>
+        </authors>
+        <title>The Meteor metric for automatic evaluation of machine translation.</title>
+        <publication>None</publication>
+        <pages>23--2</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>23</id>
+        <authors>
+          <author>P Liang</author>
+          <author>A Bouchard-C&#244;t&#233;</author>
+          <author>D Klein</author>
+          <author>B Taskar</author>
+        </authors>
+        <title>An end-to-end discriminative approach to machine translation.</title>
+        <publication>In ACL &#8217;06.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>24</id>
+        <authors>
+          <author>M Marcus</author>
+          <author>B Santorini</author>
+          <author>M Marcinkiewicz</author>
+        </authors>
+        <title>Building a large annotated corpus of English: The Penn Treebank. In Computational Linguistics.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>1993</date>
+      </reference>
+      <reference>
+        <id>25</id>
+        <authors>
+          <author>D McClosky</author>
+          <author>E Charniak</author>
+          <author>M Johnson</author>
+        </authors>
+        <title>Effective self-training for parsing.</title>
+        <publication>In NAACL &#8217;06.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>26</id>
+        <authors>
+          <author>R McDonald</author>
+          <author>K Crammer</author>
+          <author>F Pereira</author>
+        </authors>
+        <title>Online large-margin training of dependency parsers.</title>
+        <publication>In ACL &#8217;05.</publication>
+        <pages>None</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>27</id>
+        <authors>
+          <author>Y Miyao</author>
+          <author>R S&#230;tre</author>
+          <author>K Sagae</author>
+          <author>T Matsuzaki</author>
+          <author>J Tsujii</author>
+        </authors>
+        <title>Task-oriented evaluation of syntactic parsers and their representations.</title>
+        <publication>In ACL &#8217;08.</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>28</id>
+        <authors>
+          <author>J Nivre</author>
+        </authors>
+        <title>Algorithms for deterministic incremental dependency parsing.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>29</id>
+        <authors>
+          <author>F Och</author>
+        </authors>
+        <title>Minimum error rate training in statistical machine translation.</title>
+        <publication>In ACL &#8217;03.</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>30</id>
+        <authors>
+          <author>K Papineni</author>
+          <author>S Roukos</author>
+          <author>T Ward</author>
+          <author>W Zhu</author>
+        </authors>
+        <title>BLEU: a method for automatic evaluation of machine translation.</title>
+        <publication>In ACL &#8217;02.</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>31</id>
+        <authors>
+          <author>S Petrov</author>
+          <author>D Klein</author>
+        </authors>
+        <title>Improved inference for unlexicalized parsing.</title>
+        <publication>In NAACL &#8217;07.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>32</id>
+        <authors>
+          <author>S Petrov</author>
+          <author>L Barrett</author>
+          <author>R Thibaux</author>
+          <author>D Klein</author>
+        </authors>
+        <title>Learning accurate, compact, and interpretable tree annotation.</title>
+        <publication>In ACL &#8217;06.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>33</id>
+        <authors>
+          <author>S Petrov</author>
+          <author>P Chang</author>
+          <author>M Ringgaard H Alshawi</author>
+        </authors>
+        <title>Uptraining for accurate deterministic question parsing.</title>
+        <publication>In EMNLP &#8217;10.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>34</id>
+        <authors>
+          <author>D Talbot</author>
+          <author>H Kazawa</author>
+          <author>H Ichikawa</author>
+          <author>J Katz-Brown</author>
+          <author>M Seno</author>
+          <author>F Och</author>
+        </authors>
+        <title>A lightweight evaluation framework for machine translation reordering.</title>
+        <publication>In EMNLP-2011 WMT.</publication>
+        <pages>None</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>35</id>
+        <authors>
+          <author>C Wang</author>
+        </authors>
+        <title>Chinese syntactic reordering for statistical machine translation.</title>
+        <publication>In EMNLP &#8217;07.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>36</id>
+        <authors>
+          <author>F Xia</author>
+          <author>M McCord</author>
+        </authors>
+        <title>Improving a statistical MT system with automatically learned rewrite patterns.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>37</id>
+        <authors>
+          <author>P Xu</author>
+          <author>J Kang</author>
+          <author>M Ringgaard</author>
+          <author>F Och</author>
+        </authors>
+        <title>Using a dependency parser to improve SMT for subject-objectverb languages. In</title>
+        <publication>NAACL-HLT &#8217;09.</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>38</id>
+        <authors>
+          <author>K Yamada</author>
+          <author>K Knight</author>
+        </authors>
+        <title>A syntax-based statistical translation model.</title>
+        <publication>In ACL &#8217;01.</publication>
+        <pages>None</pages>
+        <date>2001</date>
+      </reference>
+      <reference>
+        <id>39</id>
+        <authors>
+          <author>R Zens</author>
+          <author>H Ney</author>
+        </authors>
+        <title>Discriminative reordering models for statistical machine translation.</title>
+        <publication>In NAACL06 WMT.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Birch and Osborne, 2010</string>
+        <sentence_id>10711</sentence_id>
+        <char_offset>357</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>1</reference_id>
+        <string>Brants, 2000</string>
+        <sentence_id>10739</sentence_id>
+        <char_offset>23</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>2</reference_id>
+        <string>Burkett and Klein (2008)</string>
+        <sentence_id>10659</sentence_id>
+        <char_offset>22</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>3</reference_id>
+        <string>Burkett et al. (2010)</string>
+        <sentence_id>10659</sentence_id>
+        <char_offset>51</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>3</reference_id>
+        <string>Burkett et al. (2010)</string>
+        <sentence_id>10850</sentence_id>
+        <char_offset>60</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>5</reference_id>
+        <string>Chang et al., 2010</string>
+        <sentence_id>10852</sentence_id>
+        <char_offset>118</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>6</reference_id>
+        <string>Charniak, 2000</string>
+        <sentence_id>10634</sentence_id>
+        <char_offset>160</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>7</reference_id>
+        <string>Clarke et al., 2010</string>
+        <sentence_id>10852</sentence_id>
+        <char_offset>138</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>8</reference_id>
+        <string>Collins et al., 2005</string>
+        <sentence_id>10689</sentence_id>
+        <char_offset>59</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>9</reference_id>
+        <string>Collins, 1997</string>
+        <sentence_id>10634</sentence_id>
+        <char_offset>145</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>11</reference_id>
+        <string>Foster, 2010</string>
+        <sentence_id>10637</sentence_id>
+        <char_offset>200</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>12</reference_id>
+        <string>Galley et al., 2004</string>
+        <sentence_id>10642</sentence_id>
+        <char_offset>237</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>13</reference_id>
+        <string>Ganchev et al., 2010</string>
+        <sentence_id>10852</sentence_id>
+        <char_offset>159</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>14</reference_id>
+        <string>Genzel (2010)</string>
+        <sentence_id>10748</sentence_id>
+        <char_offset>95</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>14</reference_id>
+        <string>Genzel, 2010</string>
+        <sentence_id>10689</sentence_id>
+        <char_offset>172</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>15</reference_id>
+        <string>Gildea, 2001</string>
+        <sentence_id>10637</sentence_id>
+        <char_offset>164</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>16</reference_id>
+        <string>Habash, 2007</string>
+        <sentence_id>10689</sentence_id>
+        <char_offset>158</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>17</reference_id>
+        <string>Hall et al. (2011)</string>
+        <sentence_id>10683</sentence_id>
+        <char_offset>17</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>17</reference_id>
+        <string>Hall et al. (2011)</string>
+        <sentence_id>10864</sentence_id>
+        <char_offset>58</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>18</reference_id>
+        <string>Isozaki et al. (2010</string>
+        <sentence_id>10708</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>18</reference_id>
+        <string>Isozaki et al., 2010</string>
+        <sentence_id>10711</sentence_id>
+        <char_offset>334</char_offset>
+      </citation>
+      <citation>
+        <id>21</id>
+        <reference_id>19</reference_id>
+        <string>Isozaki et al. (2010</string>
+        <sentence_id>10708</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>22</id>
+        <reference_id>19</reference_id>
+        <string>Isozaki et al., 2010</string>
+        <sentence_id>10711</sentence_id>
+        <char_offset>334</char_offset>
+      </citation>
+      <citation>
+        <id>23</id>
+        <reference_id>21</reference_id>
+        <string>Judge et al., 2006</string>
+        <sentence_id>10716</sentence_id>
+        <char_offset>62</char_offset>
+      </citation>
+      <citation>
+        <id>24</id>
+        <reference_id>21</reference_id>
+        <string>Judge et al., 2006</string>
+        <sentence_id>10827</sentence_id>
+        <char_offset>156</char_offset>
+      </citation>
+      <citation>
+        <id>25</id>
+        <reference_id>22</reference_id>
+        <string>Lavie and Denkowski, 2009</string>
+        <sentence_id>10711</sentence_id>
+        <char_offset>307</char_offset>
+      </citation>
+      <citation>
+        <id>26</id>
+        <reference_id>22</reference_id>
+        <string>Lavie and Denkowski, 2009</string>
+        <sentence_id>10692</sentence_id>
+        <char_offset>78</char_offset>
+      </citation>
+      <citation>
+        <id>27</id>
+        <reference_id>23</reference_id>
+        <string>Liang et al. (2006)</string>
+        <sentence_id>10861</sentence_id>
+        <char_offset>42</char_offset>
+      </citation>
+      <citation>
+        <id>28</id>
+        <reference_id>24</reference_id>
+        <string>Marcus et al., 1993</string>
+        <sentence_id>10634</sentence_id>
+        <char_offset>124</char_offset>
+      </citation>
+      <citation>
+        <id>29</id>
+        <reference_id>24</reference_id>
+        <string>Marcus et al., 1993</string>
+        <sentence_id>10713</sentence_id>
+        <char_offset>111</char_offset>
+      </citation>
+      <citation>
+        <id>30</id>
+        <reference_id>26</reference_id>
+        <string>McDonald et al., 2005</string>
+        <sentence_id>10634</sentence_id>
+        <char_offset>176</char_offset>
+      </citation>
+      <citation>
+        <id>31</id>
+        <reference_id>27</reference_id>
+        <string>Miyao et al. (2008)</string>
+        <sentence_id>10866</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>32</id>
+        <reference_id>28</reference_id>
+        <string>Nivre, 2008</string>
+        <sentence_id>10634</sentence_id>
+        <char_offset>220</char_offset>
+      </citation>
+      <citation>
+        <id>33</id>
+        <reference_id>28</reference_id>
+        <string>Nivre, 2008</string>
+        <sentence_id>10730</sentence_id>
+        <char_offset>135</char_offset>
+      </citation>
+      <citation>
+        <id>34</id>
+        <reference_id>29</reference_id>
+        <string>Och, 2003</string>
+        <sentence_id>10755</sentence_id>
+        <char_offset>96</char_offset>
+      </citation>
+      <citation>
+        <id>35</id>
+        <reference_id>30</reference_id>
+        <string>Papineni et al., 2002</string>
+        <sentence_id>10776</sentence_id>
+        <char_offset>64</char_offset>
+      </citation>
+      <citation>
+        <id>36</id>
+        <reference_id>31</reference_id>
+        <string>Petrov and Klein, 2007</string>
+        <sentence_id>10638</sentence_id>
+        <char_offset>109</char_offset>
+      </citation>
+      <citation>
+        <id>37</id>
+        <reference_id>32</reference_id>
+        <string>Petrov et al. (2006)</string>
+        <sentence_id>10735</sentence_id>
+        <char_offset>19</char_offset>
+      </citation>
+      <citation>
+        <id>38</id>
+        <reference_id>32</reference_id>
+        <string>Petrov et al., 2006</string>
+        <sentence_id>10634</sentence_id>
+        <char_offset>199</char_offset>
+      </citation>
+      <citation>
+        <id>39</id>
+        <reference_id>33</reference_id>
+        <string>Petrov et al. (2010)</string>
+        <sentence_id>10658</sentence_id>
+        <char_offset>18</char_offset>
+      </citation>
+      <citation>
+        <id>40</id>
+        <reference_id>33</reference_id>
+        <string>Petrov et al. (2010)</string>
+        <sentence_id>10798</sentence_id>
+        <char_offset>102</char_offset>
+      </citation>
+      <citation>
+        <id>41</id>
+        <reference_id>33</reference_id>
+        <string>Petrov et al., 2010</string>
+        <sentence_id>10846</sentence_id>
+        <char_offset>14</char_offset>
+      </citation>
+      <citation>
+        <id>42</id>
+        <reference_id>34</reference_id>
+        <string>Talbot et al. (2011)</string>
+        <sentence_id>10691</sentence_id>
+        <char_offset>13</char_offset>
+      </citation>
+      <citation>
+        <id>43</id>
+        <reference_id>34</reference_id>
+        <string>Talbot et al. (2011)</string>
+        <sentence_id>10699</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>44</id>
+        <reference_id>34</reference_id>
+        <string>Talbot et al. (2011)</string>
+        <sentence_id>10722</sentence_id>
+        <char_offset>68</char_offset>
+      </citation>
+      <citation>
+        <id>45</id>
+        <reference_id>35</reference_id>
+        <string>Wang, 2007</string>
+        <sentence_id>10689</sentence_id>
+        <char_offset>81</char_offset>
+      </citation>
+      <citation>
+        <id>46</id>
+        <reference_id>36</reference_id>
+        <string>Xia and McCord, 2004</string>
+        <sentence_id>10689</sentence_id>
+        <char_offset>136</char_offset>
+      </citation>
+      <citation>
+        <id>47</id>
+        <reference_id>37</reference_id>
+        <string>Xu et al. (2009)</string>
+        <sentence_id>10745</sentence_id>
+        <char_offset>54</char_offset>
+      </citation>
+      <citation>
+        <id>48</id>
+        <reference_id>37</reference_id>
+        <string>Xu et al., 2009</string>
+        <sentence_id>10642</sentence_id>
+        <char_offset>258</char_offset>
+      </citation>
+      <citation>
+        <id>49</id>
+        <reference_id>37</reference_id>
+        <string>Xu et al., 2009</string>
+        <sentence_id>10689</sentence_id>
+        <char_offset>93</char_offset>
+      </citation>
+      <citation>
+        <id>50</id>
+        <reference_id>38</reference_id>
+        <string>Yamada and Knight, 2001</string>
+        <sentence_id>10642</sentence_id>
+        <char_offset>212</char_offset>
+      </citation>
+      <citation>
+        <id>51</id>
+        <reference_id>39</reference_id>
+        <string>Zens and Ney, 2006</string>
+        <sentence_id>10754</sentence_id>
+        <char_offset>130</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

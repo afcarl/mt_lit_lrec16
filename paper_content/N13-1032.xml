@@ -1,0 +1,2693 @@
+<document>
+  <filename>N13-1032</filename>
+  <authors>
+    <author>Mitesh M Khapra</author>
+  </authors>
+  <title>Improving reordering performance using higher order and structural features</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>Recent work has shown that word aligned data can be used to learn a model for reordering source sentences to match the target order. This model learns the cost of putting a word immediately before another word and finds the best reordering by solving an instance of the Traveling Salesman Problem (TSP). However, for efficiently solving the TSP, the model is restricted to pairwise features which examine only a pair of words and their neighborhood. In this work, we go beyond these pairwise features and learn a model to rerank the n-best reorderings produced by the TSP model using higher order and structural features which help in capturing longer range dependencies. In addition to using a more informative set of source side features, we also capture target side features indirectly by using the translation score assigned to a reordering. Our experiments, involving Urdu-English, show that the proposed approach outperforms a state-of-theart PBSMT system which uses the TSP model for reordering by 1.3 BLEU points, and a publicly available state-of-the-art MT system, Hiero, by 3 BLEU points.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Recent work has shown that word aligned data can be used to learn a model for reordering source sentences to match the target order.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This model learns the cost of putting a word immediately before another word and finds the best reordering by solving an instance of the Traveling Salesman Problem (TSP).</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, for efficiently solving the TSP, the model is restricted to pairwise features which examine only a pair of words and their neighborhood.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In this work, we go beyond these pairwise features and learn a model to rerank the n-best reorderings produced by the TSP model using higher order and structural features which help in capturing longer range dependencies.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>In addition to using a more informative set of source side features, we also capture target side features indirectly by using the translation score assigned to a reordering.</text>
+              <doc_id>4</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our experiments, involving Urdu-English, show that the proposed approach outperforms a state-of-theart PBSMT system which uses the TSP model for reordering by 1.3 BLEU points, and a publicly available state-of-the-art MT system, Hiero, by 3 BLEU points.</text>
+              <doc_id>5</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>Handling the differences in word orders between pairs of languages is crucial in producing good machine translation. This is especially true for language pairs such as Urdu-English which have significantly different sentence structures. For example, the typical word order in Urdu is Subject Object Verb whereas the typical word order in English is Subject Verb Object. Phrase based systems (Koehn et al., 2003) rely on a lexicalized distortion model (Al-Onaizan and Papineni, 2006; Tillman, 2004) and the target language model to produce output words in the correct order. This is known to be inadequate when the languages are very different in terms of word order (refer to Table 3 in Section 3).
+Pre-ordering source sentences while training and testing has become a popular approach in overcoming the word ordering challenge. Most techniques for pre-ordering (Collins et al., 2005; Wang et al., 2007; Ramanathan et al., 2009) depend on a high quality source language parser, which means these methods work only if the source language has a parser (this rules out many languages). Recent work (Visweswariah et al., 2011) has shown that it is possible to learn a reordering model from a relatively small number of hand aligned sentences . This eliminates the need of a source or target parser.
+In this work, we build upon the work of Visweswariah et al. (2011) which solves the reordering problem by treating it as an instance of the Traveling Salesman Problem (TSP). They learn a model which assigns costs to all pairs of words in a sentence, where the cost represents the penalty of putting a word immediately preceding another word. The best permutation is found via the chained Lin- Kernighan heuristic for solving a TSP. Since this model relies on solving a TSP efficiently, it cannot capture features other than pairwise features that examine the words and neighborhood for each pair of words in the source sentence. In the remainder of this paper we refer to this model as the TSP model.
+Our aim is to go beyond this limitation of the TSP model and use a richer set of features instead of using pairwise features only. In particular, we are interested in features that allow us to examine triples of words/POS tags in the candidate reordering per-
+mutation (this is akin to going from bigram to trigram language models), and also structural features that allow us to examine the properties of the segmentation induced by the candidate permutation. To go beyond the set of features incorporated by the TSP model, we do not solve the search problem which would be NP-hard. Instead, we restrict ourselves to an n-best list produced by the base TSP model and then search in that list. Using a richer set of features, we learn a model to rerank these n- best reorderings. The parameters of the model are learned using the averaged perceptron algorithm. In addition to using a richer set of source side features we also indirectly capture target side features by interpolating the score assigned by our model with the score assigned by the decoder of a MT system. To justify the use of these informative features, we point to the example in Table 1. Here, the head (driver) of the underlined English Noun Phrase (The driver of the car) appears to the left of the Noun Phrase whereas the head (chaalak {driver}) of the corresponding Urdu Noun Phrase (gaadi {car} ka {of} chaalak {driver}) appears to the right of the Noun Phrase. To produce the correct reordering of the source Urdu sentence the model has to make an unusual choice of putting gaadi {car} before bola {said}. We say this is an unusual choice because the model examines only pairwise features and it is unlikely that it would have seen sentences having the bigram &#8220;car said&#8221;. If the exact segmentation of the source sentence was known, then the model could have used the information that the word gaadi {car} appears in a segment whose head is the noun chaalak {driver} and hence its not unusual to put gaadi {car} before bola {said} (because the construct &#8220;NP said&#8221; is not unusual). However, since the segmentation of the source sentence is not known in advance, we use a heuristic (explained later) to find the segmentation induced by a reordering. We then extract features (such as f irst word current segment, end word current segment) to approximate these long range dependencies.
+Using this richer set of features with Urdu- English as the source language pair, our approach outperforms the following state of the art systems: (i) a PBSMT system which uses TSP model for reordering (by 1.3 BLEU points), (ii) a hierarchical PBSMT system (by 3 BLEU points). The overall
+Input Urdu:
+Gloss: English: Ref. reordering:
+fir gaadi ka chaalak kuch bola
+then car of driver said something Then the driver of the car said something. fir chaalak ka gaadi bola kuch
+gain is 6.3 BLEU points when compared to a standard PBSMT system which uses a lexicalized distortion model (Al-Onaizan and Papineni, 2006).
+The rest of this paper is organized as follows. In Section 2 we discuss our approach of re-ranking the n-best reorderings produced by the TSP model. This includes a discussion of the model used, the features used and the algorithm used for learning the parameters of the model. It also includes a discussion on the modification to the Chained Lin-Kernighan heuristic to produce n-best reorderings. Next, in Section 3 we describe our experimental setup and report the results of our experiments. In Section 4 we present some discussions based on our study. In section 5 we briefly describe some prior related work. Finally, in Section 6, we present some concluding remarks and highlight possible directions for future work.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Handling the differences in word orders between pairs of languages is crucial in producing good machine translation.</text>
+              <doc_id>6</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is especially true for language pairs such as Urdu-English which have significantly different sentence structures.</text>
+              <doc_id>7</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, the typical word order in Urdu is Subject Object Verb whereas the typical word order in English is Subject Verb Object.</text>
+              <doc_id>8</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Phrase based systems (Koehn et al., 2003) rely on a lexicalized distortion model (Al-Onaizan and Papineni, 2006; Tillman, 2004) and the target language model to produce output words in the correct order.</text>
+              <doc_id>9</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is known to be inadequate when the languages are very different in terms of word order (refer to Table 3 in Section 3).</text>
+              <doc_id>10</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Pre-ordering source sentences while training and testing has become a popular approach in overcoming the word ordering challenge.</text>
+              <doc_id>11</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Most techniques for pre-ordering (Collins et al., 2005; Wang et al., 2007; Ramanathan et al., 2009) depend on a high quality source language parser, which means these methods work only if the source language has a parser (this rules out many languages).</text>
+              <doc_id>12</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Recent work (Visweswariah et al., 2011) has shown that it is possible to learn a reordering model from a relatively small number of hand aligned sentences .</text>
+              <doc_id>13</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>This eliminates the need of a source or target parser.</text>
+              <doc_id>14</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this work, we build upon the work of Visweswariah et al. (2011) which solves the reordering problem by treating it as an instance of the Traveling Salesman Problem (TSP).</text>
+              <doc_id>15</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>They learn a model which assigns costs to all pairs of words in a sentence, where the cost represents the penalty of putting a word immediately preceding another word.</text>
+              <doc_id>16</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The best permutation is found via the chained Lin- Kernighan heuristic for solving a TSP.</text>
+              <doc_id>17</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since this model relies on solving a TSP efficiently, it cannot capture features other than pairwise features that examine the words and neighborhood for each pair of words in the source sentence.</text>
+              <doc_id>18</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the remainder of this paper we refer to this model as the TSP model.</text>
+              <doc_id>19</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our aim is to go beyond this limitation of the TSP model and use a richer set of features instead of using pairwise features only.</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In particular, we are interested in features that allow us to examine triples of words/POS tags in the candidate reordering per-</text>
+              <doc_id>21</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>mutation (this is akin to going from bigram to trigram language models), and also structural features that allow us to examine the properties of the segmentation induced by the candidate permutation.</text>
+              <doc_id>22</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>To go beyond the set of features incorporated by the TSP model, we do not solve the search problem which would be NP-hard.</text>
+              <doc_id>23</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Instead, we restrict ourselves to an n-best list produced by the base TSP model and then search in that list.</text>
+              <doc_id>24</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Using a richer set of features, we learn a model to rerank these n- best reorderings.</text>
+              <doc_id>25</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The parameters of the model are learned using the averaged perceptron algorithm.</text>
+              <doc_id>26</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In addition to using a richer set of source side features we also indirectly capture target side features by interpolating the score assigned by our model with the score assigned by the decoder of a MT system.</text>
+              <doc_id>27</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>To justify the use of these informative features, we point to the example in Table 1.</text>
+              <doc_id>28</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>Here, the head (driver) of the underlined English Noun Phrase (The driver of the car) appears to the left of the Noun Phrase whereas the head (chaalak {driver}) of the corresponding Urdu Noun Phrase (gaadi {car} ka {of} chaalak {driver}) appears to the right of the Noun Phrase.</text>
+              <doc_id>29</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>To produce the correct reordering of the source Urdu sentence the model has to make an unusual choice of putting gaadi {car} before bola {said}.</text>
+              <doc_id>30</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>We say this is an unusual choice because the model examines only pairwise features and it is unlikely that it would have seen sentences having the bigram &#8220;car said&#8221;.</text>
+              <doc_id>31</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+            <sentence>
+              <text>If the exact segmentation of the source sentence was known, then the model could have used the information that the word gaadi {car} appears in a segment whose head is the noun chaalak {driver} and hence its not unusual to put gaadi {car} before bola {said} (because the construct &#8220;NP said&#8221; is not unusual).</text>
+              <doc_id>32</doc_id>
+              <sec_id>10</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, since the segmentation of the source sentence is not known in advance, we use a heuristic (explained later) to find the segmentation induced by a reordering.</text>
+              <doc_id>33</doc_id>
+              <sec_id>11</sec_id>
+            </sentence>
+            <sentence>
+              <text>We then extract features (such as f irst word current segment, end word current segment) to approximate these long range dependencies.</text>
+              <doc_id>34</doc_id>
+              <sec_id>12</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Using this richer set of features with Urdu- English as the source language pair, our approach outperforms the following state of the art systems: (i) a PBSMT system which uses TSP model for reordering (by 1.3 BLEU points), (ii) a hierarchical PBSMT system (by 3 BLEU points).</text>
+              <doc_id>35</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The overall</text>
+              <doc_id>36</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Input Urdu:</text>
+              <doc_id>37</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Gloss: English: Ref.</text>
+              <doc_id>38</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>reordering:</text>
+              <doc_id>39</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>fir gaadi ka chaalak kuch bola</text>
+              <doc_id>40</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>then car of driver said something Then the driver of the car said something.</text>
+              <doc_id>41</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>fir chaalak ka gaadi bola kuch</text>
+              <doc_id>42</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>gain is 6.3 BLEU points when compared to a standard PBSMT system which uses a lexicalized distortion model (Al-Onaizan and Papineni, 2006).</text>
+              <doc_id>43</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The rest of this paper is organized as follows.</text>
+              <doc_id>44</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Section 2 we discuss our approach of re-ranking the n-best reorderings produced by the TSP model.</text>
+              <doc_id>45</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This includes a discussion of the model used, the features used and the algorithm used for learning the parameters of the model.</text>
+              <doc_id>46</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>It also includes a discussion on the modification to the Chained Lin-Kernighan heuristic to produce n-best reorderings.</text>
+              <doc_id>47</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Next, in Section 3 we describe our experimental setup and report the results of our experiments.</text>
+              <doc_id>48</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Section 4 we present some discussions based on our study.</text>
+              <doc_id>49</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>In section 5 we briefly describe some prior related work.</text>
+              <doc_id>50</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally, in Section 6, we present some concluding remarks and highlight possible directions for future work.</text>
+              <doc_id>51</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Re-ranking using higher order and structural features</title>
+        <text>As mentioned earlier, the TSP model (Visweswariah et al., 2011) looks only at local features for a word pair (w i , w j ). We believe that for better reordering it is essential to look at higher order and structural features (i.e., features which look at the overall structure of a sentence). The primary reason why Visweswariah et al. (2011) consider only pairwise bigram features is that with higher order features the reordering problem can no longer be cast as a TSP and hence cannot be solved using existing efficient heuristic solvers. However, we do not have to deal with an NP-Hard search problem because instead of considering all possible reorderings we restrict our search space to only the n-best reorderings produced by the base TSP model. Formally, given a set of reorderings, &#928; = [&#960; 1 , &#960; 2 , &#960; 3 , ...., &#960; n ], for a source sentence s, we are interesting in assigning a score, score(&#960;), to each of these reorderings and pick the reordering which has the highest score. In this paper, we parametrize this score as:
+score(&#960;) = &#952; T &#966;(&#960;) (1)
+where, &#952; is the weight vector and &#966;(&#960;) is a vector of features extracted from the reordering &#960;. The aim then is to find,
+&#960; &#8727; = arg max
+&#960;&#8712;&#928;
+score(&#960;) (2)
+In the following sub-sections, we first briefly describe our overall approach towards finding &#960; &#8727; . Next, we describe our modification to the Lin- Kernighan heuristic for producing n-best outputs for TSP instead of the 1-best output used by (Visweswariah et al., 2011). We then discuss the features used for re-ranking these n-best outputs, followed by a discussion on the learning algorithm used for estimating the parameters of the model. Finally, we describe how we interpolate the score assigned by our model with the score assigned by the decoder of a SMT engine to indirectly capture target side features.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>As mentioned earlier, the TSP model (Visweswariah et al., 2011) looks only at local features for a word pair (w i , w j ).</text>
+              <doc_id>52</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We believe that for better reordering it is essential to look at higher order and structural features (i.e., features which look at the overall structure of a sentence).</text>
+              <doc_id>53</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The primary reason why Visweswariah et al. (2011) consider only pairwise bigram features is that with higher order features the reordering problem can no longer be cast as a TSP and hence cannot be solved using existing efficient heuristic solvers.</text>
+              <doc_id>54</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, we do not have to deal with an NP-Hard search problem because instead of considering all possible reorderings we restrict our search space to only the n-best reorderings produced by the base TSP model.</text>
+              <doc_id>55</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Formally, given a set of reorderings, &#928; = [&#960; 1 , &#960; 2 , &#960; 3 , ...., &#960; n ], for a source sentence s, we are interesting in assigning a score, score(&#960;), to each of these reorderings and pick the reordering which has the highest score.</text>
+              <doc_id>56</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In this paper, we parametrize this score as:</text>
+              <doc_id>57</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>score(&#960;) = &#952; T &#966;(&#960;) (1)</text>
+              <doc_id>58</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>where, &#952; is the weight vector and &#966;(&#960;) is a vector of features extracted from the reordering &#960;.</text>
+              <doc_id>59</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The aim then is to find,</text>
+              <doc_id>60</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#960; &#8727; = arg max</text>
+              <doc_id>61</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#960;&#8712;&#928;</text>
+              <doc_id>62</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>score(&#960;) (2)</text>
+              <doc_id>63</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In the following sub-sections, we first briefly describe our overall approach towards finding &#960; &#8727; .</text>
+              <doc_id>64</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Next, we describe our modification to the Lin- Kernighan heuristic for producing n-best outputs for TSP instead of the 1-best output used by (Visweswariah et al., 2011).</text>
+              <doc_id>65</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We then discuss the features used for re-ranking these n-best outputs, followed by a discussion on the learning algorithm used for estimating the parameters of the model.</text>
+              <doc_id>66</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally, we describe how we interpolate the score assigned by our model with the score assigned by the decoder of a SMT engine to indirectly capture target side features.</text>
+              <doc_id>67</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 Overall approach</title>
+            <text>The training stage of our approach involves two phases : (i) Training a TSP model which will be used to generate n-best reorderings and (ii) Training a re-ranking model using these n-best reorderings. For training both the models we need a collection of sentences where the desired reordering &#960; &#8727; (x) for each input sentence x is known. These reference orderings are derived from word aligned source-target sentence pairs (see first 4 rows of Figure 1). We first divide this word aligned data into N parts and use A &#8722;i to denote the alignments leaving out the i-th part. We then train a TSP model M &#8722;i using reference reorderings derived from A &#8722;i as described in (Visweswariah et al., 2011). Next, we produce n- best reorderings for the source sentences using the algorithm getN BestReorderings(sentence) described later. Dividing the data into N parts is necessary to ensure that the re-ranking model is trained using a realistic n-best list rather than a very optimistic n-best list (which would be the case if part i is reordered using a model which has already seen part i during training).
+Each of the n-best reorderings is then represented as a feature vector comprising of higher order and structural features. The weights of these features are then estimated using the averaged perceptron method. At test time, getN BestReorderings(sentence) is used to generate the n-best reorderings for the test sentence using the trained TSP model. These reorderings are then represented using higher order and structural features and re-ranked using the weights learned earlier. We now describe the different stages of our algorithm.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The training stage of our approach involves two phases : (i) Training a TSP model which will be used to generate n-best reorderings and (ii) Training a re-ranking model using these n-best reorderings.</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For training both the models we need a collection of sentences where the desired reordering &#960; &#8727; (x) for each input sentence x is known.</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These reference orderings are derived from word aligned source-target sentence pairs (see first 4 rows of Figure 1).</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We first divide this word aligned data into N parts and use A &#8722;i to denote the alignments leaving out the i-th part.</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We then train a TSP model M &#8722;i using reference reorderings derived from A &#8722;i as described in (Visweswariah et al., 2011).</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Next, we produce n- best reorderings for the source sentences using the algorithm getN BestReorderings(sentence) described later.</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Dividing the data into N parts is necessary to ensure that the re-ranking model is trained using a realistic n-best list rather than a very optimistic n-best list (which would be the case if part i is reordered using a model which has already seen part i during training).</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Each of the n-best reorderings is then represented as a feature vector comprising of higher order and structural features.</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The weights of these features are then estimated using the averaged perceptron method.</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At test time, getN BestReorderings(sentence) is used to generate the n-best reorderings for the test sentence using the trained TSP model.</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These reorderings are then represented using higher order and structural features and re-ranked using the weights learned earlier.</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We now describe the different stages of our algorithm.</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 Generating n-best reorderings for the TSP model</title>
+            <text>The first stage of our approach is to train a TSP model and generate n-best reorderings using it. The decoder used by Visweswariah et al. (2011) relies on the Chained Lin-Kernighan heuristic (Lin and Kernighan, 1973) to produce the 1-best permutation for the TSP problem. Since our algorithm aims at re-ranking an n-best list of permutations (reorderings), we made a modification to the Chained Lin- Kernighan heuristic to produce this n-best list as shown in Algorithm 1 .
+Algorithm 1 getNBestReorderings(sentence) NbestSet = &#966; &#960; &#8727; = Identity permutation &#960; &#8727; = linkernighan(&#960; &#8727; ) insert(NbestSet, &#960; &#8727; ) for i = 1 &#8594; nIter do
+&#960; &#8242; = perturb(&#960; &#8727; ) &#960; &#8242; = linkernighan(&#960; &#8242; ) if C(&#960; &#8242; ) &lt; max &#960;&#8712;NbestSet C(&#960;) then
+InsertOrReplace(NbestSet, &#960; &#8242; ) end if if C(&#960; &#8242; ) &lt; C(&#960; &#8727; ) then
+&#960; &#8727; = &#960; &#8242;
+end if end for
+In Algorithm 1 perturb() is a four-edge perturbation described in (Applegate et al., 2003), and linkernighan() is the Lin-Kernighan heuristic that applies a sequence of flips that potentially returns a lower cost permutation as described in (Lin and Kernighan, 1973). The cost C(&#960;) is calculated using a trained TSP model.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The first stage of our approach is to train a TSP model and generate n-best reorderings using it.</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The decoder used by Visweswariah et al. (2011) relies on the Chained Lin-Kernighan heuristic (Lin and Kernighan, 1973) to produce the 1-best permutation for the TSP problem.</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since our algorithm aims at re-ranking an n-best list of permutations (reorderings), we made a modification to the Chained Lin- Kernighan heuristic to produce this n-best list as shown in Algorithm 1 .</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Algorithm 1 getNBestReorderings(sentence) NbestSet = &#966; &#960; &#8727; = Identity permutation &#960; &#8727; = linkernighan(&#960; &#8727; ) insert(NbestSet, &#960; &#8727; ) for i = 1 &#8594; nIter do</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#960; &#8242; = perturb(&#960; &#8727; ) &#960; &#8242; = linkernighan(&#960; &#8242; ) if C(&#960; &#8242; ) &lt; max &#960;&#8712;NbestSet C(&#960;) then</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>InsertOrReplace(NbestSet, &#960; &#8242; ) end if if C(&#960; &#8242; ) &lt; C(&#960; &#8727; ) then</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#960; &#8727; = &#960; &#8242;</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>end if end for</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In Algorithm 1 perturb() is a four-edge perturbation described in (Applegate et al., 2003), and linkernighan() is the Lin-Kernighan heuristic that applies a sequence of flips that potentially returns a lower cost permutation as described in (Lin and Kernighan, 1973).</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The cost C(&#960;) is calculated using a trained TSP model.</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>2.3 Features</title>
+            <text>We represent each of the n-best reorderings obtained above as a vector of features which can be divided into two sets : (i) higher order features and (ii) struc-
+Segmentation Based Features (extracted for every segment in the induced segmentation) end lex current segment end lex prev segment end pos current segment end pos prev segment
+Features fired for the segment [mere(PRP) ghar(NN)] in Figure1 ghar Shyam NN NN
+tural features. The higher order features are essentially trigram lexical and pos features whereas the structural features are derived from the sentence structure induced by a reordering (explained later).
+2.3.1 Higher Order Features
+Since deriving a good reordering would essentially require analyzing the syntactic structure of the source sentence, the tasks of reordering and parsing are often considered to be related. The main motivation for using higher order features thus comes from a related work on parsing (Koo and Collins, 2010) where the performance of a state of the art parser was improved by considering higher order dependencies. In our model we use trigram features (see Table 2) of the following form:
+&#966;(ru i , ru i+1 , ru i+2 , J(ru i , ru i+1 ), J(ru i+1 , ru i+2 )) where ru i =word at position i in the reordered source sentence and J(x, y) = difference between the positions of x and y in the original source sentence.
+Figure 1 shows an example of jumps between different word pairs in an Urdu sentence. Since such higher order features will typically be sparse, we also use some back-off features. For example, instead of using the absolute values of jumps we divide the jumps into 3 buckets, viz., high, low and medium and use these buckets in conjunction with the triplets as back-off features.
+2.3.2 Structural Features
+The second set of features is based on the hypothesis that any reordering of the source sentence induces a segmentation on the sentence. This segmentation is based on the following heuristic: if w i and w i+1 appear next to each other in the original sentence but do not appear next to each other in the reordered sentence then w i marks the end of a segment and w i+1 marks the beginning of the next segment. To understand this better please refer to Figure 1 which shows the correct reordering of an Urdu sentence based on its English translation and the corresponding segmentation induced on the Urdu sentence. If the correct segmentation of a sentence is known in advance then one could use a hierarchical model where the goal would be to reorder segments instead of reordering words individually (basically, instead of words, treat segments as units of reordering. In principle, this is similar to what is done by parser based reordering methods). Since the TSP model does not explicitly use segmentation based features it often produces wrong reorderings (refer to the motivating example in Section 1).
+Reordering such sentences correctly requires some knowledge about the hierarchical structure of the sentence. To capture such hierarchical information, we use features which look at the elements
+(words, pos tags) of a segment and its neighboring segments. These features along with examples are listed in Table 2. These features should help us in selecting a reordering which induces a segmentation which is closest to the correct segmentation induced by the reference reordering. Note that every feature listed in Table 2 is a binary feature which takes on the value 1 if it fires for the given reordering and value 0 if it does not fire for the given reordering. In addition to the features listed in Table 2 we also use the score assigned by the TSP model as a feature.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We represent each of the n-best reorderings obtained above as a vector of features which can be divided into two sets : (i) higher order features and (ii) struc-</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Segmentation Based Features (extracted for every segment in the induced segmentation) end lex current segment end lex prev segment end pos current segment end pos prev segment</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Features fired for the segment [mere(PRP) ghar(NN)] in Figure1 ghar Shyam NN NN</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>tural features.</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The higher order features are essentially trigram lexical and pos features whereas the structural features are derived from the sentence structure induced by a reordering (explained later).</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.3.1 Higher Order Features</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Since deriving a good reordering would essentially require analyzing the syntactic structure of the source sentence, the tasks of reordering and parsing are often considered to be related.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The main motivation for using higher order features thus comes from a related work on parsing (Koo and Collins, 2010) where the performance of a state of the art parser was improved by considering higher order dependencies.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In our model we use trigram features (see Table 2) of the following form:</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#966;(ru i , ru i+1 , ru i+2 , J(ru i , ru i+1 ), J(ru i+1 , ru i+2 )) where ru i =word at position i in the reordered source sentence and J(x, y) = difference between the positions of x and y in the original source sentence.</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 1 shows an example of jumps between different word pairs in an Urdu sentence.</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since such higher order features will typically be sparse, we also use some back-off features.</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, instead of using the absolute values of jumps we divide the jumps into 3 buckets, viz., high, low and medium and use these buckets in conjunction with the triplets as back-off features.</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2.3.2 Structural Features</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The second set of features is based on the hypothesis that any reordering of the source sentence induces a segmentation on the sentence.</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This segmentation is based on the following heuristic: if w i and w i+1 appear next to each other in the original sentence but do not appear next to each other in the reordered sentence then w i marks the end of a segment and w i+1 marks the beginning of the next segment.</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To understand this better please refer to Figure 1 which shows the correct reordering of an Urdu sentence based on its English translation and the corresponding segmentation induced on the Urdu sentence.</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If the correct segmentation of a sentence is known in advance then one could use a hierarchical model where the goal would be to reorder segments instead of reordering words individually (basically, instead of words, treat segments as units of reordering.</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In principle, this is similar to what is done by parser based reordering methods).</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since the TSP model does not explicitly use segmentation based features it often produces wrong reorderings (refer to the motivating example in Section 1).</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Reordering such sentences correctly requires some knowledge about the hierarchical structure of the sentence.</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To capture such hierarchical information, we use features which look at the elements</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(words, pos tags) of a segment and its neighboring segments.</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These features along with examples are listed in Table 2.</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These features should help us in selecting a reordering which induces a segmentation which is closest to the correct segmentation induced by the reference reordering.</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that every feature listed in Table 2 is a binary feature which takes on the value 1 if it fires for the given reordering and value 0 if it does not fire for the given reordering.</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In addition to the features listed in Table 2 we also use the score assigned by the TSP model as a feature.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>2.4 Estimating model parameters</title>
+            <text>We use perceptron as the learning algorithm for estimating the parameters of our model described in Equation 1. To begin with, all parameters are initialized to 0 and the learning algorithm is run for N iterations. During each iteration the parameters are updated after every training instance is seen. For example, during the i-th iteration, after seeing the j-th training sentence, we update the k-th parameter &#952; k using the following update rule:
+&#952; (i,j) k
+where, &#952; (i,j) k
+= &#952; (i,j&#8722;1) k + &#966; k (&#960; gold j ) &#8722; &#966; k (&#960; &#8727; j ) (3)
+= value of the k-th parameter after
+seeing sentence j in iteration i
+&#966; k = k-th feature
+&#960; gold j
+= gold reordering for the j-th sentence
+&#960;j &#8727; = arg max &#952; (i,j&#8722;1) T &#966;(&#960;)
+&#960;&#8712;&#928; j
+where &#928; j is the set of n-best reorderings for the j- th sentence. &#960;j &#8727; is thus the highest-scoring reordering for the j-th sentence under the current parameter vector. Since the averaged perceptron method is known to perform better than the perceptron method, we used the averaged values of the parameters at the end of N iterations, calculated as:
+&#952; avg k = 1 N&#8721; t&#8721; &#952; (i,j) N &#183; t
+k
+(4)
+i=1 j=1
+where, N = Number of iterations
+t = Number of training instances
+We observed that in most cases the reference reordering in not a part of the n-best list produced by the TSP model. In such cases instead of using &#966; k (&#960; gold j ) for updating the weights in Equation 3 we
+closest to gold
+use &#966; k (&#960;j ) as this is known to be a better strategy for learning a re-ranking model (Arun and
+closest to gold
+Koehn, 2007). &#960; is given by: arg max
+&#960; i j &#8712;&#928; j
+j
+# of common bigram pairs in &#960;j i
+len(&#960; gold j )
+and &#960;gold
+j
+where, &#928; j = set of n-best reorderings for j th sentence
+closest to gold
+&#960;j is thus the reordering which has the
+maximum overlap with &#960; gold j in terms of the number of word pairs (w m , w n ) where w n is put next to w m .</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We use perceptron as the learning algorithm for estimating the parameters of our model described in Equation 1.</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To begin with, all parameters are initialized to 0 and the learning algorithm is run for N iterations.</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>During each iteration the parameters are updated after every training instance is seen.</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For example, during the i-th iteration, after seeing the j-th training sentence, we update the k-th parameter &#952; k using the following update rule:</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#952; (i,j) k</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where, &#952; (i,j) k</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>= &#952; (i,j&#8722;1) k + &#966; k (&#960; gold j ) &#8722; &#966; k (&#960; &#8727; j ) (3)</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>= value of the k-th parameter after</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>seeing sentence j in iteration i</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#966; k = k-th feature</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#960; gold j</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>= gold reordering for the j-th sentence</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#960;j &#8727; = arg max &#952; (i,j&#8722;1) T &#966;(&#960;)</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#960;&#8712;&#928; j</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where &#928; j is the set of n-best reorderings for the j- th sentence.</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#960;j &#8727; is thus the highest-scoring reordering for the j-th sentence under the current parameter vector.</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since the averaged perceptron method is known to perform better than the perceptron method, we used the averaged values of the parameters at the end of N iterations, calculated as:</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#952; avg k = 1 N&#8721; t&#8721; &#952; (i,j) N &#183; t</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>k</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(4)</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i=1 j=1</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where, N = Number of iterations</text>
+                  <doc_id>138</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>t = Number of training instances</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We observed that in most cases the reference reordering in not a part of the n-best list produced by the TSP model.</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In such cases instead of using &#966; k (&#960; gold j ) for updating the weights in Equation 3 we</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>closest to gold</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>use &#966; k (&#960;j ) as this is known to be a better strategy for learning a re-ranking model (Arun and</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>closest to gold</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Koehn, 2007).</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#960; is given by: arg max</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#960; i j &#8712;&#928; j</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>j</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text># of common bigram pairs in &#960;j i</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>len(&#960; gold j )</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>and &#960;gold</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>j</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where, &#928; j = set of n-best reorderings for j th sentence</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>closest to gold</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#960;j is thus the reordering which has the</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>maximum overlap with &#960; gold j in terms of the number of word pairs (w m , w n ) where w n is put next to w m .</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>4</index>
+            <title>2.5 Interpolating with MT score</title>
+            <text>The approach described above aims at producing a better reordering by extracting richer features from the source sentence. Since the final aim is to improve the performance of an MT system, it would potentially be beneficial to interpolate the scores assigned by Equation 1 to a given reordering with the score assigned by the decoder of an MT system to the translation of the source sentence under this reordering. Intuitively, the MT score would allow us to capture features from the target sentence which are obviously not available to our model. With this motivation, we use the following interpolated score (score I ) to select the best translation.
+score I (t i ) = &#955;&#183;score &#952; (&#960; i ) + (1 &#8722; &#955;) &#183; score MT (t i )
+where, t i =translation produced under the i-th
+reordering of the source sentence
+score &#952; (&#960; i ) =score assigned by our model to the
+i-th reordering
+score MT (t i ) =score assigned by the MT system to t i
+The weight &#955; is used to ensure that score &#952; (&#960; i ) and score MT (&#960; i ) are in the same range (it just serves as a normalization constant). We acknowledge that the above process is expensive because it requires the MT system to decode n reorderings for every source sentence. However, the aim of this work is to show that interpolating with the MT score which implicitly captures features from the target sentence helps in improving the performance. Ideally, this interpolation should (and can) be done at decode time without having to decode n reorderings for every source
+sentence (for example by expressing the n reorderings as a lattice), but, we leave this as future work.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The approach described above aims at producing a better reordering by extracting richer features from the source sentence.</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since the final aim is to improve the performance of an MT system, it would potentially be beneficial to interpolate the scores assigned by Equation 1 to a given reordering with the score assigned by the decoder of an MT system to the translation of the source sentence under this reordering.</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Intuitively, the MT score would allow us to capture features from the target sentence which are obviously not available to our model.</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>With this motivation, we use the following interpolated score (score I ) to select the best translation.</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>score I (t i ) = &#955;&#183;score &#952; (&#960; i ) + (1 &#8722; &#955;) &#183; score MT (t i )</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where, t i =translation produced under the i-th</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>reordering of the source sentence</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>score &#952; (&#960; i ) =score assigned by our model to the</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i-th reordering</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>score MT (t i ) =score assigned by the MT system to t i</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The weight &#955; is used to ensure that score &#952; (&#960; i ) and score MT (&#960; i ) are in the same range (it just serves as a normalization constant).</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We acknowledge that the above process is expensive because it requires the MT system to decode n reorderings for every source sentence.</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, the aim of this work is to show that interpolating with the MT score which implicitly captures features from the target sentence helps in improving the performance.</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Ideally, this interpolation should (and can) be done at decode time without having to decode n reorderings for every source</text>
+                  <doc_id>170</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>sentence (for example by expressing the n reorderings as a lattice), but, we leave this as future work.</text>
+                  <doc_id>171</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Empirical evaluation</title>
+        <text>We evaluated our reordering approach on Urdu- English. We use two types of evaluation, one intrinsic and one extrinsic. For intrinsic evaluation, we compare the reordered source sentence in Urdu with a reference reordering obtained from the hand alignments using BLEU (referred to as monolingual BLEU or mBLEU by (Visweswariah et al., 2011) ). Additionally, we evaluate the effect of reordering on MT performance using BLEU (extrinsic evaluation).
+As mentioned earlier, our training process involves two phases : (i) Generating n-best reorderings for the training data and (ii) using these n-best reorderings to train a perceptron model. We use the same data for training the reordering model as well as our perceptron model. This data contains 180K words of manual alignments (part of the NIST MT- 08 training data) and 3.9M words of automatically generated machine alignments (1.7M words from the NIST MT-08 training data 1 and 2.2M words extracted from sources on the web 2 ). The machine alignments were generated using a supervised maximum entropy model (Ittycheriah and Roukos, 2005) and then corrected using an improved correction model (McCarley et al., 2011). We first divide the training data into 10 folds. The n-best reorderings for each fold are then generated using a model trained on the remaining 9 folds. This division into 10 folds is done for reasons explained earlier in Section 2.1. These n-best reorderings are then used to train the perceptron model as described in Section 2.4. Note that Visweswariah et al. (2011) used only manually aligned data for training the TSP model. However, we use machine aligned data in addition to manually aligned data for training the TSP model as it leads to better performance. We used this improvised TSP model as the state of the art baseline (rows 2 and 3 in Tables 3 and 4 respectively) for comparing with our approach. We observed that the perceptron algorithm converges after 5 iterations beyond which there is very little (&lt;1%) improvement in the bigram precision on
+1 http://www.ldc.upenn.edu 2 http://centralasiaonline.com
+the training data itself (bigram precision is the fraction of word pairs which are correctly put next to each other). Hence, for all the numbers reported in this paper, we used 5 iterations of perceptron training. Similarly, while generating the n-best reorderings, we experimented with following values of n : 10, 25, 50, 100 and 200. We observed that, by restricting the search space to the top-50 reorderings we get the best reordering performance (mBLEU) on a development set. Hence, we used n=50 for our MT experiments.
+For intrinsic evaluation we use a development set of 8017 Urdu tokens reordered manually. Table 3 compares the performance of the top-1 reordering output by our algorithm with the top-1 reordering generated by the improved TSP model in terms of mBLEU. We see a gain of 1.8 mBLEU points with our approach.
+Next, we see the impact of the better reorderings produced by our system on the performance of a state-of-the-art MT system. For this, we used a standard phrase based system (Al-Onaizan and Papineni, 2006) with a lexicalized distortion model with a window size of +/-4 words (Tillmann and Ney, 2003). As mentioned earlier, our training data consisted of 3.9M words including the NIST MT-08 training data. We use HMM alignments along with higher quality alignments from a supervised aligner (McCarley et al., 2011). The Gigaword English corpus was used for building the English language model. We report results on the NIST MT-08 evaluation set, averaging BLEU scores from the News and Web conditions to provide a single BLEU score. Table 4 compares the MT performance obtained by reordering the training and test data using the following approaches:
+1. No pre-ordering: A baseline system which does not use any source side reordering as a preprocessing step
+2. HIERO : A state of the art hierarchical phrase based translation system (Chiang, 2007)
+3. TSP: A system which uses the 1-best reordering produced by the TSP model
+4. Higher order &amp; structural features: A system
+which reranks n-best reorderings produced by TSP using higher order and structural features
+5. Interpolating with MT score : A system which interpolates the score assigned to a reordering by our model with the score assigned by a MT system
+We used Joshua 4.0 (Ganitkevitch et al., 2012) which provides an open source implementation of HIERO. For training, tuning and testing HIERO we used the same experimental setup as described above. As seen in Table 4, we get an overall gain of 6.2 BLEU points with our approach as compared to a baseline system which does not use any reordering. More importantly, we outperform (i) a PBSMT system which uses the TSP model by 1.3 BLEU points and (ii) a state of the art hierarchical phrase based translation system by 3 points.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We evaluated our reordering approach on Urdu- English.</text>
+              <doc_id>172</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use two types of evaluation, one intrinsic and one extrinsic.</text>
+              <doc_id>173</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For intrinsic evaluation, we compare the reordered source sentence in Urdu with a reference reordering obtained from the hand alignments using BLEU (referred to as monolingual BLEU or mBLEU by (Visweswariah et al., 2011) ).</text>
+              <doc_id>174</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Additionally, we evaluate the effect of reordering on MT performance using BLEU (extrinsic evaluation).</text>
+              <doc_id>175</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>As mentioned earlier, our training process involves two phases : (i) Generating n-best reorderings for the training data and (ii) using these n-best reorderings to train a perceptron model.</text>
+              <doc_id>176</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use the same data for training the reordering model as well as our perceptron model.</text>
+              <doc_id>177</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This data contains 180K words of manual alignments (part of the NIST MT- 08 training data) and 3.9M words of automatically generated machine alignments (1.7M words from the NIST MT-08 training data 1 and 2.2M words extracted from sources on the web 2 ).</text>
+              <doc_id>178</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The machine alignments were generated using a supervised maximum entropy model (Ittycheriah and Roukos, 2005) and then corrected using an improved correction model (McCarley et al., 2011).</text>
+              <doc_id>179</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>We first divide the training data into 10 folds.</text>
+              <doc_id>180</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>The n-best reorderings for each fold are then generated using a model trained on the remaining 9 folds.</text>
+              <doc_id>181</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>This division into 10 folds is done for reasons explained earlier in Section 2.1.</text>
+              <doc_id>182</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>These n-best reorderings are then used to train the perceptron model as described in Section 2.4.</text>
+              <doc_id>183</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>Note that Visweswariah et al. (2011) used only manually aligned data for training the TSP model.</text>
+              <doc_id>184</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, we use machine aligned data in addition to manually aligned data for training the TSP model as it leads to better performance.</text>
+              <doc_id>185</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+            <sentence>
+              <text>We used this improvised TSP model as the state of the art baseline (rows 2 and 3 in Tables 3 and 4 respectively) for comparing with our approach.</text>
+              <doc_id>186</doc_id>
+              <sec_id>10</sec_id>
+            </sentence>
+            <sentence>
+              <text>We observed that the perceptron algorithm converges after 5 iterations beyond which there is very little (&lt;1%) improvement in the bigram precision on</text>
+              <doc_id>187</doc_id>
+              <sec_id>11</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 http://www.ldc.upenn.edu 2 http://centralasiaonline.com</text>
+              <doc_id>188</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>the training data itself (bigram precision is the fraction of word pairs which are correctly put next to each other).</text>
+              <doc_id>189</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Hence, for all the numbers reported in this paper, we used 5 iterations of perceptron training.</text>
+              <doc_id>190</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Similarly, while generating the n-best reorderings, we experimented with following values of n : 10, 25, 50, 100 and 200.</text>
+              <doc_id>191</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We observed that, by restricting the search space to the top-50 reorderings we get the best reordering performance (mBLEU) on a development set.</text>
+              <doc_id>192</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Hence, we used n=50 for our MT experiments.</text>
+              <doc_id>193</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>For intrinsic evaluation we use a development set of 8017 Urdu tokens reordered manually.</text>
+              <doc_id>194</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Table 3 compares the performance of the top-1 reordering output by our algorithm with the top-1 reordering generated by the improved TSP model in terms of mBLEU.</text>
+              <doc_id>195</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We see a gain of 1.8 mBLEU points with our approach.</text>
+              <doc_id>196</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Next, we see the impact of the better reorderings produced by our system on the performance of a state-of-the-art MT system.</text>
+              <doc_id>197</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For this, we used a standard phrase based system (Al-Onaizan and Papineni, 2006) with a lexicalized distortion model with a window size of +/-4 words (Tillmann and Ney, 2003).</text>
+              <doc_id>198</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>As mentioned earlier, our training data consisted of 3.9M words including the NIST MT-08 training data.</text>
+              <doc_id>199</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We use HMM alignments along with higher quality alignments from a supervised aligner (McCarley et al., 2011).</text>
+              <doc_id>200</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The Gigaword English corpus was used for building the English language model.</text>
+              <doc_id>201</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>We report results on the NIST MT-08 evaluation set, averaging BLEU scores from the News and Web conditions to provide a single BLEU score.</text>
+              <doc_id>202</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Table 4 compares the MT performance obtained by reordering the training and test data using the following approaches:</text>
+              <doc_id>203</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.</text>
+              <doc_id>204</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>No pre-ordering: A baseline system which does not use any source side reordering as a preprocessing step</text>
+              <doc_id>205</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2.</text>
+              <doc_id>206</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>HIERO : A state of the art hierarchical phrase based translation system (Chiang, 2007)</text>
+              <doc_id>207</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>3.</text>
+              <doc_id>208</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>TSP: A system which uses the 1-best reordering produced by the TSP model</text>
+              <doc_id>209</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>4.</text>
+              <doc_id>210</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Higher order &amp; structural features: A system</text>
+              <doc_id>211</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>which reranks n-best reorderings produced by TSP using higher order and structural features</text>
+              <doc_id>212</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>5.</text>
+              <doc_id>213</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Interpolating with MT score : A system which interpolates the score assigned to a reordering by our model with the score assigned by a MT system</text>
+              <doc_id>214</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We used Joshua 4.0 (Ganitkevitch et al., 2012) which provides an open source implementation of HIERO.</text>
+              <doc_id>215</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For training, tuning and testing HIERO we used the same experimental setup as described above.</text>
+              <doc_id>216</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>As seen in Table 4, we get an overall gain of 6.2 BLEU points with our approach as compared to a baseline system which does not use any reordering.</text>
+              <doc_id>217</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>More importantly, we outperform (i) a PBSMT system which uses the TSP model by 1.3 BLEU points and (ii) a state of the art hierarchical phrase based translation system by 3 points.</text>
+              <doc_id>218</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Discussions</title>
+        <text>We now discuss some error corrections and ablation tests.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We now discuss some error corrections and ablation tests.</text>
+              <doc_id>219</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 Example of error correction</title>
+            <text>We first give an example where the proposed approach performed better than the TSP model. In the example below, I = input sentence, E= gold English translation, T = incorrect reordering produced by TSP and O = correct reordering produced by our approach. Note that the words roman catholic aur protestant in the input sentence get translated as
+a continuous phrase in English (Roman Catholic and Protestant) and hence should be treated as a single unit by the reordering model. The TSP model fails to keep this segment intact whereas our model (which uses segmentation based features) does so and matches the reference reordering.
+I: ab roman catholic aur protestant ke darmiyaan ikhtilafat khatam ho chuke hai
+E: The differences between Roman Catholics and Protestants have now ended
+T: ab roman ikhtilafat ke darmiyaan catholic aur protestant hai khatam ho chuke
+O: ab ikhtilafat ke darmiyaan roman catholic aur protestant hai khatam ho chuke</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We first give an example where the proposed approach performed better than the TSP model.</text>
+                  <doc_id>220</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the example below, I = input sentence, E= gold English translation, T = incorrect reordering produced by TSP and O = correct reordering produced by our approach.</text>
+                  <doc_id>221</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that the words roman catholic aur protestant in the input sentence get translated as</text>
+                  <doc_id>222</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>a continuous phrase in English (Roman Catholic and Protestant) and hence should be treated as a single unit by the reordering model.</text>
+                  <doc_id>223</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The TSP model fails to keep this segment intact whereas our model (which uses segmentation based features) does so and matches the reference reordering.</text>
+                  <doc_id>224</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>I: ab roman catholic aur protestant ke darmiyaan ikhtilafat khatam ho chuke hai</text>
+                  <doc_id>225</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>E: The differences between Roman Catholics and Protestants have now ended</text>
+                  <doc_id>226</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>T: ab roman ikhtilafat ke darmiyaan catholic aur protestant hai khatam ho chuke</text>
+                  <doc_id>227</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>O: ab ikhtilafat ke darmiyaan roman catholic aur protestant hai khatam ho chuke</text>
+                  <doc_id>228</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 Performance based on sentence length</title>
+            <text>We split the test data into roughly three equal parts based on length, and calculated the mBLEU improvements on each of these parts as reported in Table 5. These results show that the model works much better for medium-to-long sentences. In fact, we see a drop in performance for small sentences. A possible reason for this could be that the structural features that we use are derived through a heuristic that is error-prone, and in shorter sentences, where there would be fewer reordering problems, these errors hurt more than they help. While this needs to be analyzed further, we could meanwhile combine the two models fruitfully by using the base TSP model for small sentences and the new model for longer sentences.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We split the test data into roughly three equal parts based on length, and calculated the mBLEU improvements on each of these parts as reported in Table 5.</text>
+                  <doc_id>229</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These results show that the model works much better for medium-to-long sentences.</text>
+                  <doc_id>230</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In fact, we see a drop in performance for small sentences.</text>
+                  <doc_id>231</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>A possible reason for this could be that the structural features that we use are derived through a heuristic that is error-prone, and in shorter sentences, where there would be fewer reordering problems, these errors hurt more than they help.</text>
+                  <doc_id>232</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>While this needs to be analyzed further, we could meanwhile combine the two models fruitfully by using the base TSP model for small sentences and the new model for longer sentences.</text>
+                  <doc_id>233</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>4.3 Ablation test</title>
+            <text>To study the contribution of each feature to the reordering performance, we did an ablation test wherein we disabled one feature at a time and measured the change in the mBLEU scores. Table 6 summarizes the results of our ablation test. The maximum drop in performance is obtained when the pos triplet jumps feature is disabled. This observation supports our claim that higher order features (more than bigrams) are essential for better reordering. The lex triplet jumps feature has the least impact on the performance mainly because it is a lexicalized feature and hence very sparse. Also note that there is a high correlation between the performances obtained by dropping one feature from each of the following pairs : i) first lex current segment, first lex next segment ii) first pos current segment, first pos next segment iii) end lex current segment, end lex next segment. This is because these pairs of features are highly dependent features. Note that similar to the pos triplet jumps feature we also tried a pos quadruplet jumps feature but it did not help (mainly due to overfitting and sparsity).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>To study the contribution of each feature to the reordering performance, we did an ablation test wherein we disabled one feature at a time and measured the change in the mBLEU scores.</text>
+                  <doc_id>234</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 6 summarizes the results of our ablation test.</text>
+                  <doc_id>235</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The maximum drop in performance is obtained when the pos triplet jumps feature is disabled.</text>
+                  <doc_id>236</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This observation supports our claim that higher order features (more than bigrams) are essential for better reordering.</text>
+                  <doc_id>237</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The lex triplet jumps feature has the least impact on the performance mainly because it is a lexicalized feature and hence very sparse.</text>
+                  <doc_id>238</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Also note that there is a high correlation between the performances obtained by dropping one feature from each of the following pairs : i) first lex current segment, first lex next segment ii) first pos current segment, first pos next segment iii) end lex current segment, end lex next segment.</text>
+                  <doc_id>239</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This is because these pairs of features are highly dependent features.</text>
+                  <doc_id>240</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that similar to the pos triplet jumps feature we also tried a pos quadruplet jumps feature but it did not help (mainly due to overfitting and sparsity).</text>
+                  <doc_id>241</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Related Work</title>
+        <text>There are several studies which have shown that reordering the source side sentence to match the target side order leads to improvements in Machine Translation. These approaches can be broadly classified into three types. First, approaches which reorder source sentences by applying rules to the source side parse; the rules are either hand-written (Collins et al., 2005; Wang et al., 2007; Ramanathan et al., 2009) or learned from data (Xia and McCord, 2004; Genzel, 2010; Visweswariah et al., 2010). These approaches require a source side parser which is not available for many languages. The second type of approaches treat machine translation decoding as a parsing problem by using source and/or target side syntax in a Context Free Grammar framework. These include Hierarchical models (Chiang, 2007) and syntax based models (Yamada and Knight, 2002; Galley et al., 2006; Liu et al., 2006; Zollmann and Venugopal, 2006). The third type of approaches, avoid the use of a parser (as required by syntax based models) and instead train a reordering model using reference reorderings derived from aligned data. These approaches (Tromble and Eisner, 2009; Visweswariah et al., 2011; DeNero and Uszkoreit, 2011; Neubig et al., 2012) have a low decode time complexity as reordering is done as a preprocessing step and not integrated with the decoder.
+Our work falls under the third category, as it improves upon the work of (Visweswariah et al., 2011) which is closely related to the work of (Tromble and Eisner, 2009) but performs better. The focus of our work is to use higher order and structural features (based on segmentation of the source sentence) which are not captured by their model. Some other works have used collocation based segmentation (Henr&#237;quez Q. et al., 2010) and Multiword Expressions as segments (Bouamor et al., 2012) to improve the performance of SMT but without much success. The idea of improving performance by reranking a n-best list of outputs has been used recently for the related task of parsing (Katz-Brown et al., 2011) using targeted self-training for improving the performance of reordering. However, in contrast, in our work we directly aim at improving the performance of a reordering model.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>There are several studies which have shown that reordering the source side sentence to match the target side order leads to improvements in Machine Translation.</text>
+              <doc_id>242</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>These approaches can be broadly classified into three types.</text>
+              <doc_id>243</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>First, approaches which reorder source sentences by applying rules to the source side parse; the rules are either hand-written (Collins et al., 2005; Wang et al., 2007; Ramanathan et al., 2009) or learned from data (Xia and McCord, 2004; Genzel, 2010; Visweswariah et al., 2010).</text>
+              <doc_id>244</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>These approaches require a source side parser which is not available for many languages.</text>
+              <doc_id>245</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The second type of approaches treat machine translation decoding as a parsing problem by using source and/or target side syntax in a Context Free Grammar framework.</text>
+              <doc_id>246</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>These include Hierarchical models (Chiang, 2007) and syntax based models (Yamada and Knight, 2002; Galley et al., 2006; Liu et al., 2006; Zollmann and Venugopal, 2006).</text>
+              <doc_id>247</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>The third type of approaches, avoid the use of a parser (as required by syntax based models) and instead train a reordering model using reference reorderings derived from aligned data.</text>
+              <doc_id>248</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>These approaches (Tromble and Eisner, 2009; Visweswariah et al., 2011; DeNero and Uszkoreit, 2011; Neubig et al., 2012) have a low decode time complexity as reordering is done as a preprocessing step and not integrated with the decoder.</text>
+              <doc_id>249</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our work falls under the third category, as it improves upon the work of (Visweswariah et al., 2011) which is closely related to the work of (Tromble and Eisner, 2009) but performs better.</text>
+              <doc_id>250</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The focus of our work is to use higher order and structural features (based on segmentation of the source sentence) which are not captured by their model.</text>
+              <doc_id>251</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Some other works have used collocation based segmentation (Henr&#237;quez Q. et al., 2010) and Multiword Expressions as segments (Bouamor et al., 2012) to improve the performance of SMT but without much success.</text>
+              <doc_id>252</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The idea of improving performance by reranking a n-best list of outputs has been used recently for the related task of parsing (Katz-Brown et al., 2011) using targeted self-training for improving the performance of reordering.</text>
+              <doc_id>253</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, in contrast, in our work we directly aim at improving the performance of a reordering model.</text>
+              <doc_id>254</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 Conclusion</title>
+        <text>In this work, we proposed a model for re-ranking the n-best reorderings produced by a state of the art reordering model (TSP model) which is limited to pair wise features. Our model uses a more informative set of features consisting of higher order features, structural features and target side features 322 (captured indirectly using translation scores). The problem of intractability is solved by restricting the search space to the n-best reorderings produced by the TSP model. A detailed ablation test shows that of all the features used, the pos triplet features are most informative for reordering. A gain of 1.3 and 3 BLEU points over a state of the art phrase based and hierarchical machine translation system respectively provides good extrinsic validation of our claim that such long range features are useful. As future work, we would like to evaluate our algorithm on other language pairs. We also plan to integrate the score assigned by our model into the decoder to avoid having to do n decodings for every source sentence. Also, it would be interesting to model the segmentation explicitly, where the aim would be to first segment the sentence and then use a two level hierarchical reordering model which first reorders these segments and then reorders the words within the segment.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this work, we proposed a model for re-ranking the n-best reorderings produced by a state of the art reordering model (TSP model) which is limited to pair wise features.</text>
+              <doc_id>255</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our model uses a more informative set of features consisting of higher order features, structural features and target side features 322 (captured indirectly using translation scores).</text>
+              <doc_id>256</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The problem of intractability is solved by restricting the search space to the n-best reorderings produced by the TSP model.</text>
+              <doc_id>257</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>A detailed ablation test shows that of all the features used, the pos triplet features are most informative for reordering.</text>
+              <doc_id>258</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>A gain of 1.3 and 3 BLEU points over a state of the art phrase based and hierarchical machine translation system respectively provides good extrinsic validation of our claim that such long range features are useful.</text>
+              <doc_id>259</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>As future work, we would like to evaluate our algorithm on other language pairs.</text>
+              <doc_id>260</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>We also plan to integrate the score assigned by our model into the decoder to avoid having to do n decodings for every source sentence.</text>
+              <doc_id>261</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>Also, it would be interesting to model the segmentation explicitly, where the aim would be to first segment the sentence and then use a two level hierarchical reordering model which first reorders these segments and then reorders the words within the segment.</text>
+              <doc_id>262</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>2</id>
+        <source>TableSeer</source>
+        <caption>Table 2: Features used in our model.</caption>
+        <reference_text>In PAGE 4: ... The main motiva- tion for using higher order features thus comes from a related work on parsing (Koo and Collins, 2010) where the performance of a state of the art parser was improved by considering higher order depen- dencies. In our model we use trigram features (see  Table2 ) of the following form: ?(rui, rui+1, rui+2, J(rui, rui+1), J(rui+1, rui+2)) where rui =word at position i in the reordered source sentence and J(x, y) = difference between the positions of x and y in the original source sentence. Figure 1 shows an example of jumps between dif- ferent word pairs in an Urdu sentence....  In PAGE 5: ...segments. These features along with examples are listed in  Table2 . These features should help us in selecting a reordering which induces a segmentation which is closest to the correct segmentation induced by the reference reordering....  In PAGE 5: ... These features should help us in selecting a reordering which induces a segmentation which is closest to the correct segmentation induced by the reference reordering. Note that every feature listed in  Table2  is a binary feature which takes on the value 1 if it fires for the given reordering and value 0 if it does not fire for the given reordering. In addition to the features listed in Table 2 we also use the score assigned by the TSP model as a feature....  In PAGE 5: ... Note that every feature listed in Table 2 is a binary feature which takes on the value 1 if it fires for the given reordering and value 0 if it does not fire for the given reordering. In addition to the features listed in  Table2  we also use the score assigned by the TSP model as a feature. 2....</reference_text>
+        <page_num>4</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Segmentation Based Features</cell>
+              <cell>Features fired for the seg-</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>(extracted for every segment in</cell>
+              <cell>ment [mere(PRP) ghar(NN)]</cell>
+            </row>
+            <row>
+              <cell>the induced segmentation)</cell>
+              <cell>in Figure1</cell>
+            </row>
+            <row>
+              <cell>end lex current segment</cell>
+              <cell>ghar</cell>
+            </row>
+            <row>
+              <cell>end lex prev segment</cell>
+              <cell>Shyam</cell>
+            </row>
+            <row>
+              <cell>end pos current segment</cell>
+              <cell>NN</cell>
+            </row>
+            <row>
+              <cell>end pos prev segment</cell>
+              <cell>NN</cell>
+            </row>
+            <row>
+              <cell>length of current segment</cell>
+              <cell>2</cell>
+            </row>
+            <row>
+              <cell>first lex current segment</cell>
+              <cell>mere</cell>
+            </row>
+            <row>
+              <cell>first lex next segment</cell>
+              <cell>aaye</cell>
+            </row>
+            <row>
+              <cell>first pos current segment</cell>
+              <cell>PRP</cell>
+            </row>
+            <row>
+              <cell>first pos next segment</cell>
+              <cell>V RB</cell>
+            </row>
+            <row>
+              <cell>Higher order features</cell>
+              <cell>Features fired for the triplet</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>Shyam(NN) the(Vaux)</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>aaye(VRB) in Figure1</cell>
+            </row>
+            <row>
+              <cell>lex triplet jumps</cell>
+              <cell>lex triplet =  Shyam the</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>aaye   amp</cell>
+              <cell>amp</cell>
+              <cell>jumps = [4,?1]</cell>
+            </row>
+            <row>
+              <cell>pos triplet jumps</cell>
+              <cell>pos triplet =  NN Vaux</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>VRB   amp</cell>
+              <cell>amp</cell>
+              <cell>jumps = [4,?1]</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TET</source>
+        <caption>Table 3: mBLEU scores for Urdu to English reordering using different models.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Approach</cell>
+              <cell>mBLEU</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Unreordered</cell>
+              <cell>31.2</cell>
+            </row>
+            <row>
+              <cell>TSP</cell>
+              <cell>56.6</cell>
+            </row>
+            <row>
+              <cell>Higher order &amp; structural features</cell>
+              <cell>58.4</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TableSeer</source>
+        <caption>Table 3: mBLEU scores for Urdu to English reordering using different models.#@#@Table 4: MT performance for Urdu to English without reordering and with reordering using different approaches.</caption>
+        <reference_text>In PAGE 1: ..., 2003) rely on a lexicalized distortion model (Al-Onaizan and Papineni, 2006; Tillman, 2004) and the target language model to produce output words in the correct order. This is known to be in- adequate when the languages are very different in terms of word order (refer to  Table3  in Section 3). Pre-ordering source sentences while training and testing has become a popular approach in overcom- ing the word ordering challenge....</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Approach</cell>
+              <cell>BLEU</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>No pre-ordering</cell>
+              <cell>21.9</cell>
+            </row>
+            <row>
+              <cell>HIERO</cell>
+              <cell>25.2</cell>
+            </row>
+            <row>
+              <cell>TSP</cell>
+              <cell>26.9</cell>
+            </row>
+            <row>
+              <cell>Higher order  amp#@#@Higher order &amp; structural features</cell>
+              <cell>structural features#@#@27.5</cell>
+              <cell>structural features</cell>
+            </row>
+            <row>
+              <cell>Interpolating with MT score</cell>
+              <cell>28.2</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>5</id>
+        <source>TET</source>
+        <caption>Table 5: mBLEU improvements on sentences of different lengths</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Sentence length</cell>
+              <cell>mBLEU</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>Unreordered</cell>
+              <cell>TSP</cell>
+              <cell>Our
+approach</cell>
+            </row>
+            <row>
+              <cell>1-14 words (small)</cell>
+              <cell>29.7</cell>
+              <cell>58.7</cell>
+              <cell>57.8</cell>
+            </row>
+            <row>
+              <cell>15-22 words (med.)</cell>
+              <cell>28.2</cell>
+              <cell>56.8</cell>
+              <cell>59.2</cell>
+            </row>
+            <row>
+              <cell>23+ words (long)</cell>
+              <cell>33.4</cell>
+              <cell>55.8</cell>
+              <cell>58.2</cell>
+            </row>
+            <row>
+              <cell>All</cell>
+              <cell>31.2</cell>
+              <cell>56.6</cell>
+              <cell>58.4</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>6</id>
+        <source>TableSeer</source>
+        <caption>Table 6: Ablation test indicating the contribution of each feature to the reordering performance.</caption>
+        <reference_text>None</reference_text>
+        <page_num>8</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>Disabled feature</cell>
+              <cell>mBLEU</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>end lex current segment</cell>
+              <cell>57.6</cell>
+            </row>
+            <row>
+              <cell>end lex prev segment</cell>
+              <cell>57.6</cell>
+            </row>
+            <row>
+              <cell>end pos current segment</cell>
+              <cell>57.8</cell>
+            </row>
+            <row>
+              <cell>end pos prev segment</cell>
+              <cell>57.4</cell>
+            </row>
+            <row>
+              <cell>length</cell>
+              <cell>57.6</cell>
+            </row>
+            <row>
+              <cell>lex triplet jumps</cell>
+              <cell>58.0</cell>
+            </row>
+            <row>
+              <cell>pos triplet jumps</cell>
+              <cell>56.1</cell>
+            </row>
+            <row>
+              <cell>first lex current segment#@#@f irst lex current segment</cell>
+              <cell>58.2</cell>
+            </row>
+            <row>
+              <cell>first lex next segment#@#@f irst lex next segment</cell>
+              <cell>58.2</cell>
+            </row>
+            <row>
+              <cell>first pos current segment#@#@f irst pos current segment</cell>
+              <cell>57.6</cell>
+            </row>
+            <row>
+              <cell>first pos next segment#@#@f irst pos next segment</cell>
+              <cell>57.6</cell>
+            </row>
+            <row>
+              <cell>NONE</cell>
+              <cell>58.4</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Yaser Al-Onaizan</author>
+          <author>Kishore Papineni</author>
+        </authors>
+        <title>Distortion models for statistical machine translation.</title>
+        <publication>In Proceedings of ACL, ACL-44,</publication>
+        <pages>529--536</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>David Applegate</author>
+          <author>William Cook</author>
+          <author>Andre Rohe</author>
+        </authors>
+        <title>Chained lin-kernighan for large traveling salesman problems.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Abhishek Arun</author>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>Online learning methods for discriminative training of phrase based statistical machine translation. In</title>
+        <publication>In Proceedings of MT Summit.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Dhouha Bouamor</author>
+          <author>Nasredine Semmar</author>
+          <author>Pierre Zweigenbaum</author>
+        </authors>
+        <title>Identifying bilingual multiword expressions for statistical machine translation.</title>
+        <publication>Proceedings of the Eight International Conference on Language Resources and Evaluation (LREC&#8217;12),</publication>
+        <pages>None</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>David Chiang</author>
+        </authors>
+        <title>Hierarchical phrase-based translation.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Michael Collins</author>
+          <author>Philipp Koehn</author>
+          <author>Ivona Ku&#269;erov&#225;</author>
+        </authors>
+        <title>Clause restructuring for statistical machine translation.</title>
+        <publication>In Proceedings of ACL,</publication>
+        <pages>531--540</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>John DeNero</author>
+          <author>Jakob Uszkoreit</author>
+        </authors>
+        <title>Inducing sentence structure from parallel corpora for reordering.</title>
+        <publication>In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP &#8217;11,</publication>
+        <pages>193--203</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Michel Galley</author>
+          <author>Jonathan Graehl</author>
+          <author>Kevin Knight</author>
+          <author>Daniel Marcu</author>
+          <author>Steve DeNeefe</author>
+          <author>Wei Wang</author>
+          <author>Ignacio Thayer</author>
+        </authors>
+        <title>Scalable inference and training of context-rich syntactic translation models.</title>
+        <publication>In Proceedings of the 21st International Conference on Computational Linguistics and the 44th annual meeting of the Association for Computational Linguistics, ACL-44,</publication>
+        <pages>961--968</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Juri Ganitkevitch</author>
+          <author>Yuan Cao</author>
+          <author>Jonathan Weese</author>
+          <author>Matt Post</author>
+          <author>Chris Callison-Burch</author>
+        </authors>
+        <title>Joshua 4.0: Packing, pro, and paraphrases.</title>
+        <publication>In Proceedings of the Seventh Workshop on Statistical Machine Translation,</publication>
+        <pages>283--291</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Dmitriy Genzel</author>
+        </authors>
+        <title>Automatically learning sourceside reordering rules for large scale machine translation.</title>
+        <publication>In Proceedings of the 23rd International Conference on Computational Linguistics, COLING &#8217;10,</publication>
+        <pages>376--384</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>A Carlos Henr&#237;quez Q</author>
+          <author>R Marta Costa-juss&#224;</author>
+          <author>Vidas Daudaravicius</author>
+          <author>E Rafael Banchs</author>
+          <author>B Jos&#233; Mari&#241;o</author>
+        </authors>
+        <title>Using collocation segmentation to augment the phrase table.</title>
+        <publication>In Proceedings of the Joint Fifth Workshop on Statistical Machine Translation and MetricsMATR, WMT &#8217;10,</publication>
+        <pages>98--102</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Abraham Ittycheriah</author>
+          <author>Salim Roukos</author>
+        </authors>
+        <title>A maximum entropy word aligner for Arabic-English machine translation.</title>
+        <publication>In Proceedings of HLT/EMNLP, HLT &#8217;05,</publication>
+        <pages>89--96</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Jason Katz-Brown</author>
+          <author>Slav Petrov</author>
+          <author>Ryan McDonald</author>
+          <author>Franz Och</author>
+          <author>David Talbot</author>
+          <author>Hiroshi Ichikawa</author>
+          <author>Masakazu Seno</author>
+          <author>Hideto Kazawa</author>
+        </authors>
+        <title>Training a parser for machine translation reordering.</title>
+        <publication>In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP &#8217;11,</publication>
+        <pages>183--192</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Franz Josef Och</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>Statistical phrase-based translation.</title>
+        <publication>In Proceedings of HLT-NAACL.</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Terry Koo</author>
+          <author>Michael Collins</author>
+        </authors>
+        <title>Efficient thirdorder dependency parsers.</title>
+        <publication>In Proceedings of the 48th 323 Meeting of the Association for Computational Linguistics, ACL &#8217;10,</publication>
+        <pages>1--11</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>S Lin</author>
+          <author>B W Kernighan</author>
+        </authors>
+        <title>An effective heuristic algorithm for the travelling-salesman problem.</title>
+        <publication>None</publication>
+        <pages>498--516</pages>
+        <date>1973</date>
+      </reference>
+      <reference>
+        <id>16</id>
+        <authors>
+          <author>Yang Liu</author>
+          <author>Qun Liu</author>
+          <author>Shouxun Lin</author>
+        </authors>
+        <title>Tree-tostring alignment template for statistical machine translation.</title>
+        <publication>In Proceedings of the 21st International Conference on Computational Linguistics and the 44th annual meeting of the Association for Computational Linguistics, ACL-44,</publication>
+        <pages>609--616</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>17</id>
+        <authors>
+          <author>J Scott McCarley</author>
+          <author>Abraham Ittycheriah</author>
+          <author>Salim Roukos</author>
+          <author>Bing Xiang</author>
+          <author>Jian-ming Xu</author>
+        </authors>
+        <title>A correction model for word alignments.</title>
+        <publication>In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP &#8217;11,</publication>
+        <pages>889--898</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>18</id>
+        <authors>
+          <author>Graham Neubig</author>
+          <author>Taro Watanabe</author>
+          <author>Shinsuke Mori</author>
+        </authors>
+        <title>Inducing a discriminative parser to optimize machine translation reordering.</title>
+        <publication>In Proceedings of the 2012 Joint Conference on Empirical Methods in Natural Language Processing and Computational Natural Language Learning,</publication>
+        <pages>843--853</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>19</id>
+        <authors>
+          <author>Ananthakrishnan Ramanathan</author>
+          <author>Hansraj Choudhary</author>
+          <author>Avishek Ghosh</author>
+          <author>Pushpak Bhattacharyya</author>
+        </authors>
+        <title>Case markers and morphology: addressing the crux of the fluency problem in English-Hindi smt.</title>
+        <publication>In Proceedings of ACL-IJCNLP.</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>20</id>
+        <authors>
+          <author>Christoph Tillman</author>
+        </authors>
+        <title>A unigram orientation model for statistical machine translation.</title>
+        <publication>In Proceedings of HLT-NAACL.</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>21</id>
+        <authors>
+          <author>Christoph Tillmann</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>Word reordering and a dynamic programming beam search algorithm for statistical machine translation.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>22</id>
+        <authors>
+          <author>Roy Tromble</author>
+          <author>Jason Eisner</author>
+        </authors>
+        <title>Learning linear ordering problems for better translation.</title>
+        <publication>In Proceedings of EMNLP.</publication>
+        <pages>None</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>23</id>
+        <authors>
+          <author>Karthik Visweswariah</author>
+          <author>Jiri Navratil</author>
+          <author>Jeffrey Sorensen</author>
+          <author>Vijil Chenthamarakshan</author>
+          <author>Nandakishore Kambhatla</author>
+        </authors>
+        <title>Syntax based reordering with automatically derived rules for improved statistical machine translation.</title>
+        <publication>In Proceedings of the 23rd International Conference on Computational Linguistics.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>24</id>
+        <authors>
+          <author>Karthik Visweswariah</author>
+          <author>Rajakrishnan Rajkumar</author>
+          <author>Ankur Gandhe</author>
+          <author>Ananthakrishnan Ramanathan</author>
+          <author>Jiri Navratil</author>
+        </authors>
+        <title>A word reordering model for improved machine translation.</title>
+        <publication>In Proceedings of the Conference on Empirical Methods in Natural Language Processing, EMNLP &#8217;11,</publication>
+        <pages>486--496</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>25</id>
+        <authors>
+          <author>Chao Wang</author>
+          <author>Michael Collins</author>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>Chinese syntactic reordering for statistical machine translation.</title>
+        <publication>In Proceedings of EMNLP-CoNLL.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>26</id>
+        <authors>
+          <author>Fei Xia</author>
+          <author>Michael McCord</author>
+        </authors>
+        <title>Improving a statistical MT system with automatically learned rewrite patterns.</title>
+        <publication>In COLING.</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>27</id>
+        <authors>
+          <author>Kenji Yamada</author>
+          <author>Kevin Knight</author>
+        </authors>
+        <title>A decoder for syntax-based statistical mt.</title>
+        <publication>In Proceedings of ACL.</publication>
+        <pages>None</pages>
+        <date>2002</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Al-Onaizan and Papineni, 2006</string>
+        <sentence_id>24494</sentence_id>
+        <char_offset>82</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>0</reference_id>
+        <string>Al-Onaizan and Papineni, 2006</string>
+        <sentence_id>24528</sentence_id>
+        <char_offset>108</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>0</reference_id>
+        <string>Al-Onaizan and Papineni, 2006</string>
+        <sentence_id>24683</sentence_id>
+        <char_offset>50</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>1</reference_id>
+        <string>Applegate et al., 2003</string>
+        <sentence_id>24557</sentence_id>
+        <char_offset>67</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>3</reference_id>
+        <string>Bouamor et al., 2012</string>
+        <sentence_id>24737</sentence_id>
+        <char_offset>125</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>4</reference_id>
+        <string>Chiang, 2007</string>
+        <sentence_id>24692</sentence_id>
+        <char_offset>73</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>4</reference_id>
+        <string>Chiang, 2007</string>
+        <sentence_id>24732</sentence_id>
+        <char_offset>35</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>5</reference_id>
+        <string>Collins et al., 2005</string>
+        <sentence_id>24497</sentence_id>
+        <char_offset>34</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>5</reference_id>
+        <string>Collins et al., 2005</string>
+        <sentence_id>24729</sentence_id>
+        <char_offset>128</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>6</reference_id>
+        <string>DeNero and Uszkoreit, 2011</string>
+        <sentence_id>24734</sentence_id>
+        <char_offset>71</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>7</reference_id>
+        <string>Galley et al., 2006</string>
+        <sentence_id>24732</sentence_id>
+        <char_offset>99</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>8</reference_id>
+        <string>Ganitkevitch et al., 2012</string>
+        <sentence_id>24700</sentence_id>
+        <char_offset>20</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>9</reference_id>
+        <string>Genzel, 2010</string>
+        <sentence_id>24729</sentence_id>
+        <char_offset>238</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>11</reference_id>
+        <string>Ittycheriah and Roukos, 2005</string>
+        <sentence_id>24664</sentence_id>
+        <char_offset>80</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>12</reference_id>
+        <string>Katz-Brown et al., 2011</string>
+        <sentence_id>24738</sentence_id>
+        <char_offset>128</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>13</reference_id>
+        <string>Koehn et al., 2003</string>
+        <sentence_id>24494</sentence_id>
+        <char_offset>22</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>14</reference_id>
+        <string>Koo and Collins, 2010</string>
+        <sentence_id>24566</sentence_id>
+        <char_offset>95</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>15</reference_id>
+        <string>Lin and Kernighan, 1973</string>
+        <sentence_id>24550</sentence_id>
+        <char_offset>94</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>15</reference_id>
+        <string>Lin and Kernighan, 1973</string>
+        <sentence_id>24557</sentence_id>
+        <char_offset>242</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>16</reference_id>
+        <string>Liu et al., 2006</string>
+        <sentence_id>24732</sentence_id>
+        <char_offset>120</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>17</reference_id>
+        <string>McCarley et al., 2011</string>
+        <sentence_id>24664</sentence_id>
+        <char_offset>165</char_offset>
+      </citation>
+      <citation>
+        <id>21</id>
+        <reference_id>17</reference_id>
+        <string>McCarley et al., 2011</string>
+        <sentence_id>24685</sentence_id>
+        <char_offset>86</char_offset>
+      </citation>
+      <citation>
+        <id>22</id>
+        <reference_id>18</reference_id>
+        <string>Neubig et al., 2012</string>
+        <sentence_id>24734</sentence_id>
+        <char_offset>99</char_offset>
+      </citation>
+      <citation>
+        <id>23</id>
+        <reference_id>19</reference_id>
+        <string>Ramanathan et al., 2009</string>
+        <sentence_id>24497</sentence_id>
+        <char_offset>75</char_offset>
+      </citation>
+      <citation>
+        <id>24</id>
+        <reference_id>19</reference_id>
+        <string>Ramanathan et al., 2009</string>
+        <sentence_id>24729</sentence_id>
+        <char_offset>169</char_offset>
+      </citation>
+      <citation>
+        <id>25</id>
+        <reference_id>20</reference_id>
+        <string>Tillman, 2004</string>
+        <sentence_id>24494</sentence_id>
+        <char_offset>113</char_offset>
+      </citation>
+      <citation>
+        <id>26</id>
+        <reference_id>21</reference_id>
+        <string>Tillmann and Ney, 2003</string>
+        <sentence_id>24683</sentence_id>
+        <char_offset>151</char_offset>
+      </citation>
+      <citation>
+        <id>27</id>
+        <reference_id>22</reference_id>
+        <string>Tromble and Eisner, 2009</string>
+        <sentence_id>24734</sentence_id>
+        <char_offset>18</char_offset>
+      </citation>
+      <citation>
+        <id>28</id>
+        <reference_id>22</reference_id>
+        <string>Tromble and Eisner, 2009</string>
+        <sentence_id>24735</sentence_id>
+        <char_offset>142</char_offset>
+      </citation>
+      <citation>
+        <id>29</id>
+        <reference_id>23</reference_id>
+        <string>Visweswariah et al., 2010</string>
+        <sentence_id>24729</sentence_id>
+        <char_offset>252</char_offset>
+      </citation>
+      <citation>
+        <id>30</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>24498</sentence_id>
+        <char_offset>13</char_offset>
+      </citation>
+      <citation>
+        <id>31</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>24641</sentence_id>
+        <char_offset>37</char_offset>
+      </citation>
+      <citation>
+        <id>32</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>24654</sentence_id>
+        <char_offset>142</char_offset>
+      </citation>
+      <citation>
+        <id>33</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>24541</sentence_id>
+        <char_offset>94</char_offset>
+      </citation>
+      <citation>
+        <id>34</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>24659</sentence_id>
+        <char_offset>194</char_offset>
+      </citation>
+      <citation>
+        <id>35</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>24734</sentence_id>
+        <char_offset>44</char_offset>
+      </citation>
+      <citation>
+        <id>36</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>24735</sentence_id>
+        <char_offset>74</char_offset>
+      </citation>
+      <citation>
+        <id>37</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al. (2011)</string>
+        <sentence_id>24500</sentence_id>
+        <char_offset>40</char_offset>
+      </citation>
+      <citation>
+        <id>38</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al. (2011)</string>
+        <sentence_id>24643</sentence_id>
+        <char_offset>23</char_offset>
+      </citation>
+      <citation>
+        <id>39</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al. (2011)</string>
+        <sentence_id>24550</sentence_id>
+        <char_offset>20</char_offset>
+      </citation>
+      <citation>
+        <id>40</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al. (2011)</string>
+        <sentence_id>24669</sentence_id>
+        <char_offset>10</char_offset>
+      </citation>
+      <citation>
+        <id>41</id>
+        <reference_id>25</reference_id>
+        <string>Wang et al., 2007</string>
+        <sentence_id>24497</sentence_id>
+        <char_offset>56</char_offset>
+      </citation>
+      <citation>
+        <id>42</id>
+        <reference_id>25</reference_id>
+        <string>Wang et al., 2007</string>
+        <sentence_id>24729</sentence_id>
+        <char_offset>150</char_offset>
+      </citation>
+      <citation>
+        <id>43</id>
+        <reference_id>26</reference_id>
+        <string>Xia and McCord, 2004</string>
+        <sentence_id>24729</sentence_id>
+        <char_offset>216</char_offset>
+      </citation>
+      <citation>
+        <id>44</id>
+        <reference_id>27</reference_id>
+        <string>Yamada and Knight, 2002</string>
+        <sentence_id>24732</sentence_id>
+        <char_offset>74</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

@@ -1,0 +1,2384 @@
+<document>
+  <filename>P09-1036</filename>
+  <authors/>
+  <title>None</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>1 Introduction</title>
+        <text>The phrase-based approach is widely adopted in statistical machine translation (SMT). It segments a source sentence into a sequence of phrases, then translates and reorder these phrases in the target. In such a process, original phrase-based decoding (Koehn et al., 2003) does not take advantage of any linguistic analysis, which, however, is broadly used in rule-based approaches. Since it is not linguistically motivated, original phrasebased decoding might produce ungrammatical or even wrong translations. Consider the following Chinese fragment with its parse tree:
+Src: [&#65533; [[7&#65533; 11&#65533;] NP [&#65533;&#65533; [&#65533; [&#65533;&#65533; &#65533;] NP ] PP ] VP ] IP ] VP
+Ref: established July 11 as Sailing Festival day
+Output: [to/&#65533; [&#12296;[set up/&#65533; &#65533; [for/&#65533; navigation/&#65533;&#65533;]] on July 11/7&#65533;11&#65533;&#12297; knots/&#65533;]] The output is generated from a phrase-based system which does not involve any syntactic analysis. Here we use &#8220;[]&#8221; (straight orientation) and &#8220;&#12296;&#12297;&#8221; (inverted orientation) to denote the common structure of the source fragment and its translation found by the decoder. We can observe that the decoder inadequately breaks up the second NP phrase and translates the two words &#8220;&#65533;&#65533;&#8221; and &#8220;&#65533;&#8221; separately. However, the parse tree of the source fragment constrains the phrase &#8220;&#65533;&#65533; &#65533;&#8221; to be translated as a unit.
+Without considering syntactic constraints from the parse tree, the decoder makes wrong decisions not only on phrase movement but also on the lexical selection for the multi-meaning word &#8220;&#65533;&#8221; 1 . To avert such errors, the decoder can fully respect linguistic structures by only allowing syntactic constituent translations and reorderings. This, unfortunately, significantly jeopardizes performance (Koehn et al., 2003; Xiong et al., 2008) because by integrating syntactic constraint into decoding as a hard constraint, it simply prohibits any other useful non-syntactic translations which violate constituent boundaries. To better leverage syntactic constraint yet still allow non-syntactic translations, Chiang (2005) introduces a count for each hypothesis and accumulates it whenever the hypothesis exactly matches syntactic boundaries on the source side. On the contrary, Marton and Resnik (2008) and Cherry (2008) accumulate a count whenever hypotheses violate constituent boundaries. These constituent matching/violation counts are used as a feature in the decoder&#8217;s log-linear model and their weights are tuned via minimal error rate training (MERT) (Och, 2003). In this way, syntactic constraint is integrated into decoding as a soft constraint to enable the decoder to reward hypotheses that respect syntactic analyses or to pe-
+1 This word can be translated into &#8220;section&#8221;, &#8220;festival&#8221;,
+and &#8220;knot&#8221; in different contexts.
+nalize hypotheses that violate syntactic structures.
+Although experiments show that this constituent matching/violation counting feature achieves significant improvements on various language-pairs, one issue is that matching syntactic analysis can not always guarantee a good translation, and violating syntactic structure does not always induce a bad translation. Marton and Resnik (2008) find that some constituency types favor matching the source parse while others encourage violations. Therefore it is necessary to integrate more syntactic constraints into phrase translation, not just the constraint of constituent matching/violation.
+The other issue is that during decoding we are more concerned with the question of phrase cohesion, i.e. whether the current phrase can be translated as a unit or not within particular syntactic contexts (Fox, 2002) 2 , than that of constituent matching/violation. Phrase cohesion is one of the main reasons that we introduce syntactic constraints (Cherry, 2008). If a source phrase remains contiguous after translation, we refer this type of phrase bracketable, otherwise unbracketable. It is more desirable to translate a bracketable phrase than an unbracketable one.
+In this paper, we propose a syntax-driven bracketing (SDB) model to predict whether a phrase (a sequence of contiguous words) is bracketable or not using rich syntactic constraints. We parse the source language sentences in the word-aligned training corpus. According to the word alignments, we define bracketable and unbracketable instances. For each of these instances, we automatically extract relevant syntactic features from the source parse tree as bracketing evidences. Then we tune the weights of these features using a maximum entropy (ME) trainer. In this way, we build two bracketing models: 1) a unary SDB model (UniSDB) which predicts whether an independent phrase is bracketable or not; and 2) a binary SDB model(BiSDB) which predicts whether two neighboring phrases are bracketable. Similar to previous methods, our SDB model is integrated into the decoder&#8217;s log-linear model as a feature so that we can inherit the idea of soft constraints.
+In contrast to the constituent matching/violation counting (CMVC) (Chiang, 2005; Marton and Resnik, 2008; Cherry, 2008), our SDB model has
+2 Here we expand the definition of phrase to include both
+syntactic and non-syntactic phrases.
+the following advantages
+&#8226; The SDB model automatically learns syntactic constraints from training data while the CMVC uses manually defined syntactic constraints: constituency matching/violation. In our SDB model, each learned syntactic feature from bracketing instances can be considered as a syntactic constraint. Therefore we can use thousands of syntactic constraints to guide phrase translation.
+&#8226; The SDB model maintains and protects the strength of the phrase-based approach in a better way than the CMVC does. It is able to reward non-syntactic translations by assigning an adequate probability to them if these translations are appropriate to particular syntactic contexts on the source side, rather than always punish them.
+We test our SDB model against the baseline which doest not use any syntactic constraints on Chinese-to-English translation. To compare with the CMVC, we also conduct experiments using (Marton and Resnik, 2008)&#8217;s XP+. The XP+ accumulates a count for each hypothesis whenever it violates the boundaries of a constituent with a label from {NP, VP, CP, IP, PP, ADVP, QP, LCP, DNP}. The XP+ is the best feature among all features that Marton and Resnik use for Chinese-to- English translation. Our experimental results display that our SDB model achieves a substantial improvement over the baseline and significantly outperforms XP+ according to the BLEU metric (Papineni et al., 2002). In addition, our analysis shows further evidences of the performance gain from a different perspective than that of BLEU.
+The paper proceeds as follows. In section 2 we describe how to learn bracketing instances from a training corpus. In section 3 we elaborate the syntax-driven bracketing model, including feature generation and the integration of the SDB model into phrase-based SMT. In section 4 and 5, we present our experiments and analysis. And we finally conclude in section 6.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The phrase-based approach is widely adopted in statistical machine translation (SMT).</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>It segments a source sentence into a sequence of phrases, then translates and reorder these phrases in the target.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In such a process, original phrase-based decoding (Koehn et al., 2003) does not take advantage of any linguistic analysis, which, however, is broadly used in rule-based approaches.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since it is not linguistically motivated, original phrasebased decoding might produce ungrammatical or even wrong translations.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Consider the following Chinese fragment with its parse tree:</text>
+              <doc_id>4</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Src: [&#65533; [[7&#65533; 11&#65533;] NP [&#65533;&#65533; [&#65533; [&#65533;&#65533; &#65533;] NP ] PP ] VP ] IP ] VP</text>
+              <doc_id>5</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Ref: established July 11 as Sailing Festival day</text>
+              <doc_id>6</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Output: [to/&#65533; [&#12296;[set up/&#65533; &#65533; [for/&#65533; navigation/&#65533;&#65533;]] on July 11/7&#65533;11&#65533;&#12297; knots/&#65533;]] The output is generated from a phrase-based system which does not involve any syntactic analysis.</text>
+              <doc_id>7</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Here we use &#8220;[]&#8221; (straight orientation) and &#8220;&#12296;&#12297;&#8221; (inverted orientation) to denote the common structure of the source fragment and its translation found by the decoder.</text>
+              <doc_id>8</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We can observe that the decoder inadequately breaks up the second NP phrase and translates the two words &#8220;&#65533;&#65533;&#8221; and &#8220;&#65533;&#8221; separately.</text>
+              <doc_id>9</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, the parse tree of the source fragment constrains the phrase &#8220;&#65533;&#65533; &#65533;&#8221; to be translated as a unit.</text>
+              <doc_id>10</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Without considering syntactic constraints from the parse tree, the decoder makes wrong decisions not only on phrase movement but also on the lexical selection for the multi-meaning word &#8220;&#65533;&#8221; 1 .</text>
+              <doc_id>11</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>To avert such errors, the decoder can fully respect linguistic structures by only allowing syntactic constituent translations and reorderings.</text>
+              <doc_id>12</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This, unfortunately, significantly jeopardizes performance (Koehn et al., 2003; Xiong et al., 2008) because by integrating syntactic constraint into decoding as a hard constraint, it simply prohibits any other useful non-syntactic translations which violate constituent boundaries.</text>
+              <doc_id>13</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>To better leverage syntactic constraint yet still allow non-syntactic translations, Chiang (2005) introduces a count for each hypothesis and accumulates it whenever the hypothesis exactly matches syntactic boundaries on the source side.</text>
+              <doc_id>14</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>On the contrary, Marton and Resnik (2008) and Cherry (2008) accumulate a count whenever hypotheses violate constituent boundaries.</text>
+              <doc_id>15</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>These constituent matching/violation counts are used as a feature in the decoder&#8217;s log-linear model and their weights are tuned via minimal error rate training (MERT) (Och, 2003).</text>
+              <doc_id>16</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>In this way, syntactic constraint is integrated into decoding as a soft constraint to enable the decoder to reward hypotheses that respect syntactic analyses or to pe-</text>
+              <doc_id>17</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 This word can be translated into &#8220;section&#8221;, &#8220;festival&#8221;,</text>
+              <doc_id>18</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>and &#8220;knot&#8221; in different contexts.</text>
+              <doc_id>19</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>nalize hypotheses that violate syntactic structures.</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Although experiments show that this constituent matching/violation counting feature achieves significant improvements on various language-pairs, one issue is that matching syntactic analysis can not always guarantee a good translation, and violating syntactic structure does not always induce a bad translation.</text>
+              <doc_id>21</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Marton and Resnik (2008) find that some constituency types favor matching the source parse while others encourage violations.</text>
+              <doc_id>22</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Therefore it is necessary to integrate more syntactic constraints into phrase translation, not just the constraint of constituent matching/violation.</text>
+              <doc_id>23</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The other issue is that during decoding we are more concerned with the question of phrase cohesion, i.e. whether the current phrase can be translated as a unit or not within particular syntactic contexts (Fox, 2002) 2 , than that of constituent matching/violation.</text>
+              <doc_id>24</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Phrase cohesion is one of the main reasons that we introduce syntactic constraints (Cherry, 2008).</text>
+              <doc_id>25</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>If a source phrase remains contiguous after translation, we refer this type of phrase bracketable, otherwise unbracketable.</text>
+              <doc_id>26</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is more desirable to translate a bracketable phrase than an unbracketable one.</text>
+              <doc_id>27</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we propose a syntax-driven bracketing (SDB) model to predict whether a phrase (a sequence of contiguous words) is bracketable or not using rich syntactic constraints.</text>
+              <doc_id>28</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We parse the source language sentences in the word-aligned training corpus.</text>
+              <doc_id>29</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>According to the word alignments, we define bracketable and unbracketable instances.</text>
+              <doc_id>30</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For each of these instances, we automatically extract relevant syntactic features from the source parse tree as bracketing evidences.</text>
+              <doc_id>31</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Then we tune the weights of these features using a maximum entropy (ME) trainer.</text>
+              <doc_id>32</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In this way, we build two bracketing models: 1) a unary SDB model (UniSDB) which predicts whether an independent phrase is bracketable or not; and 2) a binary SDB model(BiSDB) which predicts whether two neighboring phrases are bracketable.</text>
+              <doc_id>33</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Similar to previous methods, our SDB model is integrated into the decoder&#8217;s log-linear model as a feature so that we can inherit the idea of soft constraints.</text>
+              <doc_id>34</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In contrast to the constituent matching/violation counting (CMVC) (Chiang, 2005; Marton and Resnik, 2008; Cherry, 2008), our SDB model has</text>
+              <doc_id>35</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2 Here we expand the definition of phrase to include both</text>
+              <doc_id>36</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>syntactic and non-syntactic phrases.</text>
+              <doc_id>37</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>the following advantages</text>
+              <doc_id>38</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; The SDB model automatically learns syntactic constraints from training data while the CMVC uses manually defined syntactic constraints: constituency matching/violation.</text>
+              <doc_id>39</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In our SDB model, each learned syntactic feature from bracketing instances can be considered as a syntactic constraint.</text>
+              <doc_id>40</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Therefore we can use thousands of syntactic constraints to guide phrase translation.</text>
+              <doc_id>41</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; The SDB model maintains and protects the strength of the phrase-based approach in a better way than the CMVC does.</text>
+              <doc_id>42</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is able to reward non-syntactic translations by assigning an adequate probability to them if these translations are appropriate to particular syntactic contexts on the source side, rather than always punish them.</text>
+              <doc_id>43</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We test our SDB model against the baseline which doest not use any syntactic constraints on Chinese-to-English translation.</text>
+              <doc_id>44</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>To compare with the CMVC, we also conduct experiments using (Marton and Resnik, 2008)&#8217;s XP+.</text>
+              <doc_id>45</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The XP+ accumulates a count for each hypothesis whenever it violates the boundaries of a constituent with a label from {NP, VP, CP, IP, PP, ADVP, QP, LCP, DNP}.</text>
+              <doc_id>46</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The XP+ is the best feature among all features that Marton and Resnik use for Chinese-to- English translation.</text>
+              <doc_id>47</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our experimental results display that our SDB model achieves a substantial improvement over the baseline and significantly outperforms XP+ according to the BLEU metric (Papineni et al., 2002).</text>
+              <doc_id>48</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>In addition, our analysis shows further evidences of the performance gain from a different perspective than that of BLEU.</text>
+              <doc_id>49</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The paper proceeds as follows.</text>
+              <doc_id>50</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In section 2 we describe how to learn bracketing instances from a training corpus.</text>
+              <doc_id>51</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In section 3 we elaborate the syntax-driven bracketing model, including feature generation and the integration of the SDB model into phrase-based SMT.</text>
+              <doc_id>52</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In section 4 and 5, we present our experiments and analysis.</text>
+              <doc_id>53</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>And we finally conclude in section 6.</text>
+              <doc_id>54</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>2 The Acquisition of Bracketing Instances</title>
+        <text>In this section, we formally define the bracketing instance, comprising two types namely binary bracketing instance and unary bracketing instance.
+We present an algorithm to automatically extract these bracketing instances from word-aligned bilingual corpus where the source language sentences are parsed.
+Let c and e be the source sentence and the target sentence, W be the word alignment between them, T be the parse tree of c. We define a binary bracketing instance as a tuple &#12296;b, &#964;(c i..j ), &#964;(c j+1..k ), &#964;(c i..k )&#12297; where b &#8712; {bracketable, unbracketable}, c i..j and c j+1..k are two neighboring source phrases and &#964;(T, s) (&#964;(s) for short) is a subtree function which returns the minimal subtree covering the source sequence s from the source parse tree T . Note that &#964;(c i..k ) includes both &#964;(c i..j ) and &#964;(c j+1..k ). For the two neighboring source phrases, the following conditions are satisfied:
+&#8707;e u..v , e p..q &#8712; e s.t.
+&#8704;(m, n) &#8712; W, i &#8804; m &#8804; j &#8596; u &#8804; n &#8804; v (1)
+&#8704;(m, n) &#8712; W, j + 1 &#8804; m &#8804; k &#8596; p &#8804; n &#8804; q (2)
+The above (1) means that there exists a target phrase e u..v aligned to c i..j and (2) denotes a target phrase e p..q aligned to c j+1..k . If e u..v and e p..q are neighboring to each other or all words between the two phrases are aligned to null, we set b = bracketable, otherwise b = unbracketable. From a binary bracketing instance, we derive a unary bracketing instance &#12296;b, &#964;(c i..k )&#12297;, ignoring the subtrees &#964;(c i..j ) and &#964;(c j+1..k ).
+Let n be the number of words of c. If we extract all potential bracketing instances, there will be o(n 2 ) unary instances and o(n 3 ) binary instances. To keep the number of bracketing instances tractable, we only record 4 representative bracketing instances for each index j: 1) the bracketable instance with the minimal &#964;(c i..k ), 2) the bracketable instance with the maximal &#964;(c i..k ), 3) the unbracketable instance with the minimal &#964;(c i..k ), and 4) the unbracketable instance with the maximal &#964;(c i..k ).
+Figure 1 shows the algorithm to extract bracketing instances. Line 3-11 find all potential bracketing instances for each (i, j, k) &#8712; c but only keep 4 bracketing instances for each index j: two minimal and two maximal instances. This algorithm learns binary bracketing instances, from which we can derive unary bracketing instances.
+1: Input: sentence pair (c, e), the parse tree T of c and the
+word alignment W between c and e 2: R := &#8709; 3: for each (i, j, k) &#8712; c do 4: if There exist a target phrase e u..v aligned to c i..j and
+e p..q aligned to c j+1..k then 5: Get &#964;(c i..j), &#964;(c j+1..k ), and &#964;(c i..k ) 6: Determine b according to the relationship between e u..v and e p..q 7: if &#964;(c i..k ) is currently maximal or minimal then 8: Update bracketing instances for index j 9: end if 10: end if 11: end for 12: for each j &#8712; c do 13: R := R &#8746; {bracketing instances from j} 14: end for 15: Output: bracketing instances R</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this section, we formally define the bracketing instance, comprising two types namely binary bracketing instance and unary bracketing instance.</text>
+              <doc_id>55</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We present an algorithm to automatically extract these bracketing instances from word-aligned bilingual corpus where the source language sentences are parsed.</text>
+              <doc_id>56</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Let c and e be the source sentence and the target sentence, W be the word alignment between them, T be the parse tree of c.</text>
+              <doc_id>57</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We define a binary bracketing instance as a tuple &#12296;b, &#964;(c i..j ), &#964;(c j+1..k ), &#964;(c i..k )&#12297; where b &#8712; {bracketable, unbracketable}, c i..j and c j+1..k are two neighboring source phrases and &#964;(T, s) (&#964;(s) for short) is a subtree function which returns the minimal subtree covering the source sequence s from the source parse tree T .</text>
+              <doc_id>58</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Note that &#964;(c i..k ) includes both &#964;(c i..j ) and &#964;(c j+1..k ).</text>
+              <doc_id>59</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For the two neighboring source phrases, the following conditions are satisfied:</text>
+              <doc_id>60</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8707;e u..v , e p..q &#8712; e s.t.</text>
+              <doc_id>61</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8704;(m, n) &#8712; W, i &#8804; m &#8804; j &#8596; u &#8804; n &#8804; v (1)</text>
+              <doc_id>62</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8704;(m, n) &#8712; W, j + 1 &#8804; m &#8804; k &#8596; p &#8804; n &#8804; q (2)</text>
+              <doc_id>63</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The above (1) means that there exists a target phrase e u..v aligned to c i..j and (2) denotes a target phrase e p..q aligned to c j+1..k .</text>
+              <doc_id>64</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>If e u..v and e p..q are neighboring to each other or all words between the two phrases are aligned to null, we set b = bracketable, otherwise b = unbracketable.</text>
+              <doc_id>65</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>From a binary bracketing instance, we derive a unary bracketing instance &#12296;b, &#964;(c i..k )&#12297;, ignoring the subtrees &#964;(c i..j ) and &#964;(c j+1..k ).</text>
+              <doc_id>66</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Let n be the number of words of c.</text>
+              <doc_id>67</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>If we extract all potential bracketing instances, there will be o(n 2 ) unary instances and o(n 3 ) binary instances.</text>
+              <doc_id>68</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>To keep the number of bracketing instances tractable, we only record 4 representative bracketing instances for each index j: 1) the bracketable instance with the minimal &#964;(c i..k ), 2) the bracketable instance with the maximal &#964;(c i..k ), 3) the unbracketable instance with the minimal &#964;(c i..k ), and 4) the unbracketable instance with the maximal &#964;(c i..k ).</text>
+              <doc_id>69</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Figure 1 shows the algorithm to extract bracketing instances.</text>
+              <doc_id>70</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Line 3-11 find all potential bracketing instances for each (i, j, k) &#8712; c but only keep 4 bracketing instances for each index j: two minimal and two maximal instances.</text>
+              <doc_id>71</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This algorithm learns binary bracketing instances, from which we can derive unary bracketing instances.</text>
+              <doc_id>72</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1: Input: sentence pair (c, e), the parse tree T of c and the</text>
+              <doc_id>73</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>word alignment W between c and e 2: R := &#8709; 3: for each (i, j, k) &#8712; c do 4: if There exist a target phrase e u..v aligned to c i..j and</text>
+              <doc_id>74</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>e p..q aligned to c j+1..k then 5: Get &#964;(c i..j), &#964;(c j+1..k ), and &#964;(c i..k ) 6: Determine b according to the relationship between e u..v and e p..q 7: if &#964;(c i..k ) is currently maximal or minimal then 8: Update bracketing instances for index j 9: end if 10: end if 11: end for 12: for each j &#8712; c do 13: R := R &#8746; {bracketing instances from j} 14: end for 15: Output: bracketing instances R</text>
+              <doc_id>75</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>3 The Syntax-Driven Bracketing Model</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>76</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 The Model</title>
+            <text>Our interest is to automatically detect phrase bracketing using rich contextual information. We consider this task as a binary-class classification problem: whether the current source phrase s is bracketable (b) within particular syntactic contexts (&#964;(s)). If two neighboring sub-phrases s 1 and s 2 are given, we can use more inner syntactic contexts to complete this binary classification task.
+We construct the syntax-driven bracketing model within the maximum entropy framework. A unary SDB model is defined as:
+P UniSDB (b|&#964;(s), T ) =
+exp( &#8721; i &#952; ih i (b, &#964;(s), T ) &#8721;
+b exp(&#8721; i &#952; ih i (b, &#964;(s), T )
+(3)
+where h i &#8712; {0, 1} is a binary feature function which we will describe in the next subsection, and &#952; i is the weight of h i . Similarly, a binary SDB model is defined as:
+P BiSDB (b|&#964;(s 1 ), &#964;(s 2 ), &#964;(s), T ) =
+exp( &#8721; i &#952; ih i (b, &#964;(s 1 ), &#964;(s 2 ), &#964;(s), T ) &#8721;
+b exp(&#8721; i &#952; ih i (b, &#964;(s 1 ), &#964;(s 2 ), &#964;(s), T )
+(4)
+The most important advantage of ME-based SDB model is its capacity of incorporating more fine-grained contextual features besides the binary feature that detects constituent boundary violation or matching. By employing these features, we can investigate the value of various syntactic constraints in phrase translation.
+IP
+(a) (b) (c)
+VP
+NP
+NN
+jingfang police
+ADVP
+AD
+yi
+s 1
+VV
+fengsuo block
+s
+s 2
+VP
+AS
+le
+NN
+baozha bomb NP
+NN
+xianchang scene</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Our interest is to automatically detect phrase bracketing using rich contextual information.</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We consider this task as a binary-class classification problem: whether the current source phrase s is bracketable (b) within particular syntactic contexts (&#964;(s)).</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If two neighboring sub-phrases s 1 and s 2 are given, we can use more inner syntactic contexts to complete this binary classification task.</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We construct the syntax-driven bracketing model within the maximum entropy framework.</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>A unary SDB model is defined as:</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>P UniSDB (b|&#964;(s), T ) =</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>exp( &#8721; i &#952; ih i (b, &#964;(s), T ) &#8721;</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>b exp(&#8721; i &#952; ih i (b, &#964;(s), T )</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(3)</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where h i &#8712; {0, 1} is a binary feature function which we will describe in the next subsection, and &#952; i is the weight of h i .</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Similarly, a binary SDB model is defined as:</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>P BiSDB (b|&#964;(s 1 ), &#964;(s 2 ), &#964;(s), T ) =</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>exp( &#8721; i &#952; ih i (b, &#964;(s 1 ), &#964;(s 2 ), &#964;(s), T ) &#8721;</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>b exp(&#8721; i &#952; ih i (b, &#964;(s 1 ), &#964;(s 2 ), &#964;(s), T )</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(4)</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The most important advantage of ME-based SDB model is its capacity of incorporating more fine-grained contextual features besides the binary feature that detects constituent boundary violation or matching.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>By employing these features, we can investigate the value of various syntactic constraints in phrase translation.</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>IP</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(a) (b) (c)</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VP</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NP</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NN</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>jingfang police</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>ADVP</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>AD</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>yi</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>s 1</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VV</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>fengsuo block</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>s</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>s 2</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>VP</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>AS</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>le</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NN</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>baozha bomb NP</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>NN</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>xianchang scene</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Syntax-Driven Features</title>
+            <text>Let s be the source phrase in question, s 1 and s 2 be the two neighboring sub-phrases. &#963;(.) is the root node of &#964;(.). The SDB model exploits various syntactic features as follows.
+&#8226; Rule Features (RF) We use the CFG rules of &#963;(s), &#963;(s 1 ) and &#963;(s 2 ) as features. These features capture syntactic &#8220;horizontal context&#8221; which demonstrates the expansion trend of the source phrase s, s 1 and s 2 on the parse tree.
+In figure 2, the CFG rule &#8220;ADVP&#8594;AD&#8221;, &#8220;VP&#8594;VV AS NP&#8221;, and &#8220;VP&#8594;ADVP VP&#8221; are used as features for s 1 , s 2 and s respectively.
+&#8226; Path Features (PF) The tree path &#963;(s 1 )..&#963;(s) connecting &#963;(s 1 ) and &#963;(s), &#963;(s 2 )..&#963;(s) connecting &#963;(s 2 ) and &#963;(s), and &#963;(s)..&#961; connecting &#963;(s) and the root node &#961; of the whole parse tree are used as features. These features provide syntactic &#8220;vertical context&#8221; which shows the generation history of the source phrases on the parse tree.
+In figure 2, the path features are &#8220;ADVP VP&#8221;, &#8220;VP VP&#8221; and &#8220;VP IP&#8221; for s 1 , s 2 and s respectively.
+&#8226; Constituent Boundary Matching Features (CBMF) These features are to capture the relationship between a source phrase s and &#964;(s) or &#964;(s)&#8217;s subtrees. There are three different scenarios 3 : 1) exact match, where s exactly matches the boundaries of &#964;(s) (figure 3(a)), 2) inside match, where s exactly spans a sequence of &#964;(s)&#8217;s subtrees (figure 3(b)), and 3) crossing, where s crosses the boundaries of one or two subtrees of &#964;(s) (figure 3(c)). In the case of 1) or 2), we set the value of this feature to &#963;(s)-M or &#963;(s)-I respectively. When s crosses the boundaries of the subconstituent &#603; l on s&#8217;s left, we set the value to &#963;(&#603; l )-LC; If s crosses the boundaries of the sub-constituent &#603; r on s&#8217;s right, we set the value to &#963;(&#603; r )-RC; If both, we set the value to &#963;(&#603; l )-LC-&#963;(&#603; r )-RC.
+Let&#8217;s revisit the Figure 2. The source phrase s 1 exactly matches the constituent ADVP, therefore CBMF is &#8220;ADVP-M&#8221;. The source phrase s 2 exactly spans two sub-trees VV and AS of VP, therefore CBMF is &#8220;VP-I&#8221;. Finally, the source phrase s cross boundaries of the lower VP on the right, therefore CBMF is &#8220;VP-RC&#8221;.
+3.3 The Integration of the SDB Model into Phrase-Based SMT
+We integrate the SDB model into phrase-based SMT to help decoder perform syntax-driven phrase translation. In particular, we add a
+3 The three scenarios that we define here are similar to
+those in (L&#252; et al., 2002).
+new feature into the log-linear translation model: P SDB (b|T, &#964;(.)). This feature is computed by the SDB model described in equation (3) or equation (4), which estimates a probability that a source span is to be translated as a unit within particular syntactic contexts. If a source span can be translated as a unit, the feature will give a higher probability even though this span violates boundaries of a constituent. Otherwise, a lower probability is given. Through this additional feature, we want the decoder to prefer hypotheses that translate source spans which can be translated as a unit, and avoids translating those which are discontinuous after translation. The weight of this new feature is tuned via MERT, which measures the extent to which this feature should be trusted.
+In this paper, we implement the SDB model in a state-of-the-art phrase-based system which adapts a binary bracketing transduction grammar (BTG) (Wu, 1997) to phrase translation and reordering, described in (Xiong et al., 2006). Whenever a BTG merging rule (s &#8594; [s 1 s 2 ] or s &#8594; &#12296;s 1 s 2 &#12297;) is used, the SDB model gives a probability to the span s covered by the rule, which estimates the extent to which the span is bracketable. For the unary SDB model, we only consider the features from &#964;(s). For the binary SDB model, we use all features from &#964;(s 1 ), &#964;(s 2 ) and &#964;(s) since the binary SDB model is naturally suitable to the binary BTG rules. The SDB model, however, is not only limited to phrase-based SMT using BTG rules. Since it is applied on a source span each time, any other hierarchical phrase-based or syntax-based system that translates source spans recursively or linearly, can adopt the SDB model.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Let s be the source phrase in question, s 1 and s 2 be the two neighboring sub-phrases.</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#963;(.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>) is the root node of &#964;(.).</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The SDB model exploits various syntactic features as follows.</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; Rule Features (RF) We use the CFG rules of &#963;(s), &#963;(s 1 ) and &#963;(s 2 ) as features.</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These features capture syntactic &#8220;horizontal context&#8221; which demonstrates the expansion trend of the source phrase s, s 1 and s 2 on the parse tree.</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In figure 2, the CFG rule &#8220;ADVP&#8594;AD&#8221;, &#8220;VP&#8594;VV AS NP&#8221;, and &#8220;VP&#8594;ADVP VP&#8221; are used as features for s 1 , s 2 and s respectively.</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; Path Features (PF) The tree path &#963;(s 1 )..&#963;(s) connecting &#963;(s 1 ) and &#963;(s), &#963;(s 2 )..&#963;(s) connecting &#963;(s 2 ) and &#963;(s), and &#963;(s)..&#961; connecting &#963;(s) and the root node &#961; of the whole parse tree are used as features.</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These features provide syntactic &#8220;vertical context&#8221; which shows the generation history of the source phrases on the parse tree.</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In figure 2, the path features are &#8220;ADVP VP&#8221;, &#8220;VP VP&#8221; and &#8220;VP IP&#8221; for s 1 , s 2 and s respectively.</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; Constituent Boundary Matching Features (CBMF) These features are to capture the relationship between a source phrase s and &#964;(s) or &#964;(s)&#8217;s subtrees.</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>There are three different scenarios 3 : 1) exact match, where s exactly matches the boundaries of &#964;(s) (figure 3(a)), 2) inside match, where s exactly spans a sequence of &#964;(s)&#8217;s subtrees (figure 3(b)), and 3) crossing, where s crosses the boundaries of one or two subtrees of &#964;(s) (figure 3(c)).</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In the case of 1) or 2), we set the value of this feature to &#963;(s)-M or &#963;(s)-I respectively.</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When s crosses the boundaries of the subconstituent &#603; l on s&#8217;s left, we set the value to &#963;(&#603; l )-LC; If s crosses the boundaries of the sub-constituent &#603; r on s&#8217;s right, we set the value to &#963;(&#603; r )-RC; If both, we set the value to &#963;(&#603; l )-LC-&#963;(&#603; r )-RC.</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Let&#8217;s revisit the Figure 2.</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The source phrase s 1 exactly matches the constituent ADVP, therefore CBMF is &#8220;ADVP-M&#8221;.</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The source phrase s 2 exactly spans two sub-trees VV and AS of VP, therefore CBMF is &#8220;VP-I&#8221;.</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Finally, the source phrase s cross boundaries of the lower VP on the right, therefore CBMF is &#8220;VP-RC&#8221;.</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3.3 The Integration of the SDB Model into Phrase-Based SMT</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We integrate the SDB model into phrase-based SMT to help decoder perform syntax-driven phrase translation.</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In particular, we add a</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 The three scenarios that we define here are similar to</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>those in (L&#252; et al., 2002).</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>new feature into the log-linear translation model: P SDB (b|T, &#964;(.)).</text>
+                  <doc_id>138</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This feature is computed by the SDB model described in equation (3) or equation (4), which estimates a probability that a source span is to be translated as a unit within particular syntactic contexts.</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If a source span can be translated as a unit, the feature will give a higher probability even though this span violates boundaries of a constituent.</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Otherwise, a lower probability is given.</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Through this additional feature, we want the decoder to prefer hypotheses that translate source spans which can be translated as a unit, and avoids translating those which are discontinuous after translation.</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The weight of this new feature is tuned via MERT, which measures the extent to which this feature should be trusted.</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In this paper, we implement the SDB model in a state-of-the-art phrase-based system which adapts a binary bracketing transduction grammar (BTG) (Wu, 1997) to phrase translation and reordering, described in (Xiong et al., 2006).</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Whenever a BTG merging rule (s &#8594; [s 1 s 2 ] or s &#8594; &#12296;s 1 s 2 &#12297;) is used, the SDB model gives a probability to the span s covered by the rule, which estimates the extent to which the span is bracketable.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the unary SDB model, we only consider the features from &#964;(s).</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the binary SDB model, we use all features from &#964;(s 1 ), &#964;(s 2 ) and &#964;(s) since the binary SDB model is naturally suitable to the binary BTG rules.</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The SDB model, however, is not only limited to phrase-based SMT using BTG rules.</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since it is applied on a source span each time, any other hierarchical phrase-based or syntax-based system that translates source spans recursively or linearly, can adopt the SDB model.</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>4 Experiments</title>
+        <text>We carried out the MT experiments on Chineseto-English translation, using (Xiong et al., 2006)&#8217;s system as our baseline system. We modified the baseline decoder to incorporate our SDB models as descried in section 3.3. In order to compare with Marton and Resnik&#8217;s approach, we also adapted the baseline decoder to their XP+ feature.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We carried out the MT experiments on Chineseto-English translation, using (Xiong et al., 2006)&#8217;s system as our baseline system.</text>
+              <doc_id>150</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We modified the baseline decoder to incorporate our SDB models as descried in section 3.3.</text>
+              <doc_id>151</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In order to compare with Marton and Resnik&#8217;s approach, we also adapted the baseline decoder to their XP+ feature.</text>
+              <doc_id>152</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 Experimental Setup</title>
+            <text>In order to obtain syntactic trees for SDB models and XP+, we parsed source sentences using a lexicalized PCFG parser (Xiong et al., 2005). The parser was trained on the Penn Chinese Treebank with an F1 score of 79.4%.
+All translation models were trained on the FBIS corpus. We removed 15,250 sentences, for which the Chinese parser failed to produce syntactic parse trees. To obtain word-level alignments, we ran GIZA++ (Och and Ney, 2000) on the remaining corpus in both directions, and applied the &#8220;grow-diag-final&#8221; refinement rule (Koehn et al., 2005) to produce the final many-to-many word alignments. We built our four-gram language model using Xinhua section of the English Gigaword corpus (181.1M words) with the SRILM toolkit (Stolcke, 2002).
+For the efficiency of MERT, we built our development set (580 sentences) using sentences not exceeding 50 characters from the NIST MT-02 set. We evaluated all models on the NIST MT-05 set using case-sensitive BLEU-4. Statistical significance in BLEU score differences was tested by paired bootstrap re-sampling (Koehn, 2004).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In order to obtain syntactic trees for SDB models and XP+, we parsed source sentences using a lexicalized PCFG parser (Xiong et al., 2005).</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The parser was trained on the Penn Chinese Treebank with an F1 score of 79.4%.</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>All translation models were trained on the FBIS corpus.</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We removed 15,250 sentences, for which the Chinese parser failed to produce syntactic parse trees.</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To obtain word-level alignments, we ran GIZA++ (Och and Ney, 2000) on the remaining corpus in both directions, and applied the &#8220;grow-diag-final&#8221; refinement rule (Koehn et al., 2005) to produce the final many-to-many word alignments.</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We built our four-gram language model using Xinhua section of the English Gigaword corpus (181.1M words) with the SRILM toolkit (Stolcke, 2002).</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For the efficiency of MERT, we built our development set (580 sentences) using sentences not exceeding 50 characters from the NIST MT-02 set.</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We evaluated all models on the NIST MT-05 set using case-sensitive BLEU-4.</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Statistical significance in BLEU score differences was tested by paired bootstrap re-sampling (Koehn, 2004).</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 SDB Training</title>
+            <text>We extracted 6.55M bracketing instances from our training corpus using the algorithm shown in figure 1, which contains 4.67M bracketable instances and 1.89M unbracketable instances. From extracted bracketing instances we generated syntaxdriven features, which include 73,480 rule features, 153,614 path features and 336 constituent boundary matching features. To tune weights of features, we ran the MaxEnt toolkit (Zhang, 2004) with iteration number being set to 100 and Gaussian prior to 1 to avoid overfitting.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We extracted 6.55M bracketing instances from our training corpus using the algorithm shown in figure 1, which contains 4.67M bracketable instances and 1.89M unbracketable instances.</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>From extracted bracketing instances we generated syntaxdriven features, which include 73,480 rule features, 153,614 path features and 336 constituent boundary matching features.</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To tune weights of features, we ran the MaxEnt toolkit (Zhang, 2004) with iteration number being set to 100 and Gaussian prior to 1 to avoid overfitting.</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>4.3 Results</title>
+            <text>We ran the MERT module with our decoders to tune the feature weights. The values are shown in Table 1. The P SDB receives the largest feature weight, 0.29 for UniSDB and 0.38 for BiSDB, indicating that the SDB models exert a nontrivial impact on decoder.
+In Table 2, we present our results. Like (Marton and Resnik, 2008), we find that the XP+ feature obtains a significant improvement of 1.08 BLEU over the baseline. However, using all syntax-driven features described in section 3.2, our SDB models achieve larger improvements of up to 1.67 BLEU. The binary SDB (BiSDB) model statistically significantly outperforms Marton and Resnik&#8217;s XP+ by an absolute improvement of 0.59 (relatively 2%). It is also marginally better than the unary SDB model.
+Features</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We ran the MERT module with our decoders to tune the feature weights.</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The values are shown in Table 1.</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The P SDB receives the largest feature weight, 0.29 for UniSDB and 0.38 for BiSDB, indicating that the SDB models exert a nontrivial impact on decoder.</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In Table 2, we present our results.</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Like (Marton and Resnik, 2008), we find that the XP+ feature obtains a significant improvement of 1.08 BLEU over the baseline.</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, using all syntax-driven features described in section 3.2, our SDB models achieve larger improvements of up to 1.67 BLEU.</text>
+                  <doc_id>170</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The binary SDB (BiSDB) model statistically significantly outperforms Marton and Resnik&#8217;s XP+ by an absolute improvement of 0.59 (relatively 2%).</text>
+                  <doc_id>171</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It is also marginally better than the unary SDB model.</text>
+                  <doc_id>172</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Features</text>
+                  <doc_id>173</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>5 Analysis</title>
+        <text>In this section, we present analysis to perceive the influence mechanism of the SDB model on phrase translation by studying the effects of syntax-driven features and differences of 1-best translation outputs.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this section, we present analysis to perceive the influence mechanism of the SDB model on phrase translation by studying the effects of syntax-driven features and differences of 1-best translation outputs.</text>
+              <doc_id>174</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>5.1 Effects of Syntax-Driven Features</title>
+            <text>We conducted further experiments using individual syntax-driven features and their combinations. Table 3 shows the results, from which we have the following key observations.
+&#8226; The constituent boundary matching feature (CBMF) is a very important feature, which by itself achieves significant improvement over the baseline (up to 1.13 BLEU). Both our CBMF and Marton and Resnik&#8217;s XP+ feature focus on the relationship between a source phrase and a constituent. Their significant contribution to the improvement implies that this relationship is an important syntactic constraint for phrase translation.
+&#8226; Adding more features, such as path feature and rule feature, achieves further improvements. This demonstrates the advantage of using more syntactic constraints in the SDB model, compared with Marton and Resnik&#8217;s XP+.
+&#8226; In most cases, the binary SDB is constantly significantly better than the unary SDB, suggesting that inner contexts are useful in predicting phrase bracketing.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We conducted further experiments using individual syntax-driven features and their combinations.</text>
+                  <doc_id>175</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 3 shows the results, from which we have the following key observations.</text>
+                  <doc_id>176</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; The constituent boundary matching feature (CBMF) is a very important feature, which by itself achieves significant improvement over the baseline (up to 1.13 BLEU).</text>
+                  <doc_id>177</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Both our CBMF and Marton and Resnik&#8217;s XP+ feature focus on the relationship between a source phrase and a constituent.</text>
+                  <doc_id>178</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Their significant contribution to the improvement implies that this relationship is an important syntactic constraint for phrase translation.</text>
+                  <doc_id>179</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; Adding more features, such as path feature and rule feature, achieves further improvements.</text>
+                  <doc_id>180</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This demonstrates the advantage of using more syntactic constraints in the SDB model, compared with Marton and Resnik&#8217;s XP+.</text>
+                  <doc_id>181</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; In most cases, the binary SDB is constantly significantly better than the unary SDB, suggesting that inner contexts are useful in predicting phrase bracketing.</text>
+                  <doc_id>182</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>5.2 Beyond BLEU</title>
+            <text>We want to further study the happenings after we integrate the constraint feature (our SDB model and Marton and Resnik&#8217;s XP+) into the log-linear translation model. In particular, we want to investigate: to what extent syntactic constraints change translation outputs? And in what direction the changes take place? Since BLEU is not sufficient
+to provide such insights, we introduce a new statistical metric which measures the proportion of syntactic constituents 4 whose boundaries are consistently matched by decoder during translation. This proportion, which we call consistent constituent matching (CCM) rate , reflects the extent to which the translation output respects the source parse tree.
+In order to calculate this rate, we output translation results as well as phrase alignments found by decoders. Then for each multi-branch constituent c j i spanning from i to j on the source side, we check the following conditions.
+&#8226; If its boundaries i and j are aligned to phrase segmentation boundaries found by decoder.
+&#8226; If all target phrases inside c j i &#8217;s target span 5
+are aligned to the source phrases within c j i and not to the phrases outside c j i .
+If both conditions are satisfied, the constituent c j i is consistently matched by decoder.
+Table 4 shows the consistent constituent matching rates. Without using any source-side syntactic information, the baseline obtains a low CCM rate of 43.53%, indicating that the baseline decoder violates the source parse tree more than it respects the source structure. The translation output described in section 1 is actually generated by the baseline decoder, where the second NP phrase boundaries are violated.
+By integrating syntactic constraints into decoding, we can see that both Marton and Resnik&#8217;s XP+ and our SDB model achieve a significantly higher constituent matching rate, suggesting that they are more likely to respect the source structure. The examples in Table 5 show that the decoder is able to generate better translations if it is
+4 We only consider multi-branch constituents. 5 Given a phrase alignment P = {c g f &#8596; eq p}, if the segmentation within c j i defined by P is cj i = c j 1
+i1
+...c j k
+ik
+, and &#8596; e vr u r &#8712; P, 1 &#8804; r &#8804; k, we define the target span of c j i c jr i r as a pair where the first element is min(e u1 ...e uk ) and the second element is max(e v1 ...e vk ), similar to (Fox, 2002).
+faithful to the source parse tree by using syntactic constraints.
+We further conducted a deep comparison of translation outputs of BiSDB vs. XP+ with regard to constituent matching and violation. We found two significant differences that may explain why our BiSDB outperforms XP+. First, although the overall CCM rate of XP+ is higher than that of BiSDB, BiSDB obtains higher CCM rates for long-span structures than XP+ does, which are shown in Table 6. Generally speaking, violations of long-span constituents have a more negative impact on performance than short-span violations if these violations are toxic. This explains why BiSDB achieves relatively higher precision improvements for higher n-grams over XP+, as shown in Table 3.
+Second, compared with XP+ that only punishes constituent boundary violations, our SDB model is able to encourage violations if these violations are done on bracketable phrases. We observed in many cases that by violating constituent boundaries BiSDB produces better translations than XP+ does, which on the contrary matches these boundaries. Still consider the example shown in section 1. The following translations are found by XP+ and BiSDB respectively.
+XP+: [to/&#65533; &#12296;[set up/&#65533; &#65533; [for the/&#65533; [navigation/&#65533;&#65533; section/&#65533;]]] on July 11/7&#65533;11&#65533;&#12297;]
+BiSDB: [to/&#65533; &#12296;[[set up/&#65533;&#65533; a/&#65533;] [marine/&#65533;&#65533; festival/&#65533;]] on July 11/7&#65533;11&#65533;&#12297;]
+XP+ here matches all constituent boundaries while BiSDB violates the PP constituent to translate the non-syntactic phrase &#8220;&#65533;&#65533; &#65533;&#8221;. Table 7 shows more examples. From these examples, we clearly see that appropriate violations are helpful and even necessary for generating better translations. By allowing appropriate violations to translate nonsyntactic phrases according to particular syntactic contexts, our SDB model better inherits the strength of phrase-based approach than XP+.
+Src: Ref: Baseline:
+XP+:
+BiSDB:
+Src: Ref: Baseline:
+XP+:
+BiSDB:
+[[&#65533; [&#65533;&#65533; &#65533; &#65533;&#65533; &#65533;&#65533;] NP ] PP [&#65533;&#65533; [&#65533;&#65533;] NP [&#65533; &#65533; &#65533;&#65533;] NP ] VP ] VP show their loving hearts to people in the Indian Ocean disaster areas &#12296;love/&#65533;&#65533; [for the/&#65533; &#12296;[people/&#65533;&#65533; [to/&#65533;&#65533; [own/&#65533;&#65533; a report/&#65533;&#65533;]]]&#12297; &#12296;in/&#65533;&#65533; the Indian Ocean/&#65533; &#65533;&#65533;&#12297;]&#12297; &#12296;[contribute/&#65533;&#65533; [its/&#65533;&#65533; [part/&#65533;&#65533; love/&#65533;&#65533;]]] [for/&#65533; &#12296;the people/&#65533;&#65533; &#12296;in/&#65533;&#65533; the Indian Ocean/&#65533; &#65533;&#65533;&#12297;&#12297;]&#12297; &#12296;[[[contribute/&#65533;&#65533; its/&#65533;&#65533;] part/&#65533;&#65533;] love/&#65533;&#65533;] [for/&#65533; &#12296;the people/&#65533;&#65533; &#12296;in/&#65533;&#65533; the Indian Ocean&#65533; &#65533;&#65533;&#12297;&#12297;]&#12297; [&#65533;&#65533;&#65533;&#65533; [&#65533;] ADVP [&#65533;&#65533; [[&#65533;&#65533; &#65533;] QP &#65533;&#65533;] NP [&#65533; &#65533;&#65533;] PP ] VP ] IP [&#65533;] PU [&#65533;&#65533; &#65533;&#65533;...] IP The Pentagon has dispatched 20 airplanes to South Asia, including... [[The Pentagon/&#65533;&#65533;&#65533;&#65533; has sent/&#65533;&#65533;&#65533;] [&#12296;[to/&#65533; [[South Asia/&#65533;&#65533; ,/&#65533;] including/&#65533;&#65533;&#65533;&#65533;]] [20/&#65533; &#65533; plane/&#65533;&#65533;&#65533;]&#12297;]] [The Pentagon/&#65533;&#65533;&#65533;&#65533; [has/&#65533; [sent/&#65533;&#65533; [[20/&#65533;&#65533; planes/&#65533;&#65533;&#65533;] [to/&#65533; South Asia/&#65533;&#65533;]]]]] [,/&#65533; [including/&#65533;&#65533;&#65533;&#65533;...]] [The Pentagon/&#65533;&#65533;&#65533;&#65533; [has sent/&#65533;&#65533;&#65533; [[20/&#65533;&#65533; planes/&#65533;&#65533;&#65533;] [to/&#65533; South Asia/&#65533;&#65533;]]] [,/&#65533; [including/&#65533;&#65533;&#65533;&#65533;...]]
+Src: Ref: XP+:
+BiSDB:
+Src: Ref: XP+:
+BiSDB: [[&#65533; [[[&#65533;&#65533;&#65533;&#65533;&#65533; &#65533; &#65533;&#65533;] NP [&#65533;&#65533;] ADJP [&#65533;&#65533;] NP ] NP &#65533;] LCP ] PP &#65533;&#65533;] VP said after a brief discussion with Powell at the US State Department [&#12296;after/&#65533; &#12296;&#12296;[a brief/&#65533;&#65533; meeting/&#65533;&#65533;] [with/&#65533; Powell/&#65533;&#65533;]&#12297; [in/&#65533; the US State Department/&#65533;&#65533;&#65533; &#65533;&#65533;]&#12297; said/&#65533;&#65533;] &#12296;said after/&#65533; &#65533;&#65533; &#12296;[a brief/&#65533;&#65533; meeting/&#65533;&#65533;] &#12296; with Powell/&#65533; &#65533;&#65533; [at/&#65533; the State Department of the United States/&#65533;&#65533;&#65533;&#65533;&#65533;]&#12297;&#12297;&#12297; [&#65533; [[&#65533;&#65533; [&#65533;&#65533; &#65533;&#65533; &#65533;&#65533;] NP ] VP ] IP ] PP [&#65533;&#65533; &#65533; [&#65533;&#65533;&#65533; &#65533; &#65533; &#65533;] NP ] VP took a key step towards building future democratic politics &#12296;[a/&#65533; [key/&#65533;&#65533;&#65533; step/&#65533;&#65533;&#65533;]] &#12296;forward/&#65533;&#65533; [to/&#65533; [a/&#65533;&#65533; [future/&#65533;&#65533; political democracy/&#65533;&#65533;&#65533; &#65533;]]]&#12297;&#12297; &#12296;[made a/&#65533;&#65533;&#65533; [key/&#65533;&#65533;&#65533; step/&#65533;&#65533;&#65533;]] [towards establishing a/&#65533; &#65533;&#65533; &#12296;democratic politics/&#65533;&#65533;&#65533;
+&#65533; in the future/&#65533;&#65533;&#12297;]&#12297;</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We want to further study the happenings after we integrate the constraint feature (our SDB model and Marton and Resnik&#8217;s XP+) into the log-linear translation model.</text>
+                  <doc_id>183</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In particular, we want to investigate: to what extent syntactic constraints change translation outputs?</text>
+                  <doc_id>184</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>And in what direction the changes take place?</text>
+                  <doc_id>185</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since BLEU is not sufficient</text>
+                  <doc_id>186</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>to provide such insights, we introduce a new statistical metric which measures the proportion of syntactic constituents 4 whose boundaries are consistently matched by decoder during translation.</text>
+                  <doc_id>187</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This proportion, which we call consistent constituent matching (CCM) rate , reflects the extent to which the translation output respects the source parse tree.</text>
+                  <doc_id>188</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In order to calculate this rate, we output translation results as well as phrase alignments found by decoders.</text>
+                  <doc_id>189</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Then for each multi-branch constituent c j i spanning from i to j on the source side, we check the following conditions.</text>
+                  <doc_id>190</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; If its boundaries i and j are aligned to phrase segmentation boundaries found by decoder.</text>
+                  <doc_id>191</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; If all target phrases inside c j i &#8217;s target span 5</text>
+                  <doc_id>192</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>are aligned to the source phrases within c j i and not to the phrases outside c j i .</text>
+                  <doc_id>193</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>If both conditions are satisfied, the constituent c j i is consistently matched by decoder.</text>
+                  <doc_id>194</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 4 shows the consistent constituent matching rates.</text>
+                  <doc_id>195</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Without using any source-side syntactic information, the baseline obtains a low CCM rate of 43.53%, indicating that the baseline decoder violates the source parse tree more than it respects the source structure.</text>
+                  <doc_id>196</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The translation output described in section 1 is actually generated by the baseline decoder, where the second NP phrase boundaries are violated.</text>
+                  <doc_id>197</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>By integrating syntactic constraints into decoding, we can see that both Marton and Resnik&#8217;s XP+ and our SDB model achieve a significantly higher constituent matching rate, suggesting that they are more likely to respect the source structure.</text>
+                  <doc_id>198</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The examples in Table 5 show that the decoder is able to generate better translations if it is</text>
+                  <doc_id>199</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 We only consider multi-branch constituents.</text>
+                  <doc_id>200</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>5 Given a phrase alignment P = {c g f &#8596; eq p}, if the segmentation within c j i defined by P is cj i = c j 1</text>
+                  <doc_id>201</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i1</text>
+                  <doc_id>202</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>...c j k</text>
+                  <doc_id>203</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>ik</text>
+                  <doc_id>204</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>, and &#8596; e vr u r &#8712; P, 1 &#8804; r &#8804; k, we define the target span of c j i c jr i r as a pair where the first element is min(e u1 ...e uk ) and the second element is max(e v1 ...e vk ), similar to (Fox, 2002).</text>
+                  <doc_id>205</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>faithful to the source parse tree by using syntactic constraints.</text>
+                  <doc_id>206</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We further conducted a deep comparison of translation outputs of BiSDB vs. XP+ with regard to constituent matching and violation.</text>
+                  <doc_id>207</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We found two significant differences that may explain why our BiSDB outperforms XP+.</text>
+                  <doc_id>208</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>First, although the overall CCM rate of XP+ is higher than that of BiSDB, BiSDB obtains higher CCM rates for long-span structures than XP+ does, which are shown in Table 6.</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Generally speaking, violations of long-span constituents have a more negative impact on performance than short-span violations if these violations are toxic.</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This explains why BiSDB achieves relatively higher precision improvements for higher n-grams over XP+, as shown in Table 3.</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Second, compared with XP+ that only punishes constituent boundary violations, our SDB model is able to encourage violations if these violations are done on bracketable phrases.</text>
+                  <doc_id>212</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We observed in many cases that by violating constituent boundaries BiSDB produces better translations than XP+ does, which on the contrary matches these boundaries.</text>
+                  <doc_id>213</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Still consider the example shown in section 1.</text>
+                  <doc_id>214</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The following translations are found by XP+ and BiSDB respectively.</text>
+                  <doc_id>215</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>XP+: [to/&#65533; &#12296;[set up/&#65533; &#65533; [for the/&#65533; [navigation/&#65533;&#65533; section/&#65533;]]] on July 11/7&#65533;11&#65533;&#12297;]</text>
+                  <doc_id>216</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BiSDB: [to/&#65533; &#12296;[[set up/&#65533;&#65533; a/&#65533;] [marine/&#65533;&#65533; festival/&#65533;]] on July 11/7&#65533;11&#65533;&#12297;]</text>
+                  <doc_id>217</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>XP+ here matches all constituent boundaries while BiSDB violates the PP constituent to translate the non-syntactic phrase &#8220;&#65533;&#65533; &#65533;&#8221;.</text>
+                  <doc_id>218</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 7 shows more examples.</text>
+                  <doc_id>219</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>From these examples, we clearly see that appropriate violations are helpful and even necessary for generating better translations.</text>
+                  <doc_id>220</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>By allowing appropriate violations to translate nonsyntactic phrases according to particular syntactic contexts, our SDB model better inherits the strength of phrase-based approach than XP+.</text>
+                  <doc_id>221</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Src: Ref: Baseline:</text>
+                  <doc_id>222</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>XP+:</text>
+                  <doc_id>223</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BiSDB:</text>
+                  <doc_id>224</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Src: Ref: Baseline:</text>
+                  <doc_id>225</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>XP+:</text>
+                  <doc_id>226</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BiSDB:</text>
+                  <doc_id>227</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>[[&#65533; [&#65533;&#65533; &#65533; &#65533;&#65533; &#65533;&#65533;] NP ] PP [&#65533;&#65533; [&#65533;&#65533;] NP [&#65533; &#65533; &#65533;&#65533;] NP ] VP ] VP show their loving hearts to people in the Indian Ocean disaster areas &#12296;love/&#65533;&#65533; [for the/&#65533; &#12296;[people/&#65533;&#65533; [to/&#65533;&#65533; [own/&#65533;&#65533; a report/&#65533;&#65533;]]]&#12297; &#12296;in/&#65533;&#65533; the Indian Ocean/&#65533; &#65533;&#65533;&#12297;]&#12297; &#12296;[contribute/&#65533;&#65533; [its/&#65533;&#65533; [part/&#65533;&#65533; love/&#65533;&#65533;]]] [for/&#65533; &#12296;the people/&#65533;&#65533; &#12296;in/&#65533;&#65533; the Indian Ocean/&#65533; &#65533;&#65533;&#12297;&#12297;]&#12297; &#12296;[[[contribute/&#65533;&#65533; its/&#65533;&#65533;] part/&#65533;&#65533;] love/&#65533;&#65533;] [for/&#65533; &#12296;the people/&#65533;&#65533; &#12296;in/&#65533;&#65533; the Indian Ocean&#65533; &#65533;&#65533;&#12297;&#12297;]&#12297; [&#65533;&#65533;&#65533;&#65533; [&#65533;] ADVP [&#65533;&#65533; [[&#65533;&#65533; &#65533;] QP &#65533;&#65533;] NP [&#65533; &#65533;&#65533;] PP ] VP ] IP [&#65533;] PU [&#65533;&#65533; &#65533;&#65533;...] IP The Pentagon has dispatched 20 airplanes to South Asia, including... [[The Pentagon/&#65533;&#65533;&#65533;&#65533; has sent/&#65533;&#65533;&#65533;] [&#12296;[to/&#65533; [[South Asia/&#65533;&#65533; ,/&#65533;] including/&#65533;&#65533;&#65533;&#65533;]] [20/&#65533; &#65533; plane/&#65533;&#65533;&#65533;]&#12297;]] [The Pentagon/&#65533;&#65533;&#65533;&#65533; [has/&#65533; [sent/&#65533;&#65533; [[20/&#65533;&#65533; planes/&#65533;&#65533;&#65533;] [to/&#65533; South Asia/&#65533;&#65533;]]]]] [,/&#65533; [including/&#65533;&#65533;&#65533;&#65533;...]] [The Pentagon/&#65533;&#65533;&#65533;&#65533; [has sent/&#65533;&#65533;&#65533; [[20/&#65533;&#65533; planes/&#65533;&#65533;&#65533;] [to/&#65533; South Asia/&#65533;&#65533;]]] [,/&#65533; [including/&#65533;&#65533;&#65533;&#65533;...]]</text>
+                  <doc_id>228</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Src: Ref: XP+:</text>
+                  <doc_id>229</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BiSDB:</text>
+                  <doc_id>230</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Src: Ref: XP+:</text>
+                  <doc_id>231</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>BiSDB: [[&#65533; [[[&#65533;&#65533;&#65533;&#65533;&#65533; &#65533; &#65533;&#65533;] NP [&#65533;&#65533;] ADJP [&#65533;&#65533;] NP ] NP &#65533;] LCP ] PP &#65533;&#65533;] VP said after a brief discussion with Powell at the US State Department [&#12296;after/&#65533; &#12296;&#12296;[a brief/&#65533;&#65533; meeting/&#65533;&#65533;] [with/&#65533; Powell/&#65533;&#65533;]&#12297; [in/&#65533; the US State Department/&#65533;&#65533;&#65533; &#65533;&#65533;]&#12297; said/&#65533;&#65533;] &#12296;said after/&#65533; &#65533;&#65533; &#12296;[a brief/&#65533;&#65533; meeting/&#65533;&#65533;] &#12296; with Powell/&#65533; &#65533;&#65533; [at/&#65533; the State Department of the United States/&#65533;&#65533;&#65533;&#65533;&#65533;]&#12297;&#12297;&#12297; [&#65533; [[&#65533;&#65533; [&#65533;&#65533; &#65533;&#65533; &#65533;&#65533;] NP ] VP ] IP ] PP [&#65533;&#65533; &#65533; [&#65533;&#65533;&#65533; &#65533; &#65533; &#65533;] NP ] VP took a key step towards building future democratic politics &#12296;[a/&#65533; [key/&#65533;&#65533;&#65533; step/&#65533;&#65533;&#65533;]] &#12296;forward/&#65533;&#65533; [to/&#65533; [a/&#65533;&#65533; [future/&#65533;&#65533; political democracy/&#65533;&#65533;&#65533; &#65533;]]]&#12297;&#12297; &#12296;[made a/&#65533;&#65533;&#65533; [key/&#65533;&#65533;&#65533; step/&#65533;&#65533;&#65533;]] [towards establishing a/&#65533; &#65533;&#65533; &#12296;democratic politics/&#65533;&#65533;&#65533;</text>
+                  <doc_id>232</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#65533; in the future/&#65533;&#65533;&#12297;]&#12297;</text>
+                  <doc_id>233</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>6 Conclusion</title>
+        <text>In this paper, we presented a syntax-driven bracketing model that automatically learns bracketing knowledge from training corpus. With this knowledge, the model is able to predict whether source phrases can be translated together, regardless of matching or crossing syntactic constituents. We integrate this model into phrase-based SMT to increase its capacity of linguistically motivated translation without undermining its strengths. Experiments show that our model achieves substantial improvements over baseline and significantly outperforms (Marton and Resnik, 2008)&#8217;s XP+.
+Compared with previous constituency feature, our SDB model is capable of incorporating more syntactic constraints, and rewarding necessary violations of the source parse tree. Marton and Resnik (2008) find that their constituent constraints are sensitive to language pairs. In the future work, we will use other language pairs to test our models so that we could know whether our method is language-independent.
+References
+Colin Cherry. 2008. Cohesive Phrase-based Decoding for Statistical Machine Translation. In Proceedings of ACL.
+David Chiang. 2005. A Hierarchical Phrase-based Model for Statistical Machine Translation. In Proceedings of ACL, pages 263&#8211;270.
+David Chiang, Yuval Marton and Philip Resnik. 2008. Online Large-Margin Training of Syntactic and Structural Translation Features. In Proceedings of EMNLP.
+Heidi J. Fox 2002. Phrasal Cohesion and Statistical Machine Translation. In Proceedings of EMNLP, pages 304&#8211;311.
+Philipp Koehn, Franz Joseph Och, and Daniel Marcu. 2003. Statistical Phrase-based Translation. In Proceedings of HLT-NAACL.
+Philipp Koehn. 2004. Statistical Significance Tests for Machine Translation Evaluation. In Proceedings of EMNLP.
+Philipp Koehn, Amittai Axelrod, Alexandra Birch Mayne, Chris Callison-Burch, Miles Osborne and David Talbot. 2005. Edinburgh System Description for the 2005 IWSLT Speech Translation Evaluation. In International Workshop on Spoken Language Translation.
+Yajuan L&#252;, Sheng Li, Tiezhun Zhao and Muyun Yang. 2002. Learning Chinese Bracketing Knowledge Based on a Bilingual Language Model. In Proceedings of COLING.
+Yuval Marton and Philip Resnik. 2008. Soft Syntactic Constraints for Hierarchical Phrase-Based Translation. In Proceedings of ACL.
+Franz Josef Och and Hermann Ney. 2000. Improved Statistical Alignment Models. In Proceedings of ACL 2000.
+Franz Josef Och. 2003. Minimum Error Rate Training in Statistical Machine Translation. In Proceedings of ACL 2003.
+Kishore Papineni, Salim Roukos, Todd Ward, and Wei- Jing Zhu. 2002. Bleu: a Method for Automatically Evaluation of Machine Translation. In Proceedings of ACL.
+Andreas Stolcke. 2002. SRILM - an Extensible Language Modeling Toolkit. In Proceedings of International Conference on Spoken Language Processing, volume 2, pages 901-904.
+Dekai Wu. 1997. Stochastic Inversion Transduction Grammars and Bilingual Parsing of Parallel Corpora. Computational Linguistics, 23(3):377-403.
+Deyi Xiong, Shuanglong Li, Qun Liu, Shouxun Lin, Yueliang Qian. 2005. Parsing the Penn Chinese Treebank with Semantic Knowledge. In Proceedings of IJCNLP, Jeju Island, Korea.
+Deyi Xiong, Qun Liu and Shouxun Lin. 2006. Maximum Entropy Based Phrase Reordering Model for Statistical Machine Translation. In Proceedings of ACL-COLING 2006.
+Deyi Xiong, Min Zhang, Aiti Aw, and Haizhou Li. 2008. Linguistically Annotated BTG for Statistical Machine Translation. In Proceedings of COLING 2008.
+Le Zhang. 2004. Maximum Entropy Modeling Tooklkit for Python and C++. Available at http://homepages.inf.ed.ac.uk/s0450736 /maxent toolkit.html.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we presented a syntax-driven bracketing model that automatically learns bracketing knowledge from training corpus.</text>
+              <doc_id>234</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>With this knowledge, the model is able to predict whether source phrases can be translated together, regardless of matching or crossing syntactic constituents.</text>
+              <doc_id>235</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We integrate this model into phrase-based SMT to increase its capacity of linguistically motivated translation without undermining its strengths.</text>
+              <doc_id>236</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Experiments show that our model achieves substantial improvements over baseline and significantly outperforms (Marton and Resnik, 2008)&#8217;s XP+.</text>
+              <doc_id>237</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Compared with previous constituency feature, our SDB model is capable of incorporating more syntactic constraints, and rewarding necessary violations of the source parse tree.</text>
+              <doc_id>238</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Marton and Resnik (2008) find that their constituent constraints are sensitive to language pairs.</text>
+              <doc_id>239</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In the future work, we will use other language pairs to test our models so that we could know whether our method is language-independent.</text>
+              <doc_id>240</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>References</text>
+              <doc_id>241</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Colin Cherry.</text>
+              <doc_id>242</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2008.</text>
+              <doc_id>243</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Cohesive Phrase-based Decoding for Statistical Machine Translation.</text>
+              <doc_id>244</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of ACL.</text>
+              <doc_id>245</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>David Chiang.</text>
+              <doc_id>246</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2005.</text>
+              <doc_id>247</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>A Hierarchical Phrase-based Model for Statistical Machine Translation.</text>
+              <doc_id>248</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of ACL, pages 263&#8211;270.</text>
+              <doc_id>249</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>David Chiang, Yuval Marton and Philip Resnik.</text>
+              <doc_id>250</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2008.</text>
+              <doc_id>251</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Online Large-Margin Training of Syntactic and Structural Translation Features.</text>
+              <doc_id>252</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of EMNLP.</text>
+              <doc_id>253</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Heidi J. Fox 2002.</text>
+              <doc_id>254</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Phrasal Cohesion and Statistical Machine Translation.</text>
+              <doc_id>255</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of EMNLP, pages 304&#8211;311.</text>
+              <doc_id>256</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Philipp Koehn, Franz Joseph Och, and Daniel Marcu.</text>
+              <doc_id>257</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2003.</text>
+              <doc_id>258</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Statistical Phrase-based Translation.</text>
+              <doc_id>259</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of HLT-NAACL.</text>
+              <doc_id>260</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Philipp Koehn.</text>
+              <doc_id>261</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2004.</text>
+              <doc_id>262</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Statistical Significance Tests for Machine Translation Evaluation.</text>
+              <doc_id>263</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of EMNLP.</text>
+              <doc_id>264</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Philipp Koehn, Amittai Axelrod, Alexandra Birch Mayne, Chris Callison-Burch, Miles Osborne and David Talbot.</text>
+              <doc_id>265</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2005.</text>
+              <doc_id>266</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Edinburgh System Description for the 2005 IWSLT Speech Translation Evaluation.</text>
+              <doc_id>267</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In International Workshop on Spoken Language Translation.</text>
+              <doc_id>268</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Yajuan L&#252;, Sheng Li, Tiezhun Zhao and Muyun Yang.</text>
+              <doc_id>269</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2002.</text>
+              <doc_id>270</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Learning Chinese Bracketing Knowledge Based on a Bilingual Language Model.</text>
+              <doc_id>271</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of COLING.</text>
+              <doc_id>272</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Yuval Marton and Philip Resnik.</text>
+              <doc_id>273</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2008.</text>
+              <doc_id>274</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Soft Syntactic Constraints for Hierarchical Phrase-Based Translation.</text>
+              <doc_id>275</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of ACL.</text>
+              <doc_id>276</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Franz Josef Och and Hermann Ney.</text>
+              <doc_id>277</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2000.</text>
+              <doc_id>278</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Improved Statistical Alignment Models.</text>
+              <doc_id>279</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of ACL 2000.</text>
+              <doc_id>280</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Franz Josef Och.</text>
+              <doc_id>281</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2003.</text>
+              <doc_id>282</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Minimum Error Rate Training in Statistical Machine Translation.</text>
+              <doc_id>283</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of ACL 2003.</text>
+              <doc_id>284</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Kishore Papineni, Salim Roukos, Todd Ward, and Wei- Jing Zhu.</text>
+              <doc_id>285</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2002.</text>
+              <doc_id>286</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Bleu: a Method for Automatically Evaluation of Machine Translation.</text>
+              <doc_id>287</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of ACL.</text>
+              <doc_id>288</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Andreas Stolcke.</text>
+              <doc_id>289</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2002.</text>
+              <doc_id>290</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>SRILM - an Extensible Language Modeling Toolkit.</text>
+              <doc_id>291</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of International Conference on Spoken Language Processing, volume 2, pages 901-904.</text>
+              <doc_id>292</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Dekai Wu.</text>
+              <doc_id>293</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>1997.</text>
+              <doc_id>294</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Stochastic Inversion Transduction Grammars and Bilingual Parsing of Parallel Corpora.</text>
+              <doc_id>295</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Computational Linguistics, 23(3):377-403.</text>
+              <doc_id>296</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Deyi Xiong, Shuanglong Li, Qun Liu, Shouxun Lin, Yueliang Qian.</text>
+              <doc_id>297</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2005.</text>
+              <doc_id>298</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Parsing the Penn Chinese Treebank with Semantic Knowledge.</text>
+              <doc_id>299</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of IJCNLP, Jeju Island, Korea.</text>
+              <doc_id>300</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Deyi Xiong, Qun Liu and Shouxun Lin.</text>
+              <doc_id>301</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2006.</text>
+              <doc_id>302</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Maximum Entropy Based Phrase Reordering Model for Statistical Machine Translation.</text>
+              <doc_id>303</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of ACL-COLING 2006.</text>
+              <doc_id>304</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Deyi Xiong, Min Zhang, Aiti Aw, and Haizhou Li.</text>
+              <doc_id>305</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2008.</text>
+              <doc_id>306</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Linguistically Annotated BTG for Statistical Machine Translation.</text>
+              <doc_id>307</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In Proceedings of COLING 2008.</text>
+              <doc_id>308</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Le Zhang.</text>
+              <doc_id>309</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>2004.</text>
+              <doc_id>310</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Maximum Entropy Modeling Tooklkit for Python and C++.</text>
+              <doc_id>311</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Available at http://homepages.inf.ed.ac.uk/s0450736 /maxent toolkit.html.</text>
+              <doc_id>312</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TET</source>
+        <caption>Table 1: Feature weights obtained by MERT on the development set. The first 4 features are the phrase translation probabilities in both directions and the lexical translation probabilities in both directions. P lm = language model; P r = MaxEnt-based reordering model; Word = word bonus; Phr = phrase bonus.</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>System</cell>
+              <cell>P (c|e)</cell>
+              <cell>P (e|c)</cell>
+              <cell>P w (c|e)</cell>
+              <cell>P w (e|c)</cell>
+              <cell>P lm (e)</cell>
+              <cell>P r (e)</cell>
+              <cell>Word</cell>
+              <cell>Phr.</cell>
+              <cell>XP+</cell>
+              <cell>P SDB</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Baseline</cell>
+              <cell>0.041</cell>
+              <cell>0.030</cell>
+              <cell>0.006</cell>
+              <cell>0.065</cell>
+              <cell>0.20</cell>
+              <cell>0.35</cell>
+              <cell>0.19</cell>
+              <cell>-0.12</cell>
+              <cell>&#8212;</cell>
+              <cell>&#8212;</cell>
+            </row>
+            <row>
+              <cell>XP+</cell>
+              <cell>0.002</cell>
+              <cell>0.049</cell>
+              <cell>0.046</cell>
+              <cell>0.044</cell>
+              <cell>0.17</cell>
+              <cell>0.29</cell>
+              <cell>0.16</cell>
+              <cell>0.12</cell>
+              <cell>-0.12</cell>
+              <cell>&#8212;</cell>
+            </row>
+            <row>
+              <cell>UniSDB</cell>
+              <cell>0.023</cell>
+              <cell>0.051</cell>
+              <cell>0.055</cell>
+              <cell>0.012</cell>
+              <cell>0.21</cell>
+              <cell>0.20</cell>
+              <cell>0.12</cell>
+              <cell>0.04</cell>
+              <cell>&#8212;</cell>
+              <cell>0.29</cell>
+            </row>
+            <row>
+              <cell>BiSDB</cell>
+              <cell>0.016</cell>
+              <cell>0.032</cell>
+              <cell>0.027</cell>
+              <cell>0.013</cell>
+              <cell>0.13</cell>
+              <cell>0.23</cell>
+              <cell>0.08</cell>
+              <cell>0.09</cell>
+              <cell>&#8212;</cell>
+              <cell>0.38</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TET</source>
+        <caption>Table 2: Results on the test set. **: significantly better than baseline (p &lt; 0.01). + or ++: significantly better than Marton and Resnik&#8217;s XP+ (p &lt; 0.05 or p &lt; 0.01, respectively).</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>BLEU-n</cell>
+              <cell>n-gram Precision</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>System</cell>
+              <cell>4</cell>
+              <cell>1</cell>
+              <cell>2</cell>
+              <cell>3</cell>
+              <cell>4</cell>
+              <cell>5</cell>
+              <cell>6</cell>
+              <cell>7</cell>
+              <cell>8</cell>
+            </row>
+            <row>
+              <cell>Baseline</cell>
+              <cell>0.2612</cell>
+              <cell>0.71</cell>
+              <cell>0.36</cell>
+              <cell>0.18</cell>
+              <cell>0.10</cell>
+              <cell>0.054</cell>
+              <cell>0.030</cell>
+              <cell>0.016</cell>
+              <cell>0.009</cell>
+            </row>
+            <row>
+              <cell>XP+</cell>
+              <cell>0.2720**</cell>
+              <cell>0.72</cell>
+              <cell>0.37</cell>
+              <cell>0.19</cell>
+              <cell>0.11</cell>
+              <cell>0.060</cell>
+              <cell>0.035</cell>
+              <cell>0.021</cell>
+              <cell>0.012</cell>
+            </row>
+            <row>
+              <cell>UniSDB</cell>
+              <cell>0.2762**+</cell>
+              <cell>0.72</cell>
+              <cell>0.37</cell>
+              <cell>0.20</cell>
+              <cell>0.11</cell>
+              <cell>0.062</cell>
+              <cell>0.035</cell>
+              <cell>0.020</cell>
+              <cell>0.011</cell>
+            </row>
+            <row>
+              <cell>BiSDB</cell>
+              <cell>0.2779**++</cell>
+              <cell>0.72</cell>
+              <cell>0.37</cell>
+              <cell>0.20</cell>
+              <cell>0.11</cell>
+              <cell>0.065</cell>
+              <cell>0.038</cell>
+              <cell>0.022</cell>
+              <cell>0.014</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TET</source>
+        <caption>Table 3: Results of different feature sets. * or **: significantly better than baseline (p &lt; 0.05 or p &lt; 0.01, respectively). + or ++: significantly better than XP+ (p &lt; 0.05 or p &lt; 0.01, respectively). @ &#8722; : almost significantly better than its UniSDB counterpart (p &lt; 0.075). @ or @@: significantly better than its UniSDB counterpart (p &lt; 0.05 or p &lt; 0.01, respectively).</caption>
+        <reference_text></reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell></cell>
+              <cell>BLEU-4</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Features</cell>
+              <cell>UniSDB</cell>
+              <cell>BiSDB</cell>
+            </row>
+            <row>
+              <cell>PF + RF</cell>
+              <cell>0.2555</cell>
+              <cell>0.2644*@@</cell>
+            </row>
+            <row>
+              <cell>PF</cell>
+              <cell>0.2596</cell>
+              <cell>0.2671**@@</cell>
+            </row>
+            <row>
+              <cell>CBMF</cell>
+              <cell>0.2678**</cell>
+              <cell>0.2725**@</cell>
+            </row>
+            <row>
+              <cell>RF + CBMF</cell>
+              <cell>0.2737**</cell>
+              <cell>0.2780**++@@</cell>
+            </row>
+            <row>
+              <cell>PF + CBMF</cell>
+              <cell>0.2755**+</cell>
+              <cell>0.2782**++@ &#8722;</cell>
+            </row>
+            <row>
+              <cell>RF + PF + CBMF</cell>
+              <cell>0.2762**+</cell>
+              <cell>0.2779**++</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TET</source>
+        <caption>Table 4: Consistent constituent matching rates reported on 1-best translation outputs.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>System</cell>
+              <cell>CCM Rate (%)</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Baseline</cell>
+              <cell>43.5</cell>
+            </row>
+            <row>
+              <cell>XP+</cell>
+              <cell>74.5</cell>
+            </row>
+            <row>
+              <cell>BiSDB</cell>
+              <cell>72.4</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>6</id>
+        <source>TET</source>
+        <caption>Table 6: Consistent constituent matching rates for structures with different spans.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>CCM Rates (%)</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>System</cell>
+              <cell>&lt;6</cell>
+              <cell>6-10</cell>
+              <cell>11-15</cell>
+              <cell>16-20</cell>
+              <cell>&gt;20</cell>
+            </row>
+            <row>
+              <cell>XP+</cell>
+              <cell>75.2</cell>
+              <cell>70.9</cell>
+              <cell>71.0</cell>
+              <cell>76.2</cell>
+              <cell>82.2</cell>
+            </row>
+            <row>
+              <cell>BiSDB</cell>
+              <cell>69.3</cell>
+              <cell>74.7</cell>
+              <cell>74.2</cell>
+              <cell>80.0</cell>
+              <cell>85.6</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references/>
+    <citations/>
+  </content>
+</document>

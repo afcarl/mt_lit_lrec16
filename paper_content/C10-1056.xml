@@ -1,0 +1,3025 @@
+<document>
+  <filename>C10-1056</filename>
+  <authors>
+    <author>Fei Huang</author>
+  </authors>
+  <title>Feature-Rich Discriminative Phrase Rescoring for SMT</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>This paper proposes a new approach to phrase rescoring for statistical machine translation (SMT). A set of novel features capturing the translingual equivalence between a source and a target phrase pair are introduced. These features are combined with linear regression model and neural network to predict the quality score of the phrase translation pair. These phrase scores are used to discriminatively rescore the baseline MT system&#8217;s phrase library: boost good phrase translations while prune bad ones. This approach not only significantly improves machine translation quality, but also reduces the model size by a considerable margin.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>This paper proposes a new approach to phrase rescoring for statistical machine translation (SMT).</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>A set of novel features capturing the translingual equivalence between a source and a target phrase pair are introduced.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>These features are combined with linear regression model and neural network to predict the quality score of the phrase translation pair.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>These phrase scores are used to discriminatively rescore the baseline MT system&#8217;s phrase library: boost good phrase translations while prune bad ones.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>This approach not only significantly improves machine translation quality, but also reduces the model size by a considerable margin.</text>
+              <doc_id>4</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>Statistical Machine Translation (SMT) systems, including phrase-based (Och and Ney 2002; Koehn et. al. 2003), syntax-based (Yamada and Knight 2001; Galley et. al. 2004) or hybrid systems (Chiang 2005; Zollmann and Venugopal 2006), are typically built with bilingual phrase pairs, which are extracted from parallel sentences with word alignment. Due to the noises in the bilingual sentence pairs and errors from automatic word alignment, the extracted phrase pairs may contain errors, such as
+&#8226; dropping content words (the $num countries ,|| &#20010; :&lt;null&gt;),
+&#8226; length mismatch (along the lines of the || &#30340; :of)
+&#8226; content irrelevance (the next $num years, ||
+&#27700; &#24179; :level &#26041; &#38754; :aspect &#25152; :&lt;null&gt;)
+These incorrect phrase pairs compete with correct phrase pairs during the decoding process, and are often selected when their counts are high (if they contain systematic alignment errors) or certain model costs are low (for example, when some source content words are translated into target function words in an incorrect phrase pair, the language model cost of the incorrect pair may be small, making it more likely that the pair will be selected for the final translation). As a result, the translation quality is degraded when these incorrect phrase pairs are selected.
+Various approaches have been proposed over the past decade for the purpose of improving the phrase pair quality for SMT. For example, a term weight based model was presented in (Zhao, et al., 2004) to rescore phrase translation pairs. It models the translation probability with similarities between the query (source phrase) and document (target phrase). Significant improvement was obtained in the translation performance. In (Johnson, et al., 2007; Yang and Zheng, 2009), a statistical significance test was used to heavily prune the phrase table and thus achieved higher precision and better MT performance.
+In (Deng, et al., 2008), a generic phrase training algorithm was proposed with the focus on phrase extraction. Multiple feature functions are utilized based on information metrics or word alignment. The feature parameters are optimized to directly maximize the end-to-end system performance. Significant improvement was reported for a small MT task. But when the phrase table is large, such as in a large-scale SMT system, the computational cost of tuning with this approach will be high due to many iterations of phrase extraction and re-decoding.
+In this paper we attempt to improve the quality of the phrase table using discriminative phrase rescoring method. We develop extensive set of features capturing the equivalence of bilingual
+phrase pairs. We combine these features using linear and nonlinear models in order to predict the quality of phrase pairs. Finally we boost the score of good phrases while pruning bad phrases. This approach not only significantly improves the translation quality, but also reduces the phrase table size by 16%.
+The paper is organized as follows: in section 2 we discuss two regression models for phrase pair quality prediction: linear regression and neural network. In section 3 we introduce the rich set of features. We describe how to obtain the training data for supervised learning of the two models in section 4. Section 5 presents some approaches to discriminative phrase rescoring using these scores, followed by experiments on model regression and machine translation in section 6.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Statistical Machine Translation (SMT) systems, including phrase-based (Och and Ney 2002; Koehn et.</text>
+              <doc_id>5</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>al. 2003), syntax-based (Yamada and Knight 2001; Galley et.</text>
+              <doc_id>6</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>al. 2004) or hybrid systems (Chiang 2005; Zollmann and Venugopal 2006), are typically built with bilingual phrase pairs, which are extracted from parallel sentences with word alignment.</text>
+              <doc_id>7</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Due to the noises in the bilingual sentence pairs and errors from automatic word alignment, the extracted phrase pairs may contain errors, such as</text>
+              <doc_id>8</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; dropping content words (the $num countries ,|| &#20010; :&lt;null&gt;),</text>
+              <doc_id>9</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; length mismatch (along the lines of the || &#30340; :of)</text>
+              <doc_id>10</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; content irrelevance (the next $num years, ||</text>
+              <doc_id>11</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#27700; &#24179; :level &#26041; &#38754; :aspect &#25152; :&lt;null&gt;)</text>
+              <doc_id>12</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>These incorrect phrase pairs compete with correct phrase pairs during the decoding process, and are often selected when their counts are high (if they contain systematic alignment errors) or certain model costs are low (for example, when some source content words are translated into target function words in an incorrect phrase pair, the language model cost of the incorrect pair may be small, making it more likely that the pair will be selected for the final translation).</text>
+              <doc_id>13</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>As a result, the translation quality is degraded when these incorrect phrase pairs are selected.</text>
+              <doc_id>14</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Various approaches have been proposed over the past decade for the purpose of improving the phrase pair quality for SMT.</text>
+              <doc_id>15</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For example, a term weight based model was presented in (Zhao, et al., 2004) to rescore phrase translation pairs.</text>
+              <doc_id>16</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>It models the translation probability with similarities between the query (source phrase) and document (target phrase).</text>
+              <doc_id>17</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Significant improvement was obtained in the translation performance.</text>
+              <doc_id>18</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>In (Johnson, et al., 2007; Yang and Zheng, 2009), a statistical significance test was used to heavily prune the phrase table and thus achieved higher precision and better MT performance.</text>
+              <doc_id>19</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In (Deng, et al., 2008), a generic phrase training algorithm was proposed with the focus on phrase extraction.</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Multiple feature functions are utilized based on information metrics or word alignment.</text>
+              <doc_id>21</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The feature parameters are optimized to directly maximize the end-to-end system performance.</text>
+              <doc_id>22</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Significant improvement was reported for a small MT task.</text>
+              <doc_id>23</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>But when the phrase table is large, such as in a large-scale SMT system, the computational cost of tuning with this approach will be high due to many iterations of phrase extraction and re-decoding.</text>
+              <doc_id>24</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper we attempt to improve the quality of the phrase table using discriminative phrase rescoring method.</text>
+              <doc_id>25</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We develop extensive set of features capturing the equivalence of bilingual</text>
+              <doc_id>26</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>phrase pairs.</text>
+              <doc_id>27</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We combine these features using linear and nonlinear models in order to predict the quality of phrase pairs.</text>
+              <doc_id>28</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally we boost the score of good phrases while pruning bad phrases.</text>
+              <doc_id>29</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>This approach not only significantly improves the translation quality, but also reduces the phrase table size by 16%.</text>
+              <doc_id>30</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The paper is organized as follows: in section 2 we discuss two regression models for phrase pair quality prediction: linear regression and neural network.</text>
+              <doc_id>31</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>In section 3 we introduce the rich set of features.</text>
+              <doc_id>32</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We describe how to obtain the training data for supervised learning of the two models in section 4.</text>
+              <doc_id>33</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Section 5 presents some approaches to discriminative phrase rescoring using these scores, followed by experiments on model regression and machine translation in section 6.</text>
+              <doc_id>34</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Problem Formulation</title>
+        <text>Our goal is to predict the translation quality of a given bilingual phrase pair based on a set of features capturing their similarities. These features are combined with linear regression model and neural network. The training data for both models are derived from phrase pairs extracted from small amount of parallel sentences with hand alignment and machine alignment. Details are given in section 4.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Our goal is to predict the translation quality of a given bilingual phrase pair based on a set of features capturing their similarities.</text>
+              <doc_id>35</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>These features are combined with linear regression model and neural network.</text>
+              <doc_id>36</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The training data for both models are derived from phrase pairs extracted from small amount of parallel sentences with hand alignment and machine alignment.</text>
+              <doc_id>37</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Details are given in section 4.</text>
+              <doc_id>38</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>2.1 Linear regression model</title>
+            <text>In the linear regression model, the predicted phrase pair quality score is defined as
+=&#8721;
+i
+Sco ( e, f ) &#955; f ( e, f ) (1)
+where f i ( e, f ) is the feature for the phrase pair (e,f), as to be defined in section 3. These feature values can be binary (0/1), integers or real values. &#955; s are the feature weights to be learned from training data. The phrase pair quality score in the training data is defined as the sum of the target phrase&#8217;s BLEU score (Papineni et. al. 2002) and the source phrase&#8217;s BLEU score, where the reference translation is obtained from phrase pairs extracted from human alignment. Details about the training data are given in section 4. The linear regression model is trained using a statistical package R 1 . After training, the
+http://www.r-project.org/
+i
+i
+learned feature weights are applied on a held-out set of phrase pairs with known quality scores to evaluate the model&#8217;s regression accuracy.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In the linear regression model, the predicted phrase pair quality score is defined as</text>
+                  <doc_id>39</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>=&#8721;</text>
+                  <doc_id>40</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i</text>
+                  <doc_id>41</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Sco ( e, f ) &#955; f ( e, f ) (1)</text>
+                  <doc_id>42</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where f i ( e, f ) is the feature for the phrase pair (e,f), as to be defined in section 3.</text>
+                  <doc_id>43</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These feature values can be binary (0/1), integers or real values.</text>
+                  <doc_id>44</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&#955; s are the feature weights to be learned from training data.</text>
+                  <doc_id>45</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The phrase pair quality score in the training data is defined as the sum of the target phrase&#8217;s BLEU score (Papineni et.</text>
+                  <doc_id>46</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>al. 2002) and the source phrase&#8217;s BLEU score, where the reference translation is obtained from phrase pairs extracted from human alignment.</text>
+                  <doc_id>47</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Details about the training data are given in section 4.</text>
+                  <doc_id>48</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The linear regression model is trained using a statistical package R 1 .</text>
+                  <doc_id>49</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>After training, the</text>
+                  <doc_id>50</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>http://www.r-project.org/</text>
+                  <doc_id>51</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i</text>
+                  <doc_id>52</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i</text>
+                  <doc_id>53</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>learned feature weights are applied on a held-out set of phrase pairs with known quality scores to evaluate the model&#8217;s regression accuracy.</text>
+                  <doc_id>54</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>2.2 Neural Network model</title>
+            <text>A feed-forward back-propagation network (Bryson and Ho, 1969) is created with one hidden layer and 20 nodes. During training, the phrase pair features are fed into the network with their quality scores as expected outputs. After certain iterations of training, the neural net&#8217;s weights are stable and its mean square error on the training set has been significantly reduced. Then the learned network weights are fixed, and are applied to the test phrase pairs for regression accuracy evaluation. We use MatLab&#8482;&#8217;s neural net toolkit for training and test.
+We will compare both models&#8217; prediction accuracy in section 6. We would like to know whether the non-linear regression model outperforms linear regression model in terms of score prediction error, and if fewer regression errors correspond to better translation quality.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>A feed-forward back-propagation network (Bryson and Ho, 1969) is created with one hidden layer and 20 nodes.</text>
+                  <doc_id>55</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>During training, the phrase pair features are fed into the network with their quality scores as expected outputs.</text>
+                  <doc_id>56</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>After certain iterations of training, the neural net&#8217;s weights are stable and its mean square error on the training set has been significantly reduced.</text>
+                  <doc_id>57</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Then the learned network weights are fixed, and are applied to the test phrase pairs for regression accuracy evaluation.</text>
+                  <doc_id>58</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use MatLab&#8482;&#8217;s neural net toolkit for training and test.</text>
+                  <doc_id>59</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We will compare both models&#8217; prediction accuracy in section 6.</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We would like to know whether the non-linear regression model outperforms linear regression model in terms of score prediction error, and if fewer regression errors correspond to better translation quality.</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Feature Description</title>
+        <text>In this section we will describe the features we use to model the equivalence of a bilingual phrase pair (e,f). These features are defined on the phrase pair, its compositional units (words and characters), attributes (POS tags, numbers), co-occurrence frequency, length ratio, coverage ratio and alignment pattern.
+&#8226; Phrase : P p ( f | e) , ( e | f ) P p
+C( e, f ) P p
+( e | f ) = (2) C( f )
+where C( e, f ) is the co-occurrence frequency of the phrase pair (e,f), and C(f) is the occurrence frequency of the source phrase f. ( f | e) is
+defined similarly.
+&#8226; Word : P w ( f | e) , ( e | f ) P w
+P p P
+w( e | f ) = &#8719;max j
+t( ei | f
+j
+) (3)
+i
+(
+j
+where t e i | f ) is the lexical translation probability. This is similar to the word-level phrase
+translation probability, as typically calculated in SMT systems (Brown et. al. 1993). Here we use max instead of sum. P w ( f | e) is calculated similarly.
+&#8226; Character: P c ( f | e) , ( e | f )
+When the source or target words are composed of smaller units, such as characters for Chinese words, or prefix/stem/suffix for Arabic words, we can calculate their translation probability on the sub-unit level. This is helpful for languages where the meaning of a word is closely related to its compositional units, such as Chinese and Arabic.
+P
+c
+( e | f ) = &#8719;max n t( ei | cn ) (4)
+i
+where cn is the n-th character in the source phrase f (n=1,&#8230;,N).
+P c
+&#8226; POS tag: P t ( f | e) , ( e | f )
+In addition to the probabilities estimated at the character, word and phrase levels based on the surface forms, we also compute the POS-based phrase translation probabilities. For each source and target word in a phrase pair, we automatically label their POS tags. Then POS-based probabilities are computed in a way similar to the calculation of the word-level phrase translation probability (formula 3). It is believed that such syntactic information can help to distinguish good phrase pairs from bad ones (for example, when a verb is aligned to a noun, its POS translation probability should be low).
+&#8226; Length ratio
+This feature computes the ratio of the number of content words in the source and target phrases. It is designed to penalize phrases where content words in the source phrase are dropped in the target phrase (or vice versa). The ratio is defined to be 10 if the target phrase has zero content word while the source phrase has non-zero content words. If neither phrase contains a content word, the ratio is defined to be 1.
+&#8226; Log frequency
+This feature takes the logarithm of the cooccurrence frequency of the phrase pair. High P t
+frequency phrase pairs are more likely to be correct translations if they are not due to systematic alignment errors.
+&#8226; Coverage ratio
+We propose this novel feature based on the observation that if a phrase pair is a correct translation, it often includes correct sub-phrase pair translations (decomposition). Similarly a correct phrase pair will also appear in correct longer phrase pair translations (composition) unless it is a very long phrase pair itself. Formally we define the coverage ratio of a phrase pair (e,f) as:
+Cov( e, f ) = Cov ( e, f ) Cov ( e, f ) . (5)
+d
++
+Here Cov d ( e, f ) is the decomposition coverage:
+&#8721;&#8710;( ei, e) ( ei , fi ) &#8712;PL Covd ( e, f ) = (6) &#8721;
+fi &#8838; f
+&#8721;
+(*, fi ) &#8712;PL
+where f
+i
+is a sub-phrase of f, and ( e i , f
+i
+) is a phrase pair in the MT system&#8217;s bilingual phrase library P . &#8710; e , e ) is defined to be 1
+L
+(
+1 2
+if e1 &#8838; e2 , otherwise it is 0. For each source sub-phrase f
+i
+, this formula calculates the ratio that its target translation e
+i
+is also a sub-phrase of the target phrase e, then the ratio is summed over all the source sub-phrases.
+Similarly the composition coverage is defined as
+j
+&#8721;&#8710;( e, e )
+j j
+( e , f ) &#8712;PL Covc ( e, f ) = (7)
+&#8721;
+j 1
+where
+j
+e is one of f
+j
+a super-phrase of f. For each source superphrase
+&#8721;
+f &#8838; f
+j
+(*, f ) &#8712;PL j
+f is any source phrase containing f and
+j
+f &#8217;s translations in P
+L
+. We call
+j
+f , this formula calculates the ratio that
+j
+its target translation e is also a super-phrase of the target phrase e, then the ratio is summed over all the source super-phrases.
+Short phrase pairs (such as a phrase pair with one source word translating into one target word) have less sub-phrases but more super-phrases (for long phrase pairs, it is the other way around).
+c
+Combining the two coverage factors produces balanced coverage ratio, not penalizing too short or too long phrases.
+&#8226; Number match
+During preprocessing of the training data, numbers are mapped into a special token ($num) for better generalization. Typically one number corresponds to one special token. During translation numbers should not be arbitrarily dropped or inserted. Therefore we can check whether the source and target phrases have the right number of $num to be matched. If they are the same the number match feature has value 1, otherwise it is 0.
+&#8226; Alignment pattern
+This feature calculates the number of unaligned content words in a given phrase pair, where word alignment is obtained simply based on the maximum lexical translation probability of the source (target) word given all the target (source) words in the phrase pair.
+Among the above 13 features, the number match feature is a binary feature, the alignment pattern feature is an integer-value feature, and the rest are real-value features. Also note that most features are positively correlated with the phrase translation quality (the greater the feature value, the more likely it is a correct phrase translation) except the alignment pattern feature, where more unaligned content words corresponds to bad phrase translations.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this section we will describe the features we use to model the equivalence of a bilingual phrase pair (e,f).</text>
+              <doc_id>62</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>These features are defined on the phrase pair, its compositional units (words and characters), attributes (POS tags, numbers), co-occurrence frequency, length ratio, coverage ratio and alignment pattern.</text>
+              <doc_id>63</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; Phrase : P p ( f | e) , ( e | f ) P p</text>
+              <doc_id>64</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>C( e, f ) P p</text>
+              <doc_id>65</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>( e | f ) = (2) C( f )</text>
+              <doc_id>66</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>where C( e, f ) is the co-occurrence frequency of the phrase pair (e,f), and C(f) is the occurrence frequency of the source phrase f. ( f | e) is</text>
+              <doc_id>67</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>defined similarly.</text>
+              <doc_id>68</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; Word : P w ( f | e) , ( e | f ) P w</text>
+              <doc_id>69</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>P p P</text>
+              <doc_id>70</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>w( e | f ) = &#8719;max j</text>
+              <doc_id>71</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>t( ei | f</text>
+              <doc_id>72</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>73</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>) (3)</text>
+              <doc_id>74</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i</text>
+              <doc_id>75</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(</text>
+              <doc_id>76</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>77</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>where t e i | f ) is the lexical translation probability.</text>
+              <doc_id>78</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is similar to the word-level phrase</text>
+              <doc_id>79</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>translation probability, as typically calculated in SMT systems (Brown et.</text>
+              <doc_id>80</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>al. 1993).</text>
+              <doc_id>81</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Here we use max instead of sum.</text>
+              <doc_id>82</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>P w ( f | e) is calculated similarly.</text>
+              <doc_id>83</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; Character: P c ( f | e) , ( e | f )</text>
+              <doc_id>84</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>When the source or target words are composed of smaller units, such as characters for Chinese words, or prefix/stem/suffix for Arabic words, we can calculate their translation probability on the sub-unit level.</text>
+              <doc_id>85</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is helpful for languages where the meaning of a word is closely related to its compositional units, such as Chinese and Arabic.</text>
+              <doc_id>86</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>P</text>
+              <doc_id>87</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>c</text>
+              <doc_id>88</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>( e | f ) = &#8719;max n t( ei | cn ) (4)</text>
+              <doc_id>89</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i</text>
+              <doc_id>90</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>where cn is the n-th character in the source phrase f (n=1,&#8230;,N).</text>
+              <doc_id>91</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>P c</text>
+              <doc_id>92</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; POS tag: P t ( f | e) , ( e | f )</text>
+              <doc_id>93</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In addition to the probabilities estimated at the character, word and phrase levels based on the surface forms, we also compute the POS-based phrase translation probabilities.</text>
+              <doc_id>94</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For each source and target word in a phrase pair, we automatically label their POS tags.</text>
+              <doc_id>95</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Then POS-based probabilities are computed in a way similar to the calculation of the word-level phrase translation probability (formula 3).</text>
+              <doc_id>96</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is believed that such syntactic information can help to distinguish good phrase pairs from bad ones (for example, when a verb is aligned to a noun, its POS translation probability should be low).</text>
+              <doc_id>97</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; Length ratio</text>
+              <doc_id>98</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>This feature computes the ratio of the number of content words in the source and target phrases.</text>
+              <doc_id>99</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is designed to penalize phrases where content words in the source phrase are dropped in the target phrase (or vice versa).</text>
+              <doc_id>100</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The ratio is defined to be 10 if the target phrase has zero content word while the source phrase has non-zero content words.</text>
+              <doc_id>101</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>If neither phrase contains a content word, the ratio is defined to be 1.</text>
+              <doc_id>102</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; Log frequency</text>
+              <doc_id>103</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>This feature takes the logarithm of the cooccurrence frequency of the phrase pair.</text>
+              <doc_id>104</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>High P t</text>
+              <doc_id>105</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>frequency phrase pairs are more likely to be correct translations if they are not due to systematic alignment errors.</text>
+              <doc_id>106</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; Coverage ratio</text>
+              <doc_id>107</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We propose this novel feature based on the observation that if a phrase pair is a correct translation, it often includes correct sub-phrase pair translations (decomposition).</text>
+              <doc_id>108</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Similarly a correct phrase pair will also appear in correct longer phrase pair translations (composition) unless it is a very long phrase pair itself.</text>
+              <doc_id>109</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Formally we define the coverage ratio of a phrase pair (e,f) as:</text>
+              <doc_id>110</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Cov( e, f ) = Cov ( e, f ) Cov ( e, f ) .</text>
+              <doc_id>111</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>(5)</text>
+              <doc_id>112</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>d</text>
+              <doc_id>113</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>+</text>
+              <doc_id>114</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Here Cov d ( e, f ) is the decomposition coverage:</text>
+              <doc_id>115</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8721;&#8710;( ei, e) ( ei , fi ) &#8712;PL Covd ( e, f ) = (6) &#8721;</text>
+              <doc_id>116</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>fi &#8838; f</text>
+              <doc_id>117</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8721;</text>
+              <doc_id>118</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(*, fi ) &#8712;PL</text>
+              <doc_id>119</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>where f</text>
+              <doc_id>120</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i</text>
+              <doc_id>121</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>is a sub-phrase of f, and ( e i , f</text>
+              <doc_id>122</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i</text>
+              <doc_id>123</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>) is a phrase pair in the MT system&#8217;s bilingual phrase library P .</text>
+              <doc_id>124</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>&#8710; e , e ) is defined to be 1</text>
+              <doc_id>125</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>L</text>
+              <doc_id>126</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(</text>
+              <doc_id>127</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1 2</text>
+              <doc_id>128</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>if e1 &#8838; e2 , otherwise it is 0.</text>
+              <doc_id>129</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For each source sub-phrase f</text>
+              <doc_id>130</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i</text>
+              <doc_id>131</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>, this formula calculates the ratio that its target translation e</text>
+              <doc_id>132</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>i</text>
+              <doc_id>133</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>is also a sub-phrase of the target phrase e, then the ratio is summed over all the source sub-phrases.</text>
+              <doc_id>134</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Similarly the composition coverage is defined as</text>
+              <doc_id>135</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>136</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8721;&#8710;( e, e )</text>
+              <doc_id>137</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j j</text>
+              <doc_id>138</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>( e , f ) &#8712;PL Covc ( e, f ) = (7)</text>
+              <doc_id>139</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8721;</text>
+              <doc_id>140</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j 1</text>
+              <doc_id>141</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>where</text>
+              <doc_id>142</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>143</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>e is one of f</text>
+              <doc_id>144</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>145</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>a super-phrase of f. For each source superphrase</text>
+              <doc_id>146</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8721;</text>
+              <doc_id>147</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>f &#8838; f</text>
+              <doc_id>148</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>149</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(*, f ) &#8712;PL j</text>
+              <doc_id>150</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>f is any source phrase containing f and</text>
+              <doc_id>151</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>152</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>f &#8217;s translations in P</text>
+              <doc_id>153</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>L</text>
+              <doc_id>154</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>.</text>
+              <doc_id>155</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We call</text>
+              <doc_id>156</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>157</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>f , this formula calculates the ratio that</text>
+              <doc_id>158</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>j</text>
+              <doc_id>159</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>its target translation e is also a super-phrase of the target phrase e, then the ratio is summed over all the source super-phrases.</text>
+              <doc_id>160</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Short phrase pairs (such as a phrase pair with one source word translating into one target word) have less sub-phrases but more super-phrases (for long phrase pairs, it is the other way around).</text>
+              <doc_id>161</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>c</text>
+              <doc_id>162</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Combining the two coverage factors produces balanced coverage ratio, not penalizing too short or too long phrases.</text>
+              <doc_id>163</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; Number match</text>
+              <doc_id>164</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>During preprocessing of the training data, numbers are mapped into a special token ($num) for better generalization.</text>
+              <doc_id>165</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Typically one number corresponds to one special token.</text>
+              <doc_id>166</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>During translation numbers should not be arbitrarily dropped or inserted.</text>
+              <doc_id>167</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Therefore we can check whether the source and target phrases have the right number of $num to be matched.</text>
+              <doc_id>168</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>If they are the same the number match feature has value 1, otherwise it is 0.</text>
+              <doc_id>169</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8226; Alignment pattern</text>
+              <doc_id>170</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>This feature calculates the number of unaligned content words in a given phrase pair, where word alignment is obtained simply based on the maximum lexical translation probability of the source (target) word given all the target (source) words in the phrase pair.</text>
+              <doc_id>171</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Among the above 13 features, the number match feature is a binary feature, the alignment pattern feature is an integer-value feature, and the rest are real-value features.</text>
+              <doc_id>172</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Also note that most features are positively correlated with the phrase translation quality (the greater the feature value, the more likely it is a correct phrase translation) except the alignment pattern feature, where more unaligned content words corresponds to bad phrase translations.</text>
+              <doc_id>173</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Training Data</title>
+        <text>The training data for both the linear regression and neural network models are bilingual phrase pairs with the above 13 feature values as well as their expected phrase quality scores. The feature values can be computed according to the description in section 3. The expected translation quality score for the phrase pair (e,f) is defined as
+* *
+B ( e, f ) = Bleue ( , e | f ) + Bleu( f , f | e) (8)
+*
+where e is the human translation of the source
+*
+phrase f, and f is the human translation of the target phrase e. These human translations are obtained from hand alignment of some parallel sentences.
+1. Given hand alignment of some bilingual sentence pairs, extract gold phrase translation pairs.
+2. Apply automatic word alignment on the same bilingual sentences, and extract phrase pairs. Note that due to the word alignment errors, the extracted phrase pairs are noisy.
+3. For each phrase pair (e, f) in the noisy phrase table, find whether the source phrase f also appears in the gold phrase table as (e*, f). If so, use the corresponding target phrase(s) e* as reference translation(s) to evaluate the BLEU score of the target phrase e in the noisy phrase table.
+4. Similarly, for each e in (e, f), identify (e, f*) in the gold phrase table and compute the BLEU score of f using f* as the reference.
+5. The sum of the above two BLEU scores is the phrase pair&#8217;s translation quality score.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The training data for both the linear regression and neural network models are bilingual phrase pairs with the above 13 feature values as well as their expected phrase quality scores.</text>
+              <doc_id>174</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The feature values can be computed according to the description in section 3.</text>
+              <doc_id>175</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The expected translation quality score for the phrase pair (e,f) is defined as</text>
+              <doc_id>176</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>* *</text>
+              <doc_id>177</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>B ( e, f ) = Bleue ( , e | f ) + Bleu( f , f | e) (8)</text>
+              <doc_id>178</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>*</text>
+              <doc_id>179</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>where e is the human translation of the source</text>
+              <doc_id>180</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>*</text>
+              <doc_id>181</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>phrase f, and f is the human translation of the target phrase e. These human translations are obtained from hand alignment of some parallel sentences.</text>
+              <doc_id>182</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>1.</text>
+              <doc_id>183</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Given hand alignment of some bilingual sentence pairs, extract gold phrase translation pairs.</text>
+              <doc_id>184</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>2.</text>
+              <doc_id>185</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Apply automatic word alignment on the same bilingual sentences, and extract phrase pairs.</text>
+              <doc_id>186</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Note that due to the word alignment errors, the extracted phrase pairs are noisy.</text>
+              <doc_id>187</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>3.</text>
+              <doc_id>188</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For each phrase pair (e, f) in the noisy phrase table, find whether the source phrase f also appears in the gold phrase table as (e*, f).</text>
+              <doc_id>189</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>If so, use the corresponding target phrase(s) e* as reference translation(s) to evaluate the BLEU score of the target phrase e in the noisy phrase table.</text>
+              <doc_id>190</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>4.</text>
+              <doc_id>191</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Similarly, for each e in (e, f), identify (e, f*) in the gold phrase table and compute the BLEU score of f using f* as the reference.</text>
+              <doc_id>192</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>5.</text>
+              <doc_id>193</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The sum of the above two BLEU scores is the phrase pair&#8217;s translation quality score.</text>
+              <doc_id>194</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Phrase Rescoring</title>
+        <text>Given the bilingual phrase pairs&#8217; quality score, there are several ways to use them for statistical machine translation.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Given the bilingual phrase pairs&#8217; quality score, there are several ways to use them for statistical machine translation.</text>
+              <doc_id>195</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>5.1 Quality score as a decoder feature</title>
+            <text>A straightforward way is to use the quality scores as an additional feature in the SMT system, combined with other features (phrase scores, word scores, distortion scores, LM scores etc.) for MT hypotheses scoring. The feature weight can be empirically learned using manual tuning or automatic tuning such as MERT (Och 2003). In this situation, all the phrase pairs and their quality scores are stored in the MT system, which is different from the following approach where incorrect phrase translations are pruned.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>A straightforward way is to use the quality scores as an additional feature in the SMT system, combined with other features (phrase scores, word scores, distortion scores, LM scores etc.) for MT hypotheses scoring.</text>
+                  <doc_id>196</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The feature weight can be empirically learned using manual tuning or automatic tuning such as MERT (Och 2003).</text>
+                  <doc_id>197</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In this situation, all the phrase pairs and their quality scores are stored in the MT system, which is different from the following approach where incorrect phrase translations are pruned.</text>
+                  <doc_id>198</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>5.2 Discriminative phrase rescoring</title>
+            <text>Another approach is to select good and bad phrase pairs based on their predicted quality scores, then discriminatively rescore the phrase pairs in the baseline phrase library. We sort the phrase pairs based on their quality scores in a decreasing order. The bottom N phrase pairs are
+considered as incorrect translations and pruned from the phrase library. The top M phrase pairs P
+M
+are considered as good phrases with correct translations. As identifying correct sub-phrase translation requires accurate word alignment within phrase pairs, which is not easy to obtain due to the lack of rich context information within the phrase pair, we only boost the good phrase pairs&#8217; super-phrases in the phrase library. Given a phrase pair (e,f) with phrase co-occurrence count C(e,f), the weighted co-occurrence count is defined as:
+C ' ( e, f ) = C( e, f ) b (9)
+i
+i
+&#8719;
+i ( e , f ) &#8712;( e, f )
+i
+where ( e , f ) is a good sub-phrase pair of (e,f) belonging to P
+M
+, with quality score b
+i
+. Note that if (e,f) contains multiple good sub-phrase pairs, its co-occurrence count will be boosted multiple times. Here the boost factor is defined as the product of quality scores of good subphrase pairs. Instead of product, one can also use sum, which did not perform as well in our experiments. The weighted co-occurrence count is used to calculate the new phrase translation scores: C' ( e, f ) P ' ( e | f ) = (10) C' (*, f )
+&#8721;
+&#8721;
+i
+C' ( e, f ) P ' ( f | e) = (11) C' ( e,*)
+which replace the original phrase translation scores in the SMT system. In addition to phrase co-occurrence count rescoring, the quality scores can also be used to rescore word translation lexicons by updating word co-occurrence counts accordingly.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Another approach is to select good and bad phrase pairs based on their predicted quality scores, then discriminatively rescore the phrase pairs in the baseline phrase library.</text>
+                  <doc_id>199</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We sort the phrase pairs based on their quality scores in a decreasing order.</text>
+                  <doc_id>200</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The bottom N phrase pairs are</text>
+                  <doc_id>201</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>considered as incorrect translations and pruned from the phrase library.</text>
+                  <doc_id>202</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The top M phrase pairs P</text>
+                  <doc_id>203</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>M</text>
+                  <doc_id>204</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>are considered as good phrases with correct translations.</text>
+                  <doc_id>205</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As identifying correct sub-phrase translation requires accurate word alignment within phrase pairs, which is not easy to obtain due to the lack of rich context information within the phrase pair, we only boost the good phrase pairs&#8217; super-phrases in the phrase library.</text>
+                  <doc_id>206</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given a phrase pair (e,f) with phrase co-occurrence count C(e,f), the weighted co-occurrence count is defined as:</text>
+                  <doc_id>207</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>C ' ( e, f ) = C( e, f ) b (9)</text>
+                  <doc_id>208</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8719;</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i ( e , f ) &#8712;( e, f )</text>
+                  <doc_id>212</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i</text>
+                  <doc_id>213</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where ( e , f ) is a good sub-phrase pair of (e,f) belonging to P</text>
+                  <doc_id>214</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>M</text>
+                  <doc_id>215</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>, with quality score b</text>
+                  <doc_id>216</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i</text>
+                  <doc_id>217</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>218</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that if (e,f) contains multiple good sub-phrase pairs, its co-occurrence count will be boosted multiple times.</text>
+                  <doc_id>219</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Here the boost factor is defined as the product of quality scores of good subphrase pairs.</text>
+                  <doc_id>220</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Instead of product, one can also use sum, which did not perform as well in our experiments.</text>
+                  <doc_id>221</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The weighted co-occurrence count is used to calculate the new phrase translation scores: C' ( e, f ) P ' ( e | f ) = (10) C' (*, f )</text>
+                  <doc_id>222</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8721;</text>
+                  <doc_id>223</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8721;</text>
+                  <doc_id>224</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>i</text>
+                  <doc_id>225</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>C' ( e, f ) P ' ( f | e) = (11) C' ( e,*)</text>
+                  <doc_id>226</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>which replace the original phrase translation scores in the SMT system.</text>
+                  <doc_id>227</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In addition to phrase co-occurrence count rescoring, the quality scores can also be used to rescore word translation lexicons by updating word co-occurrence counts accordingly.</text>
+                  <doc_id>228</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 Experiments</title>
+        <text>We conducted several experiments to evaluate the proposed phrase rescoring approach. First we evaluate the two regression models&#8217; quality score prediction accuracy. Secondly, we apply the predicted phrase scores on machine translation tasks. We will measure the improvement on translation quality as well as the reduction of model size. Our experiments are on English-Chinese translation.
+0.8
+0.78
+0.76
+0.74
+0.72
+0.7
+0.68
+0.66
+phrt2s
+chart2s
+cov
+align MSE of Phrase Pair Quality Scores</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We conducted several experiments to evaluate the proposed phrase rescoring approach.</text>
+              <doc_id>229</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>First we evaluate the two regression models&#8217; quality score prediction accuracy.</text>
+              <doc_id>230</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Secondly, we apply the predicted phrase scores on machine translation tasks.</text>
+              <doc_id>231</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We will measure the improvement on translation quality as well as the reduction of model size.</text>
+              <doc_id>232</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our experiments are on English-Chinese translation.</text>
+              <doc_id>233</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0.8</text>
+              <doc_id>234</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0.78</text>
+              <doc_id>235</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0.76</text>
+              <doc_id>236</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0.74</text>
+              <doc_id>237</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0.72</text>
+              <doc_id>238</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0.7</text>
+              <doc_id>239</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0.68</text>
+              <doc_id>240</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>0.66</text>
+              <doc_id>241</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>phrt2s</text>
+              <doc_id>242</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>chart2s</text>
+              <doc_id>243</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>cov</text>
+              <doc_id>244</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>align MSE of Phrase Pair Quality Scores</text>
+              <doc_id>245</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>6.1 Regression model evaluation</title>
+            <text>num
+logfq
+wordt2s
+post2s
+poss2t
+length
+words2t
+phars2t
+chars2t
+Figure 1. Linear regression model phrase pair prediction MSE curve. Errors are significantly reduced when more features are introduced (phrs2t /phrt2s: phrase source-to-target/target-to-source features; words2t/wordt2s: word-level; chars2t/chart2s: character-level; poss2t/post2s: POS-level; cov: coverage ratio; align: alignment pattern; logfq: log frequency; num: number match; length: length ratio).
+Figure 2. Neural network model phrase pair prediction MSE curve. Errors are significantly reduced with more training iterations.
+We select 10K English-Chinese sentence pairs with both hand alignment and automatic HMM alignment, and extract 106K phrase pairs with true phrase translation quality scores as computed according to formula 8. We choose 53K phrase pairs for regression model training and another 53K phrase pairs for model evaluation. There are 14 parameters to be learned (13 feature weights plus an intercept parameter) for the linear regression model, and 280 weights ( 13&#215; 20
+Linear Regression Neural Network Good and| &#21644; |5.52327 rights| &#26435; &#21033; |6.96817 phrase amount| &#37329; &#39069; &#25968; &#37327; |4.03006 has become| &#24050; &#25104; &#20026; |4.16468 pairs us|, &#32654; -|3.91992 why| &#20026; &#29978; &#20040; |3.82629 her husband| &#22905; &#19976; &#22827; |3.85536 by armed| &#21463; &#27494; &#35013; |3.62988 the program| &#33410; &#30446; , &#19968; |3.81078 o|O |3.47795 the job| &#20102; &#36825; &#20221; &#24037; &#20316; |3.77406 of drama| &#22312; &#25103; &#21095; |3.36601 shrine|; &#38742; &#22269; &#31070; &#31038; |3.74336 government and| &#25919; &#24220; &#21450; |3.27347 of course ,|, &#24403; &#28982; , &#23601; &#26159; |3.7174 introduction| &#24341; &#36827; |3.19113 is only| &#21482; &#33021; &#26159; &#36825; |3.69426 heart disease| &#24515; &#33039; &#30142; &#30149; |3.11829 visit| &#35775; &#38382; &#21482; |3.67256 heads| &#39318; &#33041; &#20204; |3.05467 facilities and| &#35774; &#26045; , &#24182; &#22312; |3.65402 american consumers| &#32654; &#22269; &#28040; &#36153; &#32773; |2.99706
+Bad as well| &#21450; &#20854; |1.03234 letter| &#33268; &#20989; &#36149; &#20250; |0.39203 phrase closed| &#33853; &#19979; &#24119; &#24149; |1.01271 , though| &#23613; &#31649; &#23427; |0.37020 pairs she was| &#26757; &#20811; &#23572; |0.99011 levels of| &#21508; &#32423; &#33853; &#23454; |0.34892 way| &#25913; &#20026; &#21452; &#31243; |0.955918 - board| &#38754; &#26495; |0.32826 of a| &#20986; &#19968; &#31181; |0.914717 number of| &#25209; &#20030; &#25253; |0.30499 knowledge| &#23519; &#35273; |0.875116 indonesia| &#33487; &#39532; &#23572; &#20304; &#25176; |0.27827 made| &#20986; &#24109; "|0.837358 xinhua at|$num |0.24433 the| &#20445; &#25345; &#32852; &#32476; |0.801142 provinces| &#23433; &#24509; |0.20281 end| &#20043; &#21069; |0.769938 new .| &#26032; &#40092; &#20043; &#22788; &#30340; , |0.15430 held| &#32780; &#36827; &#34892; &#30340; |0.742588 can| &#30340; &#19981; &#21516; |0.09502
+Table 2. Examples of good and bad phrase pairs based on the linear regression model and neural network&#8217;s predicted quality scores.
+for the input weight matrix plus 20 &#215; 1 for the output weight vector) for the neural network model. In both cases, the training data size is much more than the parameters size, so there is no data sparseness problem.
+After the model parameters are learned from the training data, we apply the regression model to the evaluation data set, then compute the phrase quality score prediction mean squared error (MSE, also known as the average residual sum of squares):
+MSE = 1 &#8721; [ B ( , ) &#8722; ( , )] 2 p ek fk Bt ek f
+k
+(12)
+K k
+where B is the predicted quality score of the
+p
+phrase pair ( e
+k
+, f
+k
+), while Bt is the true score calculated based on human translations.
+Figure 1 shows the reduction of the regression error in the linear regression model trained with different features. One may find that the MSE is significantly reduced (from 0.78 to 0.70) when additional features are added into the regression model.
+Similarly, the neural network&#8217;s MSE curve is shown in Figure 2. It can be seen that the MSE is significantly reduced with more iterations of training (from the initial error of 1.33 to 0.42 after 40 iterations).
+Table 2 shows some phrase pairs with high/low quality scores predicted by the linear regression model and the neural network. One can see that both models assign high scores to good phrase translations and low scores to noisy phrase pairs. Although the values of these scores are beyond the range of [0, 2] as defined in formula 8, this is not a problem for our MT tasks, since they are only used as phrase boosting weights or pruning threshold.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>num</text>
+                  <doc_id>246</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>logfq</text>
+                  <doc_id>247</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>wordt2s</text>
+                  <doc_id>248</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>post2s</text>
+                  <doc_id>249</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>poss2t</text>
+                  <doc_id>250</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>length</text>
+                  <doc_id>251</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>words2t</text>
+                  <doc_id>252</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>phars2t</text>
+                  <doc_id>253</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>chars2t</text>
+                  <doc_id>254</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 1.</text>
+                  <doc_id>255</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Linear regression model phrase pair prediction MSE curve.</text>
+                  <doc_id>256</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Errors are significantly reduced when more features are introduced (phrs2t /phrt2s: phrase source-to-target/target-to-source features; words2t/wordt2s: word-level; chars2t/chart2s: character-level; poss2t/post2s: POS-level; cov: coverage ratio; align: alignment pattern; logfq: log frequency; num: number match; length: length ratio).</text>
+                  <doc_id>257</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 2.</text>
+                  <doc_id>258</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Neural network model phrase pair prediction MSE curve.</text>
+                  <doc_id>259</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Errors are significantly reduced with more training iterations.</text>
+                  <doc_id>260</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We select 10K English-Chinese sentence pairs with both hand alignment and automatic HMM alignment, and extract 106K phrase pairs with true phrase translation quality scores as computed according to formula 8.</text>
+                  <doc_id>261</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We choose 53K phrase pairs for regression model training and another 53K phrase pairs for model evaluation.</text>
+                  <doc_id>262</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>There are 14 parameters to be learned (13 feature weights plus an intercept parameter) for the linear regression model, and 280 weights ( 13&#215; 20</text>
+                  <doc_id>263</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Linear Regression Neural Network Good and| &#21644; |5.52327 rights| &#26435; &#21033; |6.96817 phrase amount| &#37329; &#39069; &#25968; &#37327; |4.03006 has become| &#24050; &#25104; &#20026; |4.16468 pairs us|, &#32654; -|3.91992 why| &#20026; &#29978; &#20040; |3.82629 her husband| &#22905; &#19976; &#22827; |3.85536 by armed| &#21463; &#27494; &#35013; |3.62988 the program| &#33410; &#30446; , &#19968; |3.81078 o|O |3.47795 the job| &#20102; &#36825; &#20221; &#24037; &#20316; |3.77406 of drama| &#22312; &#25103; &#21095; |3.36601 shrine|; &#38742; &#22269; &#31070; &#31038; |3.74336 government and| &#25919; &#24220; &#21450; |3.27347 of course ,|, &#24403; &#28982; , &#23601; &#26159; |3.7174 introduction| &#24341; &#36827; |3.19113 is only| &#21482; &#33021; &#26159; &#36825; |3.69426 heart disease| &#24515; &#33039; &#30142; &#30149; |3.11829 visit| &#35775; &#38382; &#21482; |3.67256 heads| &#39318; &#33041; &#20204; |3.05467 facilities and| &#35774; &#26045; , &#24182; &#22312; |3.65402 american consumers| &#32654; &#22269; &#28040; &#36153; &#32773; |2.99706</text>
+                  <doc_id>264</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Bad as well| &#21450; &#20854; |1.03234 letter| &#33268; &#20989; &#36149; &#20250; |0.39203 phrase closed| &#33853; &#19979; &#24119; &#24149; |1.01271 , though| &#23613; &#31649; &#23427; |0.37020 pairs she was| &#26757; &#20811; &#23572; |0.99011 levels of| &#21508; &#32423; &#33853; &#23454; |0.34892 way| &#25913; &#20026; &#21452; &#31243; |0.955918 - board| &#38754; &#26495; |0.32826 of a| &#20986; &#19968; &#31181; |0.914717 number of| &#25209; &#20030; &#25253; |0.30499 knowledge| &#23519; &#35273; |0.875116 indonesia| &#33487; &#39532; &#23572; &#20304; &#25176; |0.27827 made| &#20986; &#24109; "|0.837358 xinhua at|$num |0.24433 the| &#20445; &#25345; &#32852; &#32476; |0.801142 provinces| &#23433; &#24509; |0.20281 end| &#20043; &#21069; |0.769938 new .| &#26032; &#40092; &#20043; &#22788; &#30340; , |0.15430 held| &#32780; &#36827; &#34892; &#30340; |0.742588 can| &#30340; &#19981; &#21516; |0.09502</text>
+                  <doc_id>265</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 2.</text>
+                  <doc_id>266</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Examples of good and bad phrase pairs based on the linear regression model and neural network&#8217;s predicted quality scores.</text>
+                  <doc_id>267</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>for the input weight matrix plus 20 &#215; 1 for the output weight vector) for the neural network model.</text>
+                  <doc_id>268</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In both cases, the training data size is much more than the parameters size, so there is no data sparseness problem.</text>
+                  <doc_id>269</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>After the model parameters are learned from the training data, we apply the regression model to the evaluation data set, then compute the phrase quality score prediction mean squared error (MSE, also known as the average residual sum of squares):</text>
+                  <doc_id>270</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>MSE = 1 &#8721; [ B ( , ) &#8722; ( , )] 2 p ek fk Bt ek f</text>
+                  <doc_id>271</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>k</text>
+                  <doc_id>272</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>(12)</text>
+                  <doc_id>273</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>K k</text>
+                  <doc_id>274</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where B is the predicted quality score of the</text>
+                  <doc_id>275</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>p</text>
+                  <doc_id>276</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>phrase pair ( e</text>
+                  <doc_id>277</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>k</text>
+                  <doc_id>278</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>, f</text>
+                  <doc_id>279</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>k</text>
+                  <doc_id>280</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>), while Bt is the true score calculated based on human translations.</text>
+                  <doc_id>281</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 1 shows the reduction of the regression error in the linear regression model trained with different features.</text>
+                  <doc_id>282</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>One may find that the MSE is significantly reduced (from 0.78 to 0.70) when additional features are added into the regression model.</text>
+                  <doc_id>283</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Similarly, the neural network&#8217;s MSE curve is shown in Figure 2.</text>
+                  <doc_id>284</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It can be seen that the MSE is significantly reduced with more iterations of training (from the initial error of 1.33 to 0.42 after 40 iterations).</text>
+                  <doc_id>285</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 2 shows some phrase pairs with high/low quality scores predicted by the linear regression model and the neural network.</text>
+                  <doc_id>286</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>One can see that both models assign high scores to good phrase translations and low scores to noisy phrase pairs.</text>
+                  <doc_id>287</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Although the values of these scores are beyond the range of [0, 2] as defined in formula 8, this is not a problem for our MT tasks, since they are only used as phrase boosting weights or pruning threshold.</text>
+                  <doc_id>288</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>6.2 Machine translation evaluation</title>
+            <text>We test the above phrase rescoring approach on English-Chinese machine translation. The SMT system is a phrase-based decoder similar to the description in (Tillman 2006), where various features are combined within the log-linear framework. These features include source-totarget phrase translation score based on relative frequency, source-to-target and target-to-source word-to-word translation scores, language model score, distortion model scores and word count. The training data for these features are 10M Chi-
+Table 3. Translation quality improvements with rescored phrase tables. Best result (1.2 BLEU gain) is obtained with discriminative rescoring by boosting top 30K phrase pairs and pruning bottom 600K phrase pairs, with some weight tuning.
+nese-English sentence pairs, mostly newswire and UN corpora released by LDC. The parallel sentences have word alignment automatically generated with HMM and MaxEnt word aligner. Bilingual phrase translations are extracted from these word-aligned parallel corpora. Due to the noise in the bilingual sentence pairs and automatic word alignment errors, the phrase translation library contains many incorrect phrase translations, which lead to inaccurate translations, as seen in Figure 3. Our evaluation data is NIST MT08 English- Chinese evaluation testset, which includes 1859 sentences from 129 news documents. The automatic metrics are BLEU and NIST scores, as used in the NIST 2008 English-Chinese MT evaluation. Note that as there is no whitespace as Chinese word boundary, the Chinese translations are segmented into characters before scoring in order to reduce the variance and errors caused by automatic word segmentation, which is also done in the NIST MT evaluation.
+Table 3 shows the automatic MT scores using the baseline phrase table and rescored phrase tables. When the phrase quality scores from the linear regression model are used as a separate feature in the SMT system (LR-mtfeat as described in section 5.1), the improvement is 0.7 BLEU points (0.16 in terms of NIST scores). By boosting the good phrase pairs (top 30K 2 phrase pairs, LR-boost) from linear regression model, the MT quality is improved by 0.7 BLEU points over the baseline system. Pruning the bad phrase pairs (tail 600K phrase pairs) without using the quality scores as features (LR-prune) also improves the MT by 0.4 BLEU points. Combining LR-boost and LR_prune, a discriminatively rescored phrase table (LR-disc) improved the BLEU score by 1.1 BLEU points, and reduce the phrase table size by 16% (from 3.6M to 3.0M phrase pairs). Manually tuning the boosting weights of good phrase pairs leads to additional improvement. Discriminative rescoring using the neural net work scores (NN-disc) produced similar improvement.
+We also experiment with phrase table pruning using Fisher significant test, as proposed in (Johnson et. al. 2007). We tuned the pruning threshold for the best result. It shows that the significance pruning improves over the baseline by 0.3 BLEU pts with 17.5% reduction in phrase table, but is not as good as our proposed phrase rescoring method. In addition, we also show the MT result using a count pruning phrase table (Count-Prune) where 600K phrase translation pairs are pruned based on their co-occurrence counts. The MT performance of such phrase table pruning is slightly worse than the baseline MT system, and significantly worse than the result using the proposed rescored phrase table.
+When comparing the linear regression and neural network models, we find rescoring with both models lead to similar MT improvements, even though the neural network model has much fewer regression errors (0.44 vs. 0.7 in terms of MSE). This is due to the rich parameter space of the neural network.
+Overall, the discriminative phrase rescoring improves the SMT quality by 1.2 BLEU points and reduces the phrase table size by 16%. With statistical significance test (Zhang and Vogel 2004), all the improvements are statistically significant with p-value &lt; 0.0001.
+Figure 3 presents some English sentences, with phrase translation pairs selected in the final translations (the top one is from the baseline MT system and the bottom one is from the LR-disc system).
+2 These thresholds are empirically chosen.
+Src Baseline
+PhrResco
+Src
+Baseline
+PhrResco
+Src Baseline
+PhrResco
+Indonesian bird flu victim contracted virus indirectly: &lt;indonesian bird flu| &#21360; &#23612; &#31165; &#27969; &#24863; &gt; &lt;virus| &#30149; &#27602; &gt; &lt;victim contracted| &#24863; &#26579; &#32773; &gt; &lt;indirectly :| &#38388; &#25509; :&gt; &lt;indonesian bird flu| &#21360; &#23612; &#31165; &#27969; &#24863; &gt; &lt;victim| &#21463; &#23475; &#32773; &gt; &lt;contracted| &#24863; &#26579; &gt; &lt;virus| &#30149; &#27602; &gt; &lt;indirectly :| &#38388; &#25509; :&gt;
+The director of Palestinian human rights group Al-Dhamir, Khalil Abu Shammaleh, said he was also opposed to the move. &lt;the director of| &#32626; &#38271; &#30340; &gt; &lt;palestinian| &#24052; &#21202; &#26031; &#22374; &gt; &lt;human rights group| &#20154; &#26435; &#22242; &#20307; &gt; &lt;al -|" &#22522; &#22320; " &#32452; &#32455; &gt; &lt;,|,&gt; &lt;abu|Abu&gt; &lt;khalil|Khalil&gt; &lt;, said he was| &#34920; &#31034; , &#20182; &gt; &lt;also opposed to| &#20063; &#21453; &#23545; &gt; &lt;the move .| &#36825; &#39033; &#34892; &#21160; &#12290;&gt; &lt;the director of| &#32626; &#38271; &#30340; &gt; &lt;palestinian| &#24052; &#21202; &#26031; &#22374; &gt; &lt;human rights group| &#20154; &#26435; &#22242; &#20307; &gt; &lt;al -|al -&gt; &lt;, khalil|, khalil&gt; &lt;abu| &#38463; &#24067; &gt; &lt;, said he was| &#35828; , &#20182; &gt; &lt;also opposed to| &#20063; &#21453; &#23545; &gt; &lt;the move .| &#36825; &#39033; &#34892; &#21160; &#12290;&gt; A young female tourist and two of her Kashmiri friends were among the victims. &lt;a young female| &#26377; &#19968; &#21517; &#24180; &#36731; &#22899; &#23376; &gt; &lt;tourist and| &#26053; &#28216; &#21644; &gt; &lt;$num of her| &#22905; &#30340; $num &#20010; &gt; &lt;kashmiri| &#20811; &#20160; &#31859; &#23572; &gt; &lt;friends were| &#32593; &#21451; &gt; &lt;among the| &#20043; &#38388; &#30340; &gt; &lt;victims .| &#21463; &#23475; &#32773; &#12290;&gt; &lt;a young| &#19968; &#20010; &#24180; &#36731; &#30340; &gt; &lt;female| &#22899; &#24615; &gt; &lt;tourist and| &#28216; &#23458; &#21644; &gt; &lt;$num of her| &#22905; &#30340; $num &#20010; &gt; &lt;kashmiri| &#20811; &#20160; &#31859; &#23572; &gt; &lt;friends were| &#26379; &#21451; &gt; &lt;among the| &#20043; &#38388; &#30340; &gt; &lt;victims .| &#21463; &#23475; &#32773; &#12290;&gt; Figure 3. Examples of English sentences and their translation, with phrase pairs from baseline system and phrase rescored system. Highlighted text are initial phrase translation errors which are corrected in the PhrResco translations.
+We find that incorrect phrase translations in the baseline system (as highlighted with blue bold font) are corrected and better translation results are obtained.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We test the above phrase rescoring approach on English-Chinese machine translation.</text>
+                  <doc_id>289</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The SMT system is a phrase-based decoder similar to the description in (Tillman 2006), where various features are combined within the log-linear framework.</text>
+                  <doc_id>290</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These features include source-totarget phrase translation score based on relative frequency, source-to-target and target-to-source word-to-word translation scores, language model score, distortion model scores and word count.</text>
+                  <doc_id>291</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The training data for these features are 10M Chi-</text>
+                  <doc_id>292</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 3.</text>
+                  <doc_id>293</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Translation quality improvements with rescored phrase tables.</text>
+                  <doc_id>294</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Best result (1.2 BLEU gain) is obtained with discriminative rescoring by boosting top 30K phrase pairs and pruning bottom 600K phrase pairs, with some weight tuning.</text>
+                  <doc_id>295</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>nese-English sentence pairs, mostly newswire and UN corpora released by LDC.</text>
+                  <doc_id>296</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The parallel sentences have word alignment automatically generated with HMM and MaxEnt word aligner.</text>
+                  <doc_id>297</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Bilingual phrase translations are extracted from these word-aligned parallel corpora.</text>
+                  <doc_id>298</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Due to the noise in the bilingual sentence pairs and automatic word alignment errors, the phrase translation library contains many incorrect phrase translations, which lead to inaccurate translations, as seen in Figure 3.</text>
+                  <doc_id>299</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our evaluation data is NIST MT08 English- Chinese evaluation testset, which includes 1859 sentences from 129 news documents.</text>
+                  <doc_id>300</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The automatic metrics are BLEU and NIST scores, as used in the NIST 2008 English-Chinese MT evaluation.</text>
+                  <doc_id>301</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that as there is no whitespace as Chinese word boundary, the Chinese translations are segmented into characters before scoring in order to reduce the variance and errors caused by automatic word segmentation, which is also done in the NIST MT evaluation.</text>
+                  <doc_id>302</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 3 shows the automatic MT scores using the baseline phrase table and rescored phrase tables.</text>
+                  <doc_id>303</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When the phrase quality scores from the linear regression model are used as a separate feature in the SMT system (LR-mtfeat as described in section 5.1), the improvement is 0.7 BLEU points (0.16 in terms of NIST scores).</text>
+                  <doc_id>304</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>By boosting the good phrase pairs (top 30K 2 phrase pairs, LR-boost) from linear regression model, the MT quality is improved by 0.7 BLEU points over the baseline system.</text>
+                  <doc_id>305</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Pruning the bad phrase pairs (tail 600K phrase pairs) without using the quality scores as features (LR-prune) also improves the MT by 0.4 BLEU points.</text>
+                  <doc_id>306</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Combining LR-boost and LR_prune, a discriminatively rescored phrase table (LR-disc) improved the BLEU score by 1.1 BLEU points, and reduce the phrase table size by 16% (from 3.6M to 3.0M phrase pairs).</text>
+                  <doc_id>307</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Manually tuning the boosting weights of good phrase pairs leads to additional improvement.</text>
+                  <doc_id>308</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Discriminative rescoring using the neural net work scores (NN-disc) produced similar improvement.</text>
+                  <doc_id>309</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We also experiment with phrase table pruning using Fisher significant test, as proposed in (Johnson et.</text>
+                  <doc_id>310</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>al. 2007).</text>
+                  <doc_id>311</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We tuned the pruning threshold for the best result.</text>
+                  <doc_id>312</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It shows that the significance pruning improves over the baseline by 0.3 BLEU pts with 17.5% reduction in phrase table, but is not as good as our proposed phrase rescoring method.</text>
+                  <doc_id>313</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In addition, we also show the MT result using a count pruning phrase table (Count-Prune) where 600K phrase translation pairs are pruned based on their co-occurrence counts.</text>
+                  <doc_id>314</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The MT performance of such phrase table pruning is slightly worse than the baseline MT system, and significantly worse than the result using the proposed rescored phrase table.</text>
+                  <doc_id>315</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>When comparing the linear regression and neural network models, we find rescoring with both models lead to similar MT improvements, even though the neural network model has much fewer regression errors (0.44 vs. 0.7 in terms of MSE).</text>
+                  <doc_id>316</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This is due to the rich parameter space of the neural network.</text>
+                  <doc_id>317</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Overall, the discriminative phrase rescoring improves the SMT quality by 1.2 BLEU points and reduces the phrase table size by 16%.</text>
+                  <doc_id>318</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>With statistical significance test (Zhang and Vogel 2004), all the improvements are statistically significant with p-value &lt; 0.0001.</text>
+                  <doc_id>319</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 3 presents some English sentences, with phrase translation pairs selected in the final translations (the top one is from the baseline MT system and the bottom one is from the LR-disc system).</text>
+                  <doc_id>320</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 These thresholds are empirically chosen.</text>
+                  <doc_id>321</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Src Baseline</text>
+                  <doc_id>322</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PhrResco</text>
+                  <doc_id>323</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Src</text>
+                  <doc_id>324</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Baseline</text>
+                  <doc_id>325</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PhrResco</text>
+                  <doc_id>326</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Src Baseline</text>
+                  <doc_id>327</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>PhrResco</text>
+                  <doc_id>328</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Indonesian bird flu victim contracted virus indirectly: &lt;indonesian bird flu| &#21360; &#23612; &#31165; &#27969; &#24863; &gt; &lt;virus| &#30149; &#27602; &gt; &lt;victim contracted| &#24863; &#26579; &#32773; &gt; &lt;indirectly :| &#38388; &#25509; :&gt; &lt;indonesian bird flu| &#21360; &#23612; &#31165; &#27969; &#24863; &gt; &lt;victim| &#21463; &#23475; &#32773; &gt; &lt;contracted| &#24863; &#26579; &gt; &lt;virus| &#30149; &#27602; &gt; &lt;indirectly :| &#38388; &#25509; :&gt;</text>
+                  <doc_id>329</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The director of Palestinian human rights group Al-Dhamir, Khalil Abu Shammaleh, said he was also opposed to the move.</text>
+                  <doc_id>330</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&lt;the director of| &#32626; &#38271; &#30340; &gt; &lt;palestinian| &#24052; &#21202; &#26031; &#22374; &gt; &lt;human rights group| &#20154; &#26435; &#22242; &#20307; &gt; &lt;al -|" &#22522; &#22320; " &#32452; &#32455; &gt; &lt;,|,&gt; &lt;abu|Abu&gt; &lt;khalil|Khalil&gt; &lt;, said he was| &#34920; &#31034; , &#20182; &gt; &lt;also opposed to| &#20063; &#21453; &#23545; &gt; &lt;the move .| &#36825; &#39033; &#34892; &#21160; &#12290;&gt; &lt;the director of| &#32626; &#38271; &#30340; &gt; &lt;palestinian| &#24052; &#21202; &#26031; &#22374; &gt; &lt;human rights group| &#20154; &#26435; &#22242; &#20307; &gt; &lt;al -|al -&gt; &lt;, khalil|, khalil&gt; &lt;abu| &#38463; &#24067; &gt; &lt;, said he was| &#35828; , &#20182; &gt; &lt;also opposed to| &#20063; &#21453; &#23545; &gt; &lt;the move .| &#36825; &#39033; &#34892; &#21160; &#12290;&gt; A young female tourist and two of her Kashmiri friends were among the victims.</text>
+                  <doc_id>331</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>&lt;a young female| &#26377; &#19968; &#21517; &#24180; &#36731; &#22899; &#23376; &gt; &lt;tourist and| &#26053; &#28216; &#21644; &gt; &lt;$num of her| &#22905; &#30340; $num &#20010; &gt; &lt;kashmiri| &#20811; &#20160; &#31859; &#23572; &gt; &lt;friends were| &#32593; &#21451; &gt; &lt;among the| &#20043; &#38388; &#30340; &gt; &lt;victims .| &#21463; &#23475; &#32773; &#12290;&gt; &lt;a young| &#19968; &#20010; &#24180; &#36731; &#30340; &gt; &lt;female| &#22899; &#24615; &gt; &lt;tourist and| &#28216; &#23458; &#21644; &gt; &lt;$num of her| &#22905; &#30340; $num &#20010; &gt; &lt;kashmiri| &#20811; &#20160; &#31859; &#23572; &gt; &lt;friends were| &#26379; &#21451; &gt; &lt;among the| &#20043; &#38388; &#30340; &gt; &lt;victims .| &#21463; &#23475; &#32773; &#12290;&gt; Figure 3.</text>
+                  <doc_id>332</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Examples of English sentences and their translation, with phrase pairs from baseline system and phrase rescored system.</text>
+                  <doc_id>333</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Highlighted text are initial phrase translation errors which are corrected in the PhrResco translations.</text>
+                  <doc_id>334</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We find that incorrect phrase translations in the baseline system (as highlighted with blue bold font) are corrected and better translation results are obtained.</text>
+                  <doc_id>335</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>7</index>
+        <title>7 Conclusion</title>
+        <text>We introduced a discriminative phrase rescoring approach, which combined rich features with linear regression and neural network to predict phrase pair translation qualities. Based on these quality scores, we boost good phrase translations while pruning bad phrase translations. This led to statistically significant improvement (1.2 BLEU points) in MT and reduced phrase table size by 16%. For the future work, we would like to explore other models for quality score prediction, such as SVM. We will want to try other approaches to utilize the phrase pair quality scores, in addition to rescoring the co-occurrence frequency. Finally, we will test this approach in other domain applications and language pairs.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We introduced a discriminative phrase rescoring approach, which combined rich features with linear regression and neural network to predict phrase pair translation qualities.</text>
+              <doc_id>336</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Based on these quality scores, we boost good phrase translations while pruning bad phrase translations.</text>
+              <doc_id>337</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This led to statistically significant improvement (1.2 BLEU points) in MT and reduced phrase table size by 16%.</text>
+              <doc_id>338</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For the future work, we would like to explore other models for quality score prediction, such as SVM.</text>
+              <doc_id>339</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>We will want to try other approaches to utilize the phrase pair quality scores, in addition to rescoring the co-occurrence frequency.</text>
+              <doc_id>340</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally, we will test this approach in other domain applications and language pairs.</text>
+              <doc_id>341</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>2</id>
+        <source>TableSeer</source>
+        <caption>Table 2. Examples of good and bad phrase pairs based on the linear regression model and neural network?s  predicted quality scores.</caption>
+        <reference_text>None</reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>None</cell>
+              <cell>Linear Regression</cell>
+              <cell>Linear Regression</cell>
+              <cell>Linear Regression</cell>
+              <cell>Linear Regression</cell>
+              <cell>Linear Regression</cell>
+              <cell>Neural Network</cell>
+              <cell>Neural Network</cell>
+              <cell>Neural Network</cell>
+              <cell>Neural Network</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Good</cell>
+              <cell>and|?</cell>
+              <cell>|5.52327</cell>
+              <cell>|5.52327</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>rights|? ?</cell>
+              <cell>|6.96817</cell>
+              <cell>|6.96817</cell>
+              <cell>|6.96817</cell>
+            </row>
+            <row>
+              <cell>phrase</cell>
+              <cell>amount|??</cell>
+              <cell>None</cell>
+              <cell>??</cell>
+              <cell>None</cell>
+              <cell>|4.03006</cell>
+              <cell>has become|?</cell>
+              <cell>has become|?</cell>
+              <cell>??</cell>
+              <cell>|4.16468</cell>
+            </row>
+            <row>
+              <cell>pairs</cell>
+              <cell>us|, ?</cell>
+              <cell>-|3.91992</cell>
+              <cell>-|3.91992</cell>
+              <cell>-|3.91992</cell>
+              <cell>None</cell>
+              <cell>why|? ? ?</cell>
+              <cell>|3.82629</cell>
+              <cell>|3.82629</cell>
+              <cell>|3.82629</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>her husband|?</cell>
+              <cell>her husband|?</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>|3.85536</cell>
+              <cell>by armed|?</cell>
+              <cell>??</cell>
+              <cell>None</cell>
+              <cell>|3.62988</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>the program|?</cell>
+              <cell>the program|?</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>, ? |3.81078</cell>
+              <cell>o|O |3.47795</cell>
+              <cell>o|O |3.47795</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>the job|?</cell>
+              <cell>?</cell>
+              <cell>?</cell>
+              <cell>? ?</cell>
+              <cell>|3.77406</cell>
+              <cell>of drama|?</cell>
+              <cell>? ?</cell>
+              <cell>None</cell>
+              <cell>|3.36601</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>shrine|</cell>
+              <cell>??? ?</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>|3.74336</cell>
+              <cell>government and|?</cell>
+              <cell>government and|?</cell>
+              <cell>government and|?</cell>
+              <cell>?</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>of course ,|, ??</cell>
+              <cell>of course ,|, ??</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>, ?  ?</cell>
+              <cell>introduction|??</cell>
+              <cell>introduction|??</cell>
+              <cell>None</cell>
+              <cell>|3.19113</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>is only|?</cell>
+              <cell>?</cell>
+              <cell>?</cell>
+              <cell>?</cell>
+              <cell>|3.69426</cell>
+              <cell>heart disease|??</cell>
+              <cell>heart disease|??</cell>
+              <cell>None</cell>
+              <cell>? ?</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>visit|? ?</cell>
+              <cell>?</cell>
+              <cell>|3.67256</cell>
+              <cell>|3.67256</cell>
+              <cell>|3.67256</cell>
+              <cell>heads|?? ?</cell>
+              <cell>None</cell>
+              <cell>|3.05467</cell>
+              <cell>|3.05467</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>facilities and|??</cell>
+              <cell>facilities and|??</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>, ?  ?</cell>
+              <cell>american consumers|??</cell>
+              <cell>american consumers|??</cell>
+              <cell>american consumers|??</cell>
+              <cell>american consumers|??  ?? ?</cell>
+            </row>
+            <row>
+              <cell>Bad</cell>
+              <cell>as well|?</cell>
+              <cell>?</cell>
+              <cell>|1.03234</cell>
+              <cell>|1.03234</cell>
+              <cell>|1.03234</cell>
+              <cell>letter|? ?</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>|0.39203</cell>
+            </row>
+            <row>
+              <cell>phrase</cell>
+              <cell>closed|? ?</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>|1.01271</cell>
+              <cell>, though|??</cell>
+              <cell>None</cell>
+              <cell>?</cell>
+              <cell>|0.37020</cell>
+            </row>
+            <row>
+              <cell>pairs</cell>
+              <cell>she was|? ?</cell>
+              <cell>None</cell>
+              <cell>?</cell>
+              <cell>|0.99011</cell>
+              <cell>|0.99011</cell>
+              <cell>levels of|?</cell>
+              <cell>None</cell>
+              <cell>? ?</cell>
+              <cell>|0.34892</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>way|??</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>|0.955918</cell>
+              <cell>|0.955918</cell>
+              <cell>- board|? ?</cell>
+              <cell>|0.32826</cell>
+              <cell>|0.32826</cell>
+              <cell>|0.32826</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>of a|?  ?</cell>
+              <cell>?</cell>
+              <cell>|0.914717</cell>
+              <cell>|0.914717</cell>
+              <cell>|0.914717</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>|0.30499</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>knowledge|??</cell>
+              <cell>knowledge|??</cell>
+              <cell>None</cell>
+              <cell>|0.875116</cell>
+              <cell>|0.875116</cell>
+              <cell>? ?</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>made|? ?</cell>
+              <cell>None</cell>
+              <cell>quot</cell>
+              <cell>|0.837358</cell>
+              <cell>quot</cell>
+              <cell>|0.837358</cell>
+              <cell>quot</cell>
+              <cell>|0.837358</cell>
+              <cell>xinhua at|$num |0.24433</cell>
+              <cell>xinhua at|$num |0.24433</cell>
+              <cell>xinhua at|$num |0.24433</cell>
+              <cell>xinhua at|$num |0.24433</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>the|? ?</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>|0.801142</cell>
+              <cell>|0.801142</cell>
+              <cell>None</cell>
+              <cell>None</cell>
+              <cell>|0.20281</cell>
+              <cell>|0.20281</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>end|? ?</cell>
+              <cell>|0.769938</cell>
+              <cell>|0.769938</cell>
+              <cell>|0.769938</cell>
+              <cell>|0.769938</cell>
+              <cell>new .|??</cell>
+              <cell>None</cell>
+              <cell>?</cell>
+              <cell>?</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>held|?  ??</cell>
+              <cell>None</cell>
+              <cell>?</cell>
+              <cell>|0.742588</cell>
+              <cell>|0.742588</cell>
+              <cell>can|?  ? ?</cell>
+              <cell>|0.09502</cell>
+              <cell>|0.09502</cell>
+              <cell>|0.09502</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TET</source>
+        <caption>Table 3. Translation quality improvements with rescored phrase tables. Best result (1.2 BLEU gain) is obtained with discriminative rescoring by boosting top 30K phrase pairs and pruning bottom 600K phrase pairs, with some weight tuning.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>BLEU</cell>
+              <cell>NIST</cell>
+              <cell>Phrase
+Table
+Size</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Baseline</cell>
+              <cell>38.67</cell>
+              <cell>9.3738 3.65M</cell>
+            </row>
+            <row>
+              <cell>LR-mtfeat</cell>
+              <cell>39.31</cell>
+              <cell>9.5356 3.65M</cell>
+            </row>
+            <row>
+              <cell>LR-boost (top30k)</cell>
+              <cell>39.36</cell>
+              <cell>9.5465 3.65M</cell>
+            </row>
+            <row>
+              <cell>LR-prune (tail600k)</cell>
+              <cell>39.06</cell>
+              <cell>9.4890 3.05M</cell>
+            </row>
+            <row>
+              <cell>LR-disc</cell>
+              <cell>39.75</cell>
+              <cell>9.6388 3.05M</cell>
+            </row>
+            <row>
+              <cell>(top30K/tail600K)</cell>
+              <cell></cell>
+              <cell></cell>
+            </row>
+            <row>
+              <cell>NN-disc</cell>
+              <cell>39.76</cell>
+              <cell>9.6547 3.05M</cell>
+            </row>
+            <row>
+              <cell>(top30K/tail600K)</cell>
+              <cell></cell>
+              <cell></cell>
+            </row>
+            <row>
+              <cell>LR-disc tuning</cell>
+              <cell>39.87</cell>
+              <cell>9.6594 3.05M</cell>
+            </row>
+            <row>
+              <cell>Significance-prune</cell>
+              <cell>38.96</cell>
+              <cell>9.3953 3.01M</cell>
+            </row>
+            <row>
+              <cell>Count-Prune</cell>
+              <cell>38.65</cell>
+              <cell>9.3549 3.05M</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Peter F Brown</author>
+          <author>Vincent J Della Pietra</author>
+          <author>Stephen A Della Pietra</author>
+          <author>Robert L Mercer</author>
+        </authors>
+        <title>None</title>
+        <publication>The Mathematics of Statistical Machine Translation: Parameter Estimation, Computational Linguistics, v.19 n.2,</publication>
+        <pages>None</pages>
+        <date>1993</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Arthur Earl Bryson</author>
+          <author>Yu-Chi Ho</author>
+        </authors>
+        <title>None</title>
+        <publication>None</publication>
+        <pages>481</pages>
+        <date>1969</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>David Chiang</author>
+        </authors>
+        <title>A Hierarchical Phrase-based Model for Statistical Machine Translation.</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>263--270</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Yonggang Deng</author>
+          <author>Jia Xu</author>
+          <author>Yuqing Gao</author>
+        </authors>
+        <title>Phrase Table Training for Precision and Recall: What Makes a Good Phrase and a Good Phrase Pair?</title>
+        <publication>In Proc. of ACL/HLT,</publication>
+        <pages>81--88</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>Michel Galley</author>
+          <author>Mark Hopkins</author>
+          <author>Kevin Knight</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>What&amp;apos;s in a Translation Rule? In</title>
+        <publication>Proc. of NAACL</publication>
+        <pages>273--280</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Howard Johnson</author>
+          <author>Joel Martin</author>
+          <author>George Foster</author>
+          <author>Roland Kuhn</author>
+        </authors>
+        <title>Improving Translation Quality by Discarding Most of the Phrase Table.</title>
+        <publication>In Proc. of EMNLP-CoNLL,</publication>
+        <pages>967--975</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Franz Josef Och Koehn</author>
+          <author>Daniel Marcu</author>
+        </authors>
+        <title>Statistical Phrase-based Translation,</title>
+        <publication>In Proc. of NAACL,</publication>
+        <pages>48--54</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>A Systematic Comparison of Various Statistical Alignment Models, Computational Linguistics,</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>19--51</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Kishore Papineni</author>
+          <author>Salim Roukos</author>
+          <author>Todd Ward</author>
+          <author>WeiJing Zhu</author>
+        </authors>
+        <title>BLEU: a Method for Automatic Evaluation of Machine Translation,</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>311--318</pages>
+        <date>2002</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Christoph Tillmann</author>
+        </authors>
+        <title>Efficient Dynamic Programming Search Algorithms for Phrase-based SMT.</title>
+        <publication>In Proc. of the Workshop CHPSLP at HLT&amp;apos;06.</publication>
+        <pages>None</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Kenji Yamada</author>
+          <author>Kevin Knight</author>
+        </authors>
+        <title>A Syntaxbased Statistical Translation Model,</title>
+        <publication>In Proc. of ACL,</publication>
+        <pages>523--530</pages>
+        <date>2001</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Mei Yang</author>
+          <author>Jing Zheng</author>
+        </authors>
+        <title>Toward Smaller, Faster, and Better Hierarchical Phrase-based SMT.</title>
+        <publication>In Proc. of ACL-IJCNLP,</publication>
+        <pages>237--240</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Ying Zhang</author>
+          <author>Stephan Vogel</author>
+        </authors>
+        <title>Measuring Confidence Intervals for the Machine Translation Evaluation Metrics,</title>
+        <publication>In Proc. TMI,</publication>
+        <pages>4--6</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>Bing Zhao</author>
+          <author>Stephan Vogel</author>
+          <author>Alex Waibel</author>
+        </authors>
+        <title>Phrase Pair Rescoring with Term Weighting for Statistical Machine Translation.</title>
+        <publication>In Proc. of EMNLP,</publication>
+        <pages>206--213</pages>
+        <date>2004</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>1</reference_id>
+        <string>Bryson and Ho, 1969</string>
+        <sentence_id>448</sentence_id>
+        <char_offset>41</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>2</reference_id>
+        <string>Chiang 2005</string>
+        <sentence_id>404</sentence_id>
+        <char_offset>29</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>3</reference_id>
+        <string>Deng, et al., 2008</string>
+        <sentence_id>417</sentence_id>
+        <char_offset>4</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>5</reference_id>
+        <string>Johnson, et al., 2007</string>
+        <sentence_id>416</sentence_id>
+        <char_offset>4</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>10</reference_id>
+        <string>Yamada and Knight 2001</string>
+        <sentence_id>403</sentence_id>
+        <char_offset>25</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>11</reference_id>
+        <string>Yang and Zheng, 2009</string>
+        <sentence_id>416</sentence_id>
+        <char_offset>27</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>12</reference_id>
+        <string>Zhang and Vogel 2004</string>
+        <sentence_id>699</sentence_id>
+        <char_offset>36</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>13</reference_id>
+        <string>Zhao, et al., 2004</string>
+        <sentence_id>413</sentence_id>
+        <char_offset>57</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

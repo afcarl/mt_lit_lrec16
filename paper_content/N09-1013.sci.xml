@@ -1,0 +1,1150 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Context-Dependent Alignment Models for Statistical Machine Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>Jamie Brunning</AUTHOR>
+    <AUTHOR>Adri&#224; de_Gispert</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-21731">We introduce alignment models for Machine Translation that take into account the context of a source word when determining its translation.</A-S>
+    <A-S ID="S-21732">Since the use of these contexts alone causes data sparsity problems, we develop a decision tree algorithm for clustering the contexts based on optimisation of the EM auxiliary function.</A-S>
+    <A-S ID="S-21733">We show that our contextdependent models lead to an improvement in alignment quality, and an increase in translation quality when the alignments are used in Arabic-English and Chinese-English translation.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-21880">Alignment modelling for Statistical Machine Translation (SMT) is the task of determining translational correspondences between the words in pairs of sentences in parallel text.</S>
+        <S ID="S-21881">Given a source language word sequence f1 J and a target language word sequence e I 1 , we model the translation probability as P(e I 1|f1 J ) and introduce a hidden variable a I 1 representing a mapping from the target word positions to source word positions such that e i is aligned to f ai .</S>
+        <S ID="S-21882">Then P(e I 1|f j 1 ) = &#8721; a P(e I 1, a I 1|f j I 1 ) (Brown et al.,</S>
+      </P>
+      <P>
+        <S ID="S-21883">1993).</S>
+      </P>
+      <P>
+        <S ID="S-21884">Previous work on statistical alignment modelling has not taken into account the source word context when determining translations of that word.</S>
+        <S ID="S-21885">It is intuitive that a word in one context, with a particular part-of-speech and particular words surrounding it, may translate differently when in a different context.</S>
+        <S ID="S-21886">We aim to take advantage of this information to provide a better estimate of the word&#8217;s translation.</S>
+        <S ID="S-21887">The challenge of incorporating context information is maintaining computational tractability of estimation and alignment, and we develop algorithms to overcome this.</S>
+        <S ID="S-21888">The development of efficient estimation procedures</S>
+      </P>
+      <P>
+        <S ID="S-21889">for context-dependent acoustic models revolutionised the field of Automatic Speech Recognition (ASR) (Young et al., 1994).</S>
+        <S ID="S-21890">Clustering is used extensively for improving parameter estimation of triphone (and higher order) acoustic models, enabling robust estimation of parameters and reducing the computation required for recognition.</S>
+        <S ID="S-21891"><REF ID="R-15" RPTR="23">Kannan et al. (1994)</REF> introduce a binary treegrowing procedure for clustering Gaussian models for triphone contexts based on the value of a likelihood ratio.</S>
+        <S ID="S-21892">We adopt a similar approach to estimate contextdependent translation probabilities.</S>
+      </P>
+      <P>
+        <S ID="S-21893">We focus on alignment with IBM Model 1 and HMMs.</S>
+        <S ID="S-21894">HMMs are commonly used to generate alignments from which state of the art SMT systems are built.</S>
+        <S ID="S-21895">Model 1 is used as an intermediate step in the creation of more powerful alignment models, such as HMMs and further IBM models.</S>
+        <S ID="S-21896">In addition, it is used in SMT as a feature in Minimum Error Training (<REF ID="R-21" RPTR="31">Och et al., 2004</REF>) and for rescoring lattices of translation hypotheses (Blackwood et al., 2008).</S>
+        <S ID="S-21897">It is also used for lexically-weighted phrase extraction (<REF ID="R-06" RPTR="8">Costa-juss&#224; and Fonollosa, 2005</REF>) and sentence segmentation of parallel text (<REF ID="R-09" RPTR="17">Deng et al., 2007</REF>) prior to machine translation.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>1.1 Overview</HEADER>
+        <P>
+          <S ID="S-21734">We first develop an extension to Model 1 that allows the use of arbitrary context information about a source word to estimate context-dependent word-to-word translation probabilities.</S>
+          <S ID="S-21735">Since there is insufficient training data to accurately estimate translation probabilities for less frequently occurring contexts, we develop a decision tree clustering algorithm to form context classes.</S>
+          <S ID="S-21736">We go on to develop a context-dependent HMM model for alignment.</S>
+        </P>
+        <P>
+          <S ID="S-21737">In Section 3, we evaluate our context-dependent models on Arabic-English parallel text, comparing them to our baseline context-independent models.</S>
+          <S ID="S-21738">We perform morphological decomposition of the Arabic text using MADA, and use part-of-speech taggers on both languages.</S>
+          <S ID="S-21739">Alignment quality is measured using Alignment Error Rate (AER) measured against a manually-aligned parallel text.</S>
+          <S ID="S-21740">Section 4 uses alignments produced by</S>
+        </P>
+        <P>
+          <S ID="S-21741">Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the ACL, pages 110&#8211;118, Boulder, Colorado, June 2009. c&#9675;2009 Association for Computational Linguistics</S>
+        </P>
+        <P>
+          <S ID="S-21742">our improved alignment models to initialise a statistical machine translation system and evaluate the quality of translation on several data sets.</S>
+          <S ID="S-21743">We also apply part-ofspeech tagging and decision tree clustering of contexts to Chinese-English parallel text; translation results for these languages are presented in Section 4.2.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>1.2 Previous and related work</HEADER>
+        <P>
+          <S ID="S-21744"><REF ID="R-04" RPTR="5">Brown et al. (1993)</REF> introduce IBM Models 1-5 for alignment modelling; <REF ID="R-32" RPTR="41">Vogel et al. (1996)</REF> propose a Hidden Markov Model (HMM) model for word-to-word alignment, where the words of the source sentence are viewed as states of an HMM and emit target sentence words; <REF ID="R-07" RPTR="9">Deng and Byrne (2005</REF><REF ID="R-08" RPTR="13">Deng and Byrne (2005</REF>a) extend this to an HMM word-tophrase model which allows many-to-one alignments and can capture dependencies within target phrases.</S>
+        </P>
+        <P>
+          <S ID="S-21745"><REF ID="R-11" RPTR="19">Habash and Sadat (2006)</REF> perform morphological decomposition of Arabic words, such as splitting of prefixes and suffixes.</S>
+          <S ID="S-21746">This leads to gains in machine translation quality when systems are trained on parallel text containing the modified Arabic and processing of Arabic text is carried out prior to translation.</S>
+          <S ID="S-21747"><REF ID="R-18" RPTR="26">Nie&#223;en and Ney (2001</REF><REF ID="R-19" RPTR="28">Nie&#223;en and Ney (2001</REF>a) perform pre-processing of German and English text before translation; <REF ID="R-18" RPTR="27">Nie&#223;en and Ney (2001</REF><REF ID="R-19" RPTR="29">Nie&#223;en and Ney (2001</REF>b) use morphological information of the current word to estimate hierarchical translation probabilities.</S>
+        </P>
+        <P>
+          <S ID="S-21748"><REF ID="R-00" RPTR="0">Berger et al. (1996)</REF> introduce maximum entropy models for machine translation, and use a window either side of the target word as context information.</S>
+          <S ID="S-21749"><REF ID="R-31" RPTR="40">Varea et al. (2002)</REF> test for the presence of specific words within a window of the current source word to form features for use inside a maximum entropy model of alignment.</S>
+          <S ID="S-21750"><REF ID="R-30" RPTR="39">Toutanova et al. (2002)</REF> use part-of-speech information in both the source and target languages to estimate alignment probabilities, but this information is not incorporated into translation probabilities.</S>
+          <S ID="S-21751"><REF ID="R-25" RPTR="35">Popovi&#263; and Ney (2004)</REF> use the base form of a word and its part-ofspeech tag during the estimation of word-to-word translation probabilities for IBM models and HMMs, but do not defined context-dependent estimates of translation probabilities.</S>
+          <S ID="S-21752">Stroppa et al. <REF ID="R-29" RPTR="38">(2007)</REF> consider context-informed features of phrases as components of the log-linear model during phrase-based translation, but do not address alignment.</S>
+        </P>
+        <P>
+          <S ID="S-21753">2 Use of source language context in alignment modelling</S>
+        </P>
+        <P>
+          <S ID="S-21754">Consider the alignment of the target sentence e = e I 1 with the source sentence f = f1 J. Let a = aI 1 be the alignments of the target words to the source words.</S>
+          <S ID="S-21755">Let c j be the context information of f j for j = 1, .</S>
+          <S ID="S-21756">.</S>
+          <S ID="S-21757">.</S>
+          <S ID="S-21758">, J.</S>
+          <S ID="S-21759">This context information can be any information about the word, e.g. part-of-speech, previous and next words, part-ofspeech of previous and next words, or longer range context information.</S>
+        </P>
+        <P>
+          <S ID="S-21760">We follow <REF ID="R-04" RPTR="6">Brown et al. (1993)</REF>, but extend their modelling framework to include information about the source word from which a target word is emitted.</S>
+          <S ID="S-21761">We model the alignment process as:</S>
+        </P>
+        <P>
+          <S ID="S-21762">P(e I 1, a I 1, I|f1 J , c J 1 ) = I&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-21763">P(I|f1 J , c J [</S>
+        </P>
+        <P>
+          <S ID="S-21764">1 ) P(ei |a i 1, e i&#8722;1 1 , f1 J , c J 1 , I)</S>
+        </P>
+        <P>
+          <S ID="S-21765">i=1</S>
+        </P>
+        <P>
+          <S ID="S-21766">&#215; P(a i |e i&#8722;1 1 , a i&#8722;1 1 , f J 1 , cJ 1 , I)] (1)</S>
+        </P>
+        <P>
+          <S ID="S-21767">We introduce word-to-word translation tables that depend on the source language context for each word, i.e. the probability that f translates to e given f has context c is t(e|f, c).</S>
+          <S ID="S-21768">We assume that the context sequence is given for a source word sequence.</S>
+          <S ID="S-21769">This assumption can be relaxed to allow for multiple tag sequences as hidden processes, but we assume here that a tagger generates a single context sequence c J 1 for a word sequence f1 J .</S>
+          <S ID="S-21770">This corresponds to the assumption that, for a context sequence &#732;c J 1 , P(&#732;cJ 1 |f 1 J) = &#948; c J (&#732;cJ 1 1 ); hence</S>
+        </P>
+        <P>
+          <S ID="S-21771">P(e I 1, a I 1|f J 1 ) = &#8721;&#732;c J 1 P(e I 1, a I 1, &#732;c J 1 |f J 1 ) = P(e I 1, a I 1|c J 1 , f J 1 )</S>
+        </P>
+        <P>
+          <S ID="S-21772">For Model 1, ignoring the sentence length distribution,</S>
+        </P>
+        <P>
+          <S ID="S-21773">P M1 (e I 1, a I 1|f J 1 , c J 1 ) =</S>
+        </P>
+        <P>
+          <S ID="S-21774">1 (J + 1) I I&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-21775">t(e i |f ai , c ai ).</S>
+          <S ID="S-21776">(2)</S>
+        </P>
+        <P>
+          <S ID="S-21777">i=1</S>
+        </P>
+        <P>
+          <S ID="S-21778">Estimating translation probabilities separately for every possible context of a source word individually leads to problems with data sparsity and rapid growth of the translation table.</S>
+          <S ID="S-21779">We therefore wish to cluster source contexts which lead to similar probability distributions.</S>
+          <S ID="S-21780">Let C f denote the set of all observed contexts of source word f. A particular clustering is denoted</S>
+        </P>
+        <P>
+          <S ID="S-21781">K f = {K f,1 , .</S>
+          <S ID="S-21782">.</S>
+          <S ID="S-21783">.</S>
+          <S ID="S-21784">, K f,Nf },</S>
+        </P>
+        <P>
+          <S ID="S-21785">where K f is a partition of C f .</S>
+          <S ID="S-21786">We define a class membership function &#181; f such that for any context c, &#181; f (c) is the cluster containing c.</S>
+          <S ID="S-21787">We assume that all contexts in a cluster give rise to the same translation probability distribution for that source word, i.e. for a cluster K, t(e|f, c) = t(e|f, c &#8242; ) for all contexts c, c &#8242; &#8712; K and all target words e; we write this shared translation probability as t(e|f, K).</S>
+          <S ID="S-21788">The Model 1 sentence translation probability for a given alignment (Equation 2) becomes</S>
+        </P>
+        <P>
+          <S ID="S-21789">P M1 (e I 1, a I 1|f J 1 , c J 1 ) =</S>
+        </P>
+        <P>
+          <S ID="S-21790">1 (J + 1) I I&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-21791">t(e i |f ai , &#181; f (c ai )).</S>
+        </P>
+        <P>
+          <S ID="S-21792">i=1</S>
+        </P>
+        <P>
+          <S ID="S-21793">(3)</S>
+        </P>
+        <P>
+          <S ID="S-21794">For HMM alignment, we assume that the transition probabilities a(a i |a i&#8722;1 ) are independent of the word contexts and the sentence translation probability is</S>
+        </P>
+        <P>
+          <S ID="S-21795">I&#8719; P H (e I 1 , aI 1 |f 1 J , cJ 1 ) = a(a i |a i&#8722;1 , J)t(e i |f ai , &#181; f (c ai )).</S>
+        </P>
+        <P>
+          <S ID="S-21796">i=1</S>
+        </P>
+        <P>
+          <S ID="S-21797">(4) Section 2.1.1 describes how the context classes are determined by optimisation of the EM auxiliary function.</S>
+          <S ID="S-21798">Although the translation model is significantly more complex than that of context-independent models, once class membership is fixed, alignment and parameter estimation use the standard algorithms.</S>
+        </P>
+        <P>
+          <S ID="S-21799">2.1 EM parameter estimation</S>
+        </P>
+        <P>
+          <S ID="S-21800">We train using Expectation Maximisation (EM), optimising the log probability of the training set {e (s) , f (s) } S s=1 (<REF ID="R-04" RPTR="3">Brown et al., 1993</REF>).</S>
+          <S ID="S-21801">Given model parameters &#952; &#8242; , we estimate new parameters &#952; by maximisation of the EM auxiliary function &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-21802">P &#952; &#8242;(a|f (s) , c (s) , e (s) ) log P &#952; (e (s) , a, I (s) |f (s) , c (s) ).</S>
+        </P>
+        <P>
+          <S ID="S-21803">s,a</S>
+        </P>
+        <P>
+          <S ID="S-21804">We assume the sentence length distribution and alignment probabilities do not depend on the contexts of the source words; hence the relevant part of the auxiliary function is &#8721; &#8721; &#8721; &#947; &#8242; (e|f, c) log t(e|f, c), (5)</S>
+        </P>
+        <P>
+          <S ID="S-21805">e c&#8712;C f</S>
+        </P>
+        <P>
+          <S ID="S-21806">where</S>
+        </P>
+        <P>
+          <S ID="S-21807">f</S>
+        </P>
+        <P>
+          <S ID="S-21808">&#947; &#8242; (e|f, c) = &#8721; s &#8721;I (s) &#8721;J (s) [ &#948; c (c (s) j</S>
+        </P>
+        <P>
+          <S ID="S-21809">i=1 j=1</S>
+        </P>
+        <P>
+          <S ID="S-21810">)&#948; e (e (s)</S>
+        </P>
+        <P>
+          <S ID="S-21811">i</S>
+        </P>
+        <P>
+          <S ID="S-21812">)&#948; f (f (s) j )</S>
+        </P>
+        <P>
+          <S ID="S-21813">] &#215; P &#952; &#8242;(a i = j|e (s) , f (s) , c (s) )</S>
+        </P>
+        <P>
+          <S ID="S-21814">Here &#947; &#8242; can be computed under Model 1 or the HMM, and is calculated using the forward-backward algorithm for the HMM.</S>
+        </P>
+        <P>
+          <S ID="S-21815">2.1.1 Parameter estimation with clustered contexts</S>
+        </P>
+        <P>
+          <S ID="S-21816">We can re-write the EM auxiliary function (Equation 5) in terms of the cluster-specific translation probabilities:</S>
+        </P>
+        <P>
+          <S ID="S-21817">&#8721; &#8721; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-21818">e</S>
+        </P>
+        <P>
+          <S ID="S-21819">= &#8721; e</S>
+        </P>
+        <P>
+          <S ID="S-21820">|K f |</S>
+        </P>
+        <P>
+          <S ID="S-21821">&#8721; &#947; &#8242; (e|f, c) log t(e|f, c)</S>
+        </P>
+        <P>
+          <S ID="S-21822">f l=1 c&#8712;K f,l</S>
+        </P>
+        <P>
+          <S ID="S-21823">&#8721; &#8721; &#947; &#8242; (e|f, K) log t(e|f, K) (6)</S>
+        </P>
+        <P>
+          <S ID="S-21824">f K&#8712;K f</S>
+        </P>
+        <P>
+          <S ID="S-21825">where &#947; &#8242; (e|f, K) = &#8721; c&#8712;K &#947; &#8242; (e|f, c)</S>
+        </P>
+        <P>
+          <S ID="S-21826">Following the usual derivation, the EM update for the class-specific translation probabilities becomes</S>
+        </P>
+        <P>
+          <S ID="S-21827">&#710;t(e|f, K) = &#947;&#8242; (e|f, K)</S>
+        </P>
+        <P>
+          <S ID="S-21828">&#8721;e &#8242; &#947;&#8242; (e &#8242; |f, K) .</S>
+          <S ID="S-21829">(7)</S>
+        </P>
+        <P>
+          <S ID="S-21830">Standard EM training can be viewed a special case of this, with every context of a source word grouped into a single cluster.</S>
+          <S ID="S-21831">Another way to view these clustered contextdependent models is that contexts belonging to the same cluster are tied and share a common translation probability distribution, which is estimated from all training examples in which any of the contexts occur.</S>
+        </P>
+        <P>
+          <S ID="S-21832">2.2 Decision trees for context clustering</S>
+        </P>
+        <P>
+          <S ID="S-21833">The objective for each source word is to split the contexts into classes to maximise the likelihood of the training data.</S>
+          <S ID="S-21834">Since it is not feasible to maximise the likelihood of the observations directly, we maximise the expected log likelihood by considering the EM auxiliary function, in a similar manner to that used for modelling contextual variations of phones for ASR (Young et al., 1994; <REF ID="R-27" RPTR="37">Singer and Ostendorf, 1996</REF>).</S>
+          <S ID="S-21835">We perform divisive clustering independently for each source word f, by building a binary decision tree which forms classes of contexts which maximise the EM auxiliary function.</S>
+          <S ID="S-21836">Questions for the tree are drawn from a set of questions Q = {q 1 , .</S>
+          <S ID="S-21837">.</S>
+          <S ID="S-21838">.</S>
+          <S ID="S-21839">, q |Q| } concerning the context information of f.</S>
+        </P>
+        <P>
+          <S ID="S-21840">Let K be any set of contexts of f, and define</S>
+        </P>
+        <P>
+          <S ID="S-21841">L(K) = &#8721; &#8721; &#947; &#8242; (e|f, c) log t(e|f, c)</S>
+        </P>
+        <P>
+          <S ID="S-21842">e c&#8712;K</S>
+        </P>
+        <P>
+          <S ID="S-21843">= &#8721; &#8721; &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-21844">&#947; &#8242; c&#8712;K (e|f, c) log &#947;&#8242; (e|f, c)</S>
+        </P>
+        <P>
+          <S ID="S-21845">e &#8721;e</S>
+        </P>
+        <P>
+          <S ID="S-21846">&#8721;c&#8712;K &#8242; &#947;&#8242; (e &#8242; |f, c) .</S>
+        </P>
+        <P>
+          <S ID="S-21847">c&#8712;K</S>
+        </P>
+        <P>
+          <S ID="S-21848">This is the contribution to the EM auxiliary function of source word f occurring in the contexts of K. Let q be a binary question about the context of f, and consider the effect on the partial auxiliary function (Equation 6) of splitting K into two clusters using question q.</S>
+          <S ID="S-21849">Define K q be the set of contexts in K which answer &#8216;yes&#8217; to q and K&#175;q be the contexts which answer &#8216;no&#8217;.</S>
+          <S ID="S-21850">Define the objective function</S>
+        </P>
+        <P>
+          <S ID="S-21851">Q f,q (K) = &#8721; &#8721; &#947; &#8242; (e|f, c) log t(e|f, c)</S>
+        </P>
+        <P>
+          <S ID="S-21852">e c&#8712;K q</S>
+        </P>
+        <P>
+          <S ID="S-21853">+ &#8721; &#8721; &#947; &#8242; (e|f, c) log t(e|f, c)</S>
+        </P>
+        <P>
+          <S ID="S-21854">e c&#8712;K&#175;q</S>
+        </P>
+        <P>
+          <S ID="S-21855">= L(K q ) + L(K&#175;q )</S>
+        </P>
+        <P>
+          <S ID="S-21856">When the node is split using question q, the increase in objective function is given by</S>
+        </P>
+        <P>
+          <S ID="S-21857">Q f,q (K) &#8722; L(K) = L(K&#175;q ) + L(K q ) &#8722; L(K).</S>
+        </P>
+        <P>
+          <S ID="S-21858">We choose q to maximise this.</S>
+        </P>
+        <P>
+          <S ID="S-21859">In order to build the decision tree for f, we take the set of all contexts C f as the initial cluster at the root node.</S>
+          <S ID="S-21860">We then find the question &#710;q such that Q f,q (C f ) is maximal, i.e. &#710;q = arg max Q f,q (C f )</S>
+        </P>
+        <P>
+          <S ID="S-21861">q&#8712;Q</S>
+        </P>
+        <P>
+          <S ID="S-21862">This splits C f , so our decision tree now has two nodes.</S>
+          <S ID="S-21863">We iterate this process, at each iteration splitting (into two further nodes) the leaf node that leads to the greatest increase in objective function.</S>
+          <S ID="S-21864">This leads to a greedy search to optimise the log likelihood over possible state clusterings.</S>
+        </P>
+        <P>
+          <S ID="S-21865">In order to control the growth of the tree, we put in place two thresholds:</S>
+        </P>
+        <P>
+          <S ID="S-21866">&#8226; T imp is the minimum improvement in objective function required for a node to be split; without it, we would continue splitting nodes until each contained only one context, even though doing so would cause data sparsity problems.</S>
+          <S ID="S-21867">&#8226; T occ is the minimum occupancy of a node, based on how often the contexts at that node occur in the training data; we want to ensure that there are enough examples of a context in the training data to estimate accurately the translation probability distribution for that cluster.</S>
+        </P>
+        <P>
+          <S ID="S-21868">For each leaf node l and set of contexts K l at that node, we find the question q l that, when used to split K l , produces the largest gain in objective function:</S>
+        </P>
+        <P>
+          <S ID="S-21869">= arg max[L(K l,q ) + L(K l,&#175;q )]</S>
+        </P>
+        <P>
+          <S ID="S-21870">q&#8712;Q</S>
+        </P>
+        <P>
+          <S ID="S-21871">We then find the leaf node for which splitting gives the largest improvement:</S>
+        </P>
+        <P>
+          <S ID="S-21872">L(K l,ql ) + L(K l, &#175;ql ) &#8722; L(K l ) &gt; T imp</S>
+        </P>
+        <P>
+          <S ID="S-21873">&#8226; The occupancy threshold is exceeded for both child nodes:</S>
+        </P>
+        <P>
+          <S ID="S-21874">&#8721; &#8721; &#947; &#8242; (e|f, c) &gt; T occ for x = q, &#175;q</S>
+        </P>
+        <P>
+          <S ID="S-21875">e c&#8712;K l,x</S>
+        </P>
+        <P>
+          <S ID="S-21876">We perform such clustering for every source word in the parallel text.</S>
+        </P>
+        <P>
+          <S ID="S-21877">Sfqp NN byE NN 12 NN % PUNC mn IN &gt;shm NN Albnk NN</S>
+        </P>
+        <P>
+          <S ID="S-21878">w+ CC mnAzl NN Edp JJ &gt;SHAbhA NN ybyEwn VBP Alxmwr NN fy IN Almdynp NN Figure 1: Alignment of the English selling in different contexts.</S>
+          <S ID="S-21879">In the first, it is preceded by of and links to the infinitive of the Arabic verb byE; in the second, it is preceded by were and links to an inflected form of the same Arabic verb, ybyEwn.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Evaluation of alignment quality</HEADER>
+      <P>
+        <S ID="S-22018">Our models were built using the MTTK toolkit (<REF ID="R-07" RPTR="10">Deng and Byrne, 2005</REF><REF ID="R-08" RPTR="14">Deng and Byrne, 2005</REF>b).</S>
+        <S ID="S-22019">Decision tree clustering was implemented and the process parallelised to enable thousands of decision trees to be built.</S>
+        <S ID="S-22020">Our context-dependent (CD) Model 1 models trained on context-annotated data were compared to the baseline context-independent (CI) models trained on untagged data.</S>
+        <S ID="S-22021">The models were trained using data allowed for the NIST 08 Arabic-English evaluation 1 , excluding the UN collections, comprising 300k parallel sentence pairs, a total of 8.4M words of Arabic and 9.5M words of English.</S>
+      </P>
+      <P>
+        <S ID="S-22022">The Arabic language incorporates into its words several prefixes and suffixes which determine grammatical features such as gender, number, person and voice.</S>
+        <S ID="S-22023">The MADA toolkit (<REF ID="R-11" RPTR="20">Habash and Sadat, 2006</REF>) was used to perform Arabic morphological word decomposition and part-of-speech tagging.</S>
+        <S ID="S-22024">It determines the best analysis for each word in a sentence and splits word prefixes and suffixes, based on the alternative analyses provided by BAMA (<REF ID="R-05" RPTR="7">Buckwalter, 2002</REF>).</S>
+        <S ID="S-22025">We use tokenisation scheme</S>
+      </P>
+      <P>
+        <S ID="S-22026">1 http://nist.gov/speech/tests/mt/2008</S>
+      </P>
+      <P>
+        <S ID="S-22027">&#8216;D2&#8217;, which splits certain prefixes and has been reported to improve machine translation performance (<REF ID="R-11" RPTR="21">Habash and Sadat, 2006</REF>).</S>
+        <S ID="S-22028">The alignment models are trained on this processed data, and the prefixes and suffixes are treated as words in their own right; in particular their contexts are examined and clustered.</S>
+        <S ID="S-22029">The TnT tagger (<REF ID="R-02" RPTR="1">Brants, 2000</REF>), used as distributed with its model trained on the Wall Street Journal portion of the Penn treebank, was used to obtain part-of-speech tags for the English side of the parallel text.</S>
+        <S ID="S-22030"><REF ID="R-17" RPTR="25">Marcus et al. (1993)</REF> gives a complete list of part-of-speech tags produced.</S>
+        <S ID="S-22031">No morphological analysis is performed for English.</S>
+      </P>
+      <P>
+        <S ID="S-22032">Automatic word alignments were compared to a manually-aligned corpus made up of the IBM Arabic- English Word Alignment Corpus (<REF ID="R-14" RPTR="22">Ittycheriah et al., 2006</REF>) and the word alignment corpora LDC2006E86 and LDC2006E93.</S>
+        <S ID="S-22033">This contains 28k parallel text sentences pairs: 724k words of Arabic and 847k words of English.</S>
+        <S ID="S-22034">The alignment links were modified to reflect the MADA tokenisation; after modification, there are 946k word-toword alignment links.</S>
+      </P>
+      <P>
+        <S ID="S-22035">Alignment quality was evaluated by computing Alignment Error Rate (AER) (<REF ID="R-20" RPTR="30">Och and Ney, 2000</REF>) relative to the manual alignments.</S>
+        <S ID="S-22036">Since the links supplied contain only &#8216;sure&#8217; links and no &#8216;possible&#8217; links, we use the following formula for computing AER given reference alignment links S and hypothesised alignment links A: AER = 1 &#8722; 2|S&#8745;A| |S|+|A| .</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Questions about contexts</HEADER>
+        <P>
+          <S ID="S-21898">The algorithm presented in Section 2 allows for any information about the context of the source word to be considered.</S>
+          <S ID="S-21899">We could consider general questions of the form &#8216;Is the previous word x?&#8217; and &#8216;Does word y occur within n words of this one?&#8217;.</S>
+          <S ID="S-21900">To maintain computational tractability, we restrict the questions to those concerning the partof-speech tag assigned to the current, previous and next words.</S>
+          <S ID="S-21901">We do not ask questions about the identities of the words themselves.</S>
+          <S ID="S-21902">For each part-of-speech tag T , we ask the question &#8216;Does w have tag T?&#8217;.</S>
+          <S ID="S-21903">In addition, we group part-of-speech tags to ask more general questions: e.g. the set of contexts which satisfies &#8216;Is w a noun?&#8217; contains those that satisfy &#8216;Is w a proper noun?&#8217; and &#8216;Is w a singular or mass noun?&#8217;.</S>
+          <S ID="S-21904">We also ask the same questions of the previous and next words in the source sentence.</S>
+          <S ID="S-21905">In English, this gives a total of 152 distinct questions, each of which is considered when splitting a leaf node.</S>
+          <S ID="S-21906">The MADA part-of-speech tagger uses a reduced tag set, which produces a total of 68 distinct questions.</S>
+        </P>
+        <P>
+          <S ID="S-21907">Figure 1 shows the links of the English source word selling in two different contexts where it links to different words in Arabic, which are both forms of the same verb.</S>
+          <S ID="S-21908">The part-of-speech of the previous word is useful for dis-</S>
+        </P>
+        <P>
+          <S ID="S-21909">Log probability of training data Log probability of training data</S>
+        </P>
+        <P>
+          <S ID="S-21910">-4.04e+07</S>
+        </P>
+        <P>
+          <S ID="S-21911">-4.06e+07</S>
+        </P>
+        <P>
+          <S ID="S-21912">-4.08e+07</S>
+        </P>
+        <P>
+          <S ID="S-21913">-4.1e+07</S>
+        </P>
+        <P>
+          <S ID="S-21914">-4.12e+07</S>
+        </P>
+        <P>
+          <S ID="S-21915">-4.14e+07</S>
+        </P>
+        <P>
+          <S ID="S-21916">-4.16e+07</S>
+        </P>
+        <P>
+          <S ID="S-21917">-4.18e+07</S>
+        </P>
+        <P>
+          <S ID="S-21918">-4.2e+07</S>
+        </P>
+        <P>
+          <S ID="S-21919">CI Model 1 Threshold 10 Threshold 20 Threshold 60</S>
+        </P>
+        <P>
+          <S ID="S-21920">-4.22e+07 11 12 13 14 15 16 17 18 19 20 Iteration</S>
+        </P>
+        <P>
+          <S ID="S-21921">-2.75e+06</S>
+        </P>
+        <P>
+          <S ID="S-21922">-2.8e+06</S>
+        </P>
+        <P>
+          <S ID="S-21923">-2.85e+06</S>
+        </P>
+        <P>
+          <S ID="S-21924">-2.9e+06</S>
+        </P>
+        <P>
+          <S ID="S-21925">-2.95e+06</S>
+        </P>
+        <P>
+          <S ID="S-21926">-3e+06</S>
+        </P>
+        <P>
+          <S ID="S-21927">-3.05e+06</S>
+        </P>
+        <P>
+          <S ID="S-21928">CI Model 1 Threshold 10 Threshold 20 Threshold 60</S>
+        </P>
+        <P>
+          <S ID="S-21929">-3.1e+06 11 12 13 14 15 16 17 18 19 20</S>
+        </P>
+        <P>
+          <S ID="S-21930">Iteration</S>
+        </P>
+        <P>
+          <S ID="S-21931">criminating between the two cases, whereas a contextindependent model would assign the same probability to both Arabic words.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Training Model 1</HEADER>
+        <P>
+          <S ID="S-21932">Training is carried out in both translation directions.</S>
+          <S ID="S-21933">For Arabic to English, the Arabic side of the parallel text is tagged and the English side remains untagged; we view the English words as being generated from the Arabic words and questions are asked about the context of the Arabic words to determine clusters for the translation table.</S>
+          <S ID="S-21934">For English to Arabic, the situation is reversed: we used tagged English text as the source language and untagged Arabic text, with morphological decomposition, as the target language.</S>
+          <S ID="S-21935">Standard CI Model 1 training, initialised with a uniform translation table so that t(e|f) is constant for all source/target word pairs (f, e), was run on untagged data for 10 iterations in each direction (<REF ID="R-04" RPTR="4">Brown et al., 1993</REF>; <REF ID="R-07" RPTR="11">Deng and Byrne, 2005</REF><REF ID="R-08" RPTR="15">Deng and Byrne, 2005</REF>b).</S>
+          <S ID="S-21936">A decision tree was built to cluster the contexts and a further 10 iterations of training were carried out using the tagged words-with-context to produce context-dependent models (CD Model 1).</S>
+          <S ID="S-21937">The</S>
+        </P>
+        <P>
+          <S ID="S-21938">models were then evaluated using AER at each training iteration.</S>
+          <S ID="S-21939">A number of improvement thresholds T imp were tested, and performance compared to that of models found after further iterations of CI Model 1 training on the untagged data.</S>
+          <S ID="S-21940">In both alignment directions, the log probability of the training data increases during training (see Figure 2).</S>
+          <S ID="S-21941">As expected, the training set likelihood increases as the threshold T imp is reduced, allowing more clusters and closer fitting to the data.</S>
+        </P>
+        <P>
+          <S ID="S-21942">3.2.1 Analysis of frequently used questions</S>
+        </P>
+        <P>
+          <S ID="S-21943">Table 1 shows the questions used most frequently at the root node of the decision tree when clustering contexts in English and Arabic.</S>
+          <S ID="S-21944">Because they are used first, these are the questions that individually give the greatest ability to discriminate between the different contexts of a word.</S>
+          <S ID="S-21945">The list shows the importance of the left and right contexts of the word in predicting its translation: of the most common 50 questions, 25 concern the previous word, 19 concern the next, and only 6 concern the partof-speech of the current word.</S>
+          <S ID="S-21946">For Arabic, of the most frequent 50 questions, 21 concern the previous word, 20 concern the next and 9 the current word.</S>
+        </P>
+        <P>
+          <S ID="S-21947">3.2.2 Alignment Error Rate</S>
+        </P>
+        <P>
+          <S ID="S-21948">Since MT systems are usually built on the union of the two sets of alignments (<REF ID="R-16" RPTR="24">Koehn et al., 2003</REF>), we consider the union of alignments in the two directions as well as those in each direction.</S>
+          <S ID="S-21949">Figure 3 shows the change in AER of the alignments in each direction, as well as the alignment formed by taking their union at corresponding thresholds and training iterations.</S>
+        </P>
+        <P>
+          <S ID="S-21950">3.2.3 Variation of improvement threshold T imp</S>
+        </P>
+        <P>
+          <S ID="S-21951">There is a trade-off between modelling the data accurately, which requires more clusters, and eliminating data sparsity problems, which requires each cluster to contain contexts that occur frequently enough in the training data to estimate the translation probabilities accurately.</S>
+          <S ID="S-21952">Use of a smaller threshold T imp leads to more clusters per word and an improved ability to fit to the data, but this can lead to reduced alignment quality if there is insufficient data to estimate the translation probability distribution accurately for each cluster.</S>
+          <S ID="S-21953">For lower thresholds, we observe over-fitting and the AER rises after the second iteration of CD training, similar to the behaviour seen in <REF ID="R-22" RPTR="32">Och (2002)</REF>.</S>
+          <S ID="S-21954">Setting T imp = 0 results in each context of a word having its own cluster, which leads to data sparsity problems.</S>
+        </P>
+        <P>
+          <S ID="S-21955">Table 2 shows the percentage of words for which the contexts are split into multiple clusters for CD Model 1 with varying improvement thresholds.</S>
+          <S ID="S-21956">This occurs when there are enough training data examples and sufficient variability between the contexts of a word that splitting the contexts into more than one cluster increases the EM auxiliary function.</S>
+          <S ID="S-21957">For words where the contexts are not split, all the contexts remain in the same cluster and parameter estimation is exactly the same as for the unclustered context-independent models.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Training HMMs</HEADER>
+        <P>
+          <S ID="S-21958">Adding source word context to translation has so far led to improvements in AER for Model 1, but the performance does not match that of HMMs trained on untagged data; we therefore train HMMs on tagged data.</S>
+        </P>
+        <P>
+          <S ID="S-21959">We proceed with Model 1 and Model 2 trained in the usual way, and context-independent (CI) HMMs were trained for 5 iterations on the untagged data.</S>
+          <S ID="S-21960">Statistics were then gathered for clustering at various thresholds, after which 5 further EM iterations were performed with tagged data to produce context-dependent (CD) HMMs.</S>
+          <S ID="S-21961">The HMMs were trained in both the Arabic to English and the English to Arabic directions.</S>
+          <S ID="S-21962">The log likelihood of the training set varies with T imp in much the same way as for Model 1, increasing at each iteration, with greater likelihood at lower thresholds.</S>
+          <S ID="S-21963">Figure 4 shows how the AER of the union alignment varies with T imp during training.</S>
+          <S ID="S-21964">As with Model 1, the clustered HMM</S>
+        </P>
+        <P>
+          <S ID="S-21965">50.8</S>
+        </P>
+        <P>
+          <S ID="S-21966">50.6 80 p 0 =0.95</S>
+        </P>
+        <P>
+          <S ID="S-21967">49.4</S>
+        </P>
+        <P>
+          <S ID="S-21968">49.2 10 11 12 13 14 15 16 17 18 19 20 Iteration</S>
+        </P>
+        <P>
+          <S ID="S-21969">51.2</S>
+        </P>
+        <P>
+          <S ID="S-21970">72 English-Arabic CD HMM</S>
+        </P>
+        <P>
+          <S ID="S-21971">English-Arabic CI HMM</S>
+        </P>
+        <P>
+          <S ID="S-21972">Arabic-English CD HMM Arabic-English CI HMM p 0 =0.00</S>
+        </P>
+        <P>
+          <S ID="S-21973">p 0 =0.00</S>
+        </P>
+        <P>
+          <S ID="S-21974">AER 51.0</S>
+        </P>
+        <P>
+          <S ID="S-21975">50.8</S>
+        </P>
+        <P>
+          <S ID="S-21976">50.6</S>
+        </P>
+        <P>
+          <S ID="S-21977">50.4</S>
+        </P>
+        <P>
+          <S ID="S-21978">CI Model 1 Threshold 10 Threshold 20 Threshold 60 Threshold 100</S>
+        </P>
+        <P>
+          <S ID="S-21979">50.2</S>
+        </P>
+        <P>
+          <S ID="S-21980">50.0</S>
+        </P>
+        <P>
+          <S ID="S-21981">49.8</S>
+        </P>
+        <P>
+          <S ID="S-21982">models produce alignments with a lower AER than the baseline model, and there is evidence of over-fitting to the training data.</S>
+        </P>
+        <P>
+          <S ID="S-21983">AER</S>
+        </P>
+        <P>
+          <S ID="S-21984">49.6</S>
+        </P>
+        <P>
+          <S ID="S-21985">51.0</S>
+        </P>
+        <P>
+          <S ID="S-21986">50.8</S>
+        </P>
+        <P>
+          <S ID="S-21987">50.6</S>
+        </P>
+        <P>
+          <S ID="S-21988">50.4</S>
+        </P>
+        <P>
+          <S ID="S-21989">50.2</S>
+        </P>
+        <P>
+          <S ID="S-21990">50.0</S>
+        </P>
+        <P>
+          <S ID="S-21991">49.8</S>
+        </P>
+        <P>
+          <S ID="S-21992">49.6</S>
+        </P>
+        <P>
+          <S ID="S-21993">49.4</S>
+        </P>
+        <P>
+          <S ID="S-21994">49.2</S>
+        </P>
+        <P>
+          <S ID="S-21995">49.0</S>
+        </P>
+        <P>
+          <S ID="S-21996">10 11 12 13 14 15 16 17 18 19 20 Iteration</S>
+        </P>
+        <P>
+          <S ID="S-21997">10 11 12 13 14 15 16 17 18 19 20 Iteration</S>
+        </P>
+        <P>
+          <S ID="S-21998">CI Model 1 Threshold 10 Threshold 20 Threshold 60</S>
+        </P>
+        <P>
+          <S ID="S-21999">AER 35.3</S>
+        </P>
+        <P>
+          <S ID="S-22000">35.2</S>
+        </P>
+        <P>
+          <S ID="S-22001">35.1</S>
+        </P>
+        <P>
+          <S ID="S-22002">35.0</S>
+        </P>
+        <P>
+          <S ID="S-22003">34.9</S>
+        </P>
+        <P>
+          <S ID="S-22004">34.8</S>
+        </P>
+        <P>
+          <S ID="S-22005">34.7</S>
+        </P>
+        <P>
+          <S ID="S-22006">34.6</S>
+        </P>
+        <P>
+          <S ID="S-22007">34.5</S>
+        </P>
+        <P>
+          <S ID="S-22008">CI HMM Threshold 10 Threshold 20 Threshold 60</S>
+        </P>
+        <P>
+          <S ID="S-22009">34.4 5 6 7 8 9 10</S>
+        </P>
+        <P>
+          <S ID="S-22010">Iteration</S>
+        </P>
+        <P>
+          <S ID="S-22011">3.3.1 Alignment precision and recall</S>
+        </P>
+        <P>
+          <S ID="S-22012">The HMM models include a null transition probability, p 0 , which can be modified to adjust the number of alignments to the null token (<REF ID="R-07" RPTR="12">Deng and Byrne, 2005</REF><REF ID="R-08" RPTR="16">Deng and Byrne, 2005</REF>a).</S>
+          <S ID="S-22013">Where a target word is emitted from null, it is not included in the alignment links, so this target word is viewed as not being aligned to any source word; this affects the precision and recall.</S>
+          <S ID="S-22014">The results reported above use p 0 = 0.2 for English-Arabic and p 0 = 0.4 for Arabic-English; we can tune these values to produce alignments with the lowest AER.</S>
+          <S ID="S-22015">Figure 5 shows precision-recall curves for the CD HMMs compared to the CI HMMs for both translation directions.</S>
+          <S ID="S-22016">For a given value of precision, the CD HMM has higher recall; for a given value of recall, the CD HMM has higher precision.</S>
+          <S ID="S-22017">We do not report F-score (<REF ID="R-10" RPTR="18">Fraser and Marcu, 2006</REF>) since in our experiments we have not found strong correlation with translation performance, but we note that these results for precision and recall should lead to improved F-scores as well.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Evaluation of translation quality</HEADER>
+      <P>
+        <S ID="S-22050">We have shown that the context-dependent models produce a decrease in AER measured on manually-aligned data; we wish to show this improved model performance leads to an increase in translation quality, measured by BLEU score (<REF ID="R-24" RPTR="34">Papineni et al., 2001</REF>).</S>
+        <S ID="S-22051">In addition to the Arabic systems already evaluated by AER, we also report results for a Chinese-English translation system.</S>
+      </P>
+      <P>
+        <S ID="S-22052">Alignment models were evaluated by aligning the training data using the models in each translation direc-</S>
+      </P>
+      <P>
+        <S ID="S-22053">tion.</S>
+        <S ID="S-22054">HiFST, a WFST-based hierarchical translation system described in (Iglesias et al., 2009), was trained on the union of these alignments.</S>
+        <S ID="S-22055">MET (<REF ID="R-23" RPTR="33">Och, 2003</REF>) was carried out using a development set, and the BLEU score evaluated on two test sets.</S>
+        <S ID="S-22056">Decoding used a 4-gram language model estimated from the English side of the entire MT08 parallel text, and a 965M word subset of monolingual data from the English Gigaword Third Edition.</S>
+      </P>
+      <P>
+        <S ID="S-22057">For both Arabic and English, the CD HMM models were evaluated as follows.</S>
+        <S ID="S-22058">Iteration 5 of the CI HMM was used to produce alignments for the parallel text training data: these were used to train the baseline system.</S>
+        <S ID="S-22059">The same data is aligned using CD HMMs after two further iterations of training and a second WFST-based translation system built from these alignments.</S>
+        <S ID="S-22060">The models are evaluated by comparing BLEU scores with those of the baseline model.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Arabic to English translation</HEADER>
+        <P>
+          <S ID="S-22037">Alignment models were trained on the NIST MT08 Arabic-English parallel text, excluding the UN portion.</S>
+          <S ID="S-22038">The null alignment probability was chosen based on the AER, resulting in values of p 0 = 0.05 for Arabic to English and p 0 = 0.10 for English to Arabic.</S>
+          <S ID="S-22039">We perform experiments on the NIST Arabic-English translation task.</S>
+          <S ID="S-22040">The mt02 05 tune and mt02 05 test data sets are formed from the odd and even numbered sentences of the NIST MT02 to MT05 evaluation sets respectively; each contains 2k sentences and 60k words.</S>
+          <S ID="S-22041">We use mt02 05 tune as a development set and evaluate the system on mt02 05 test and the newswire portion of the MT08 set, MT08-nw.</S>
+          <S ID="S-22042">Table 3 shows a comparison of the system trained using CD HMMs with the baseline system, which was trained using CI HMM models on untagged data.</S>
+          <S ID="S-22043">The context-dependent models result in a gain in BLEU score of 0.3 for mt02 05 test and 0.6 for MT08-nw.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Chinese to English translation</HEADER>
+        <P>
+          <S ID="S-22044">The Chinese training set was 600k random parallel text sentences of the newswire LDC collection allowed for NIST MT08, a total of 15.2M words of Chinese and 16.6M words of English.</S>
+          <S ID="S-22045">The Chinese text was tagged using the MXPOST maximum-entropy part of speech tagging tool (<REF ID="R-26" RPTR="36">Ratnaparkhi, 1996</REF>) trained on the Penn Chinese Treebank 5.1; the English text was tagged using the TnT part of speech tagger (<REF ID="R-02" RPTR="2">Brants, 2000</REF>) trained on the Wall Street Journal portion of the English Penn treebank.</S>
+        </P>
+        <P>
+          <S ID="S-22046">The development set tune-nw and validation set test-nw contain a mix of the newswire portions of MT02 through MT05 and additional developments sets created by translation within the GALE program.</S>
+          <S ID="S-22047">We also report results on the newswire portion of the MT08 set.</S>
+          <S ID="S-22048">Again we see an increase in BLEU score for both test sets: 0.5 for test-</S>
+        </P>
+        <P>
+          <S ID="S-22049">nw and 0.8 for MT08-nw.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusions and future work</HEADER>
+      <P>
+        <S ID="S-22061">We have introduced context-dependent Model 1 and HMM alignment models, which use context information in the source language to improve estimates of wordto-word translation probabilities.</S>
+        <S ID="S-22062">Estimation of parameters using these contexts without smoothing leads to data sparsity problems; therefore we have developed decision tree clustering algorithms to cluster source word contexts based on optimisation of the EM auxiliary function.</S>
+        <S ID="S-22063">Context information is incorporated by the use of part-ofspeech tags in both languages of the parallel text, and the EM algorithm is used for parameter estimation.</S>
+        <S ID="S-22064">We have shown that these improvements to the model lead to decreased AER compared to context-independent models.</S>
+        <S ID="S-22065">Finally, we compare machine translation systems built using our context-dependent alignments.</S>
+        <S ID="S-22066">For both Arabic- and Chinese-to-English translation, we report an increase in translation quality measured by BLEU score compared to a system built using contextindependent alignments.</S>
+        <S ID="S-22067">This paper describes an initial investigation into context-sensitive alignment models, and there are many possible directions for future research.</S>
+        <S ID="S-22068">Clustering the probability distributions of infrequently occurring may produce improvements in alignment quality, different model training schemes and extensions of the contextdependence to more sophisticated alignment models will be investigated.</S>
+        <S ID="S-22069">Further translation experiments will be carried out.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-22070">This work was supported in part by the GALE program of the Defense Advanced Research Projects Agency, Contract No.</S>
+      <S ID="S-22071">HR0011-06-C-0022.</S>
+      <S ID="S-22072">J. Brunning is supported by a Schiff Foundation graduate studentship.</S>
+      <S ID="S-22073">Thanks to Yanjun Ma, Dublin City University, for training the Chinese part of speech tagger.</S>
+    </P>
+    <P>
+      <S ID="S-22074">References</S>
+    </P>
+    <P>
+      <S ID="S-22075">A.</S>
+      <S ID="S-22076">L. Berger, S. Della Pietra, and V.</S>
+      <S ID="S-22077">J. Della Pietra.</S>
+      <S ID="S-22078">1996.</S>
+      <S ID="S-22079">A maximum entropy approach to natural language processing.</S>
+      <S ID="S-22080">Computational Linguistics, 22(1):39&#8211;71.</S>
+      <S ID="S-22081">Graeme Blackwood, Adri&#224; de Gispert, Jamie Brunning, and</S>
+    </P>
+    <P>
+      <S ID="S-22082">William Byrne.</S>
+      <S ID="S-22083">2008.</S>
+      <S ID="S-22084">European language translation with weighted finite state transducers: The CUED MT system for the 2008 ACL workshop on SMT.</S>
+      <S ID="S-22085">In Proceedings of the Third Workshop on Statistical Machine Translation, pages 131&#8211;134, Columbus, Ohio, June.</S>
+      <S ID="S-22086">Association for Computational Linguistics.</S>
+    </P>
+    <P>
+      <S ID="S-22087">Thorsten Brants.</S>
+      <S ID="S-22088">2000.</S>
+      <S ID="S-22089">TnT &#8211; a statistical part-of-speech tagger.</S>
+      <S ID="S-22090">In Proceedings of the 6th Applied Natural Language Processing Conference: ANLP-2000, Seattle, USA.</S>
+    </P>
+    <P>
+      <S ID="S-22091">Peter F. Brown, Vincent J. Della Pietra, Stephen A. Della Pietra, and Robert L. Mercer.</S>
+      <S ID="S-22092">1993.</S>
+      <S ID="S-22093">The mathematics of statistical machine translation: parameter estimation.</S>
+      <S ID="S-22094">Computational Linguistics, 19(2):263&#8211;311.</S>
+      <S ID="S-22095">T. Buckwalter.</S>
+      <S ID="S-22096">2002.</S>
+      <S ID="S-22097">Buckwalter Arabic morphological analyzer.</S>
+      <S ID="S-22098">Marta Ruiz Costa-juss&#224; and Jos&#180;e A. R. Fonollosa.</S>
+      <S ID="S-22099">2005.</S>
+    </P>
+    <P>
+      <S ID="S-22100">Improving phrase-based statistical translation by modifying phrase extraction and including several features.</S>
+      <S ID="S-22101">In Proceedings of the ACL Workshop on Building and Using Parallel Texts, pages 149&#8211;154, June.</S>
+    </P>
+    <P>
+      <S ID="S-22102">Yonggang Deng and William Byrne.</S>
+      <S ID="S-22103">2005a.</S>
+      <S ID="S-22104">HMM word and phrase alignment for statistical machine translation.</S>
+      <S ID="S-22105">In Proc. of HLT-EMNLP.</S>
+    </P>
+    <P>
+      <S ID="S-22106">Yonggang Deng and William Byrne.</S>
+      <S ID="S-22107">2005b.</S>
+      <S ID="S-22108">JHU-Cambridge</S>
+    </P>
+    <P>
+      <S ID="S-22109">statistical machine translation toolkit (MTTK) user manual.</S>
+      <S ID="S-22110">Yonggang Deng, Shankhar Kumar, and William Byrne.</S>
+      <S ID="S-22111">2007.</S>
+      <S ID="S-22112">Segmentation and alignment of parallel text for statistical machine translation.</S>
+      <S ID="S-22113">Journal of Natural Language Engineering, 13:3:235&#8211;260.</S>
+      <S ID="S-22114">Alexander Fraser and Daniel Marcu.</S>
+      <S ID="S-22115">2006.</S>
+      <S ID="S-22116">Measuring word</S>
+    </P>
+    <P>
+      <S ID="S-22117">alignment quality for statistical machine translation.</S>
+      <S ID="S-22118">Technical Report ISI-TR-616, ISI/University of Southern California, May.</S>
+      <S ID="S-22119">Nizar Habash and Fatiha Sadat.</S>
+      <S ID="S-22120">2006.</S>
+      <S ID="S-22121">Arabic preprocessing</S>
+    </P>
+    <P>
+      <S ID="S-22122">schemes for statistical machine translation.</S>
+      <S ID="S-22123">In HLT-NAACL.</S>
+      <S ID="S-22124">G. Iglesias, A. de Gispert, E. R. Banga, and W. Byrne.</S>
+      <S ID="S-22125">2009.</S>
+      <S ID="S-22126">Hierarchical phrase-based translation with weighted finite state transducers.</S>
+      <S ID="S-22127">In Procedings of NAACL-HLT, 2009, Boulder, Colorado.</S>
+      <S ID="S-22128">Abraham Ittycheriah, Yaser Al-Onaizan, and Salim Roukos.</S>
+    </P>
+    <P>
+      <S ID="S-22129">2006.</S>
+      <S ID="S-22130">The IBM Arabic-English word alignment corpus, August.</S>
+      <S ID="S-22131">A. Kannan, M. Ostendorf, and J. R. Rohlicek.</S>
+      <S ID="S-22132">1994.</S>
+      <S ID="S-22133">Maximum likelihood clustering of Gaussians for speech recognition.</S>
+      <S ID="S-22134">Speech and Audio Processing, IEEE Transactions on, 2(3):453&#8211;455, July.</S>
+    </P>
+    <P>
+      <S ID="S-22135">Philipp Koehn, Franz Josef Och, and Daniel Marcu.</S>
+      <S ID="S-22136">2003.</S>
+      <S ID="S-22137">Statistical phrase-based translation.</S>
+      <S ID="S-22138">In NAACL &#8217;03: Proceedings of the 2003 Conference of the North American Chapter of the Association for Computational Linguistics on Human Language Technology, pages 48&#8211;54.</S>
+      <S ID="S-22139">Mitchell P. Marcus, Mary Ann Marcinkiewicz, and Beatrice Santorini.</S>
+      <S ID="S-22140">1993. Building a large annotated corpus of</S>
+    </P>
+    <P>
+      <S ID="S-22141">English: the Penn Treebank.</S>
+      <S ID="S-22142">Computational Linguistics,</S>
+    </P>
+    <P>
+      <S ID="S-22143">19(2):313&#8211;330.</S>
+      <S ID="S-22144">Sonja Nie&#223;en and Hermann Ney.</S>
+      <S ID="S-22145">2001a.</S>
+      <S ID="S-22146">Morpho-syntactic</S>
+    </P>
+    <P>
+      <S ID="S-22147">analysis for reordering in statistical machine translation.</S>
+      <S ID="S-22148">In Proceedings of MT Summit VIII, pages 247&#8211;252, September.</S>
+      <S ID="S-22149">Sonja Nie&#223;en and Hermann Ney.</S>
+      <S ID="S-22150">2001b.</S>
+      <S ID="S-22151">Toward hierarchical models for statistical machine translation of inflected languages.</S>
+      <S ID="S-22152">In Proceedings of the workshop on Data-driven methods in machine translation, pages 1&#8211;8, Morristown, NJ, USA.</S>
+      <S ID="S-22153">Association for Computational Linguistics.</S>
+      <S ID="S-22154">Franz Josef Och and Hermann Ney.</S>
+      <S ID="S-22155">2000.</S>
+      <S ID="S-22156">A comparison of</S>
+    </P>
+    <P>
+      <S ID="S-22157">alignment models for statistical machine translation.</S>
+      <S ID="S-22158">In Proceedings of the 18th conference on Computational Linguistics, pages 1086&#8211;1090.</S>
+      <S ID="S-22159">F. Och, D. Gildea, S. Khudanpur, A. Sarkar, K. Yamada,</S>
+    </P>
+    <P>
+      <S ID="S-22160">A. Fraser, S. Kumar, L. Shen, D. Smith, K. Eng, V. Jain, Z. Jin, and D. Radev.</S>
+      <S ID="S-22161">2004.</S>
+      <S ID="S-22162">A smorgasbord of features for statistical machine translation.</S>
+      <S ID="S-22163">In Proceedings of NAACL.</S>
+      <S ID="S-22164">Franz Josef Och.</S>
+      <S ID="S-22165">2002.</S>
+      <S ID="S-22166">Statistical Machine Translation: From</S>
+    </P>
+    <P>
+      <S ID="S-22167">Single Word Models to Alignment Templates.</S>
+      <S ID="S-22168">Ph.D.</S>
+      <S ID="S-22169">thesis, Franz Josef Och.</S>
+      <S ID="S-22170">Franz Josef Och.</S>
+      <S ID="S-22171">2003.</S>
+      <S ID="S-22172">Minimum error rate training in statistical machine translation.</S>
+      <S ID="S-22173">In ACL &#8217;03: Proceedings of the 41st Annual Meeting on Association for Computational Linguistics, pages 160&#8211;167.</S>
+      <S ID="S-22174">Kishore Papineni, Salim Roukos, Todd Ward, and Wei-Jing</S>
+    </P>
+    <P>
+      <S ID="S-22175">Zhu.</S>
+      <S ID="S-22176">2001.</S>
+      <S ID="S-22177">Bleu: a method for automatic evaluation of machine translation.</S>
+      <S ID="S-22178">In Proceedings of ACL, pages 311&#8211;318.</S>
+      <S ID="S-22179">Maja Popovi&#263; and Hermann Ney.</S>
+      <S ID="S-22180">2004.</S>
+      <S ID="S-22181">Improving word alignment quality using morpho-syntactic information.</S>
+      <S ID="S-22182">In In Proceedings of COLING, page 310.</S>
+      <S ID="S-22183">Adwait Ratnaparkhi.</S>
+      <S ID="S-22184">1996.</S>
+      <S ID="S-22185">A maximum entropy model for part-of-speech tagging.</S>
+      <S ID="S-22186">In In Proceedings of the Conference on Empirical Methods in Natural Language Processing, pages 133&#8211;142.</S>
+      <S ID="S-22187">H. Singer and M. Ostendorf.</S>
+      <S ID="S-22188">1996.</S>
+      <S ID="S-22189">Maximum likelihood successive state splitting.</S>
+      <S ID="S-22190">Proceedings of ICASSP, 2:601&#8211;604.</S>
+      <S ID="S-22191">Nicolas Stroppa, Antal van den Bosch, and Andy Way.</S>
+      <S ID="S-22192">2007.</S>
+    </P>
+    <P>
+      <S ID="S-22193">Exploiting source similarity for SMT using context-informed features.</S>
+      <S ID="S-22194">In Proceedings of the 11th Conference on Theoretical and Methodological Issues in Machine Translation (TMI 2007), pages 231 &#8211; 240.</S>
+      <S ID="S-22195">Kristina Toutanova, H. Tolga Ilhan, and Christopher D. Manning.</S>
+      <S ID="S-22196">2002.</S>
+      <S ID="S-22197">Extensions to HMM-based statistical word alignment models.</S>
+      <S ID="S-22198">In Proceedings of EMNLP, pages 87&#8211;94.</S>
+      <S ID="S-22199">Ismael Garc&#237;a Varea, Franz J. Och, Hermann Ney, and Francisco Casacuberta.</S>
+      <S ID="S-22200">2002.</S>
+      <S ID="S-22201">Improving alignment quality in statistical machine translation using context-dependent maximum entropy models.</S>
+      <S ID="S-22202">In Proceedings of COLING, pages 1&#8211;7.</S>
+      <S ID="S-22203">Stephan Vogel, Hermann Ney, and Christoph Tillmann.</S>
+      <S ID="S-22204">1996.</S>
+      <S ID="S-22205">HMM-based word alignment in statistical translation.</S>
+      <S ID="S-22206">In Proceedings of COLING, pages 836&#8211;841.</S>
+      <S ID="S-22207">S.</S>
+      <S ID="S-22208">J. Young, J.</S>
+      <S ID="S-22209">J. Odell, and P.</S>
+      <S ID="S-22210">C. Woodland.</S>
+      <S ID="S-22211">1994.</S>
+      <S ID="S-22212">Tree-based</S>
+    </P>
+    <P>
+      <S ID="S-22213">state tying for high accuracy acoustic modelling.</S>
+      <S ID="S-22214">In HLT &#8217;94: Proceedings of the workshop on Human Language Technology, pages 307&#8211;312.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>A L Berger</RAUTHOR>
+      <REFTITLE>A maximum entropy approach to natural language processing.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Graeme Blackwood</RAUTHOR>
+      <REFTITLE>European language translation with weighted finite state transducers: The CUED MT system for the</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Thorsten Brants</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Peter F Brown</RAUTHOR>
+      <REFTITLE>The mathematics of statistical machine translation: parameter estimation.</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>T Buckwalter</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Marta Ruiz Costa-juss&#224;</RAUTHOR>
+      <REFTITLE>Improving phrase-based statistical translation by modifying phrase extraction and including several features.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>HMM word and phrase alignment for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>JHU-Cambridge statistical machine translation toolkit (MTTK)</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Yonggang Deng</RAUTHOR>
+      <REFTITLE>Segmentation and alignment of parallel text for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Alexander Fraser</RAUTHOR>
+      <REFTITLE>Measuring word alignment quality for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Nizar Habash</RAUTHOR>
+      <REFTITLE>Arabic preprocessing schemes for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>G Iglesias</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation with weighted finite state transducers.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Abraham Ittycheriah</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>A Kannan</RAUTHOR>
+      <REFTITLE>Maximum likelihood clustering of Gaussians for speech recognition. Speech and Audio Processing,</REFTITLE>
+      <DATE>1994</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Mitchell P Marcus</RAUTHOR>
+      <REFTITLE>Building a large annotated corpus of English: the Penn Treebank. Computational Linguistics,</REFTITLE>
+      <DATE>1993</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Sonja Nie&#223;en</RAUTHOR>
+      <REFTITLE>Morpho-syntactic analysis for reordering in statistical machine translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Sonja Nie&#223;en</RAUTHOR>
+      <REFTITLE>Toward hierarchical models for statistical machine translation of inflected languages.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A comparison of alignment models for statistical machine translation.</REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>F Och</RAUTHOR>
+      <REFTITLE>A smorgasbord of features for statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Statistical Machine Translation: From Single Word Models to Alignment Templates.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Maja Popovi&#263;</RAUTHOR>
+      <REFTITLE>Improving word alignment quality using morpho-syntactic information. In</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Adwait Ratnaparkhi</RAUTHOR>
+      <REFTITLE>A maximum entropy model for part-of-speech tagging. In</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>H Singer</RAUTHOR>
+      <REFTITLE>Maximum likelihood successive state splitting.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Nicolas Stroppa</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>Exploiting source similarity for SMT using context-informed features.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="30">
+      <RAUTHOR>Kristina Toutanova</RAUTHOR>
+      <REFTITLE>Extensions to HMM-based statistical word alignment models.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="31">
+      <RAUTHOR>Ismael Garc&#237;a Varea</RAUTHOR>
+      <REFTITLE>Improving alignment quality in statistical machine translation using context-dependent maximum entropy models.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="32">
+      <RAUTHOR>Stephan Vogel</RAUTHOR>
+      <REFTITLE>HMM-based word alignment in statistical translation.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

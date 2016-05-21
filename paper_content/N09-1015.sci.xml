@@ -1,0 +1,566 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Intersecting multilingual data for faster and better statistical translations</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-22215">In current phrase-based SMT systems, more training data is generally better than less.</A-S>
+    <A-S ID="S-22216">However, a larger data set eventually introduces a larger model that enlarges the search space for the translation problem, and consequently requires more time and more resources to translate.</A-S>
+    <A-S ID="S-22217">We argue redundant information in a SMT system may not only delay the computations but also affect the quality of the outputs.</A-S>
+    <A-S ID="S-22218">This paper proposes an approach to reduce the model size by filtering out the less probable entries based on compatible data in an intermediate language, a novel use of triangulation, without sacrificing the translation quality.</A-S>
+    <A-S ID="S-22219">Comprehensive experiments were conducted on standard data sets.</A-S>
+    <A-S ID="S-22220">We achieved significant quality improvements (up to 2.3 BLEU points) while translating with reduced models.</A-S>
+    <A-S ID="S-22221">In addition, we demonstrate a straightforward combination method for more progressive filtering.</A-S>
+    <A-S ID="S-22222">The reduction of the model size can be up to 94% with the translation quality being preserved.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-22223">Statistical machine translation (SMT) applies machine learning techniques to a bilingual corpus to produce a translation system entirely automatically.</S>
+        <S ID="S-22224">Such a scheme has many potential advantages over earlier systems which relied on carefully crafted rules.</S>
+        <S ID="S-22225">The most obvious is that it at dramatically reduces cost in human labor and it is able to reach many critical translation rules that are easily overlooked by human being.</S>
+      </P>
+      <P>
+        <S ID="S-22226">SMT systems generally assemble translations by selecting phrases from a large candidate set.</S>
+        <S ID="S-22227">Unsupervised learning often introduces a considerable amount of noise into this set as a result of which the selection process becomes more longer and less effective.</S>
+        <S ID="S-22228">This paper provides one approach to these problems.</S>
+        <S ID="S-22229">Various filtering techniques, such as (<REF ID="R-03" RPTR="3">Johnson et al., 2007</REF>) and (<REF ID="R-00" RPTR="0">Chen et al., 2008</REF>), have been applied to eliminate a large portion of the translation rules that were judged unlikely to be of value for the current translation.</S>
+        <S ID="S-22230">However, these approaches were only able to improve the translation quality slightly.</S>
+        <S ID="S-22231">In this paper, we describe a triangulation approach (<REF ID="R-04" RPTR="4">Kay, 1997</REF>) that incorporates multilingual data to improve system efficiency and translation quality at the same time.</S>
+        <S ID="S-22232">Most of the previous triangulation approaches (<REF ID="R-08" RPTR="8">Kumar et al., 2007</REF>; <REF ID="R-01" RPTR="1">Cohn and Lapata, 2007</REF>; <REF ID="R-02" RPTR="2">Filali and Bilmes, 2005</REF>; Simard, 1999; <REF ID="R-09" RPTR="9">Och and Ney, 2001</REF>) add information obtained from a third language.</S>
+        <S ID="S-22233">In other words, they work with the union of the data from the different languages.</S>
+        <S ID="S-22234">In contrast, we work with the intersection of information acquired through a third language.</S>
+        <S ID="S-22235">The hope is that the intersection will be more precise and more compact than the union, so that a better result will be obtained more efficiently.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Noise in a phrase-based SMT system</HEADER>
+      <P>
+        <S ID="S-22236">The phrases in a translation model are extracted heuristically from a word alignment between the parallel texts in two languages using machine learning techniques.</S>
+        <S ID="S-22237">The translation model feature values are stored in the form of a so-called phrase-table,</S>
+      </P>
+      <P>
+        <S ID="S-22238">Human Language Technologies: The 2009 Annual Conference of the North American Chapter of the ACL, pages 128&#8211;136, Boulder, Colorado, June 2009. c&#9675;2009 Association for Computational Linguistics</S>
+      </P>
+      <P>
+        <S ID="S-22239">while the distortion model is in the reordering-table.</S>
+        <S ID="S-22240">As we have said models built in this way tend to contain a contains a considerable amount of noise.</S>
+        <S ID="S-22241">The phrase-table entries are far less reliable than the lexicons and grammar rules handcrafted for rule-based systems.</S>
+      </P>
+      <P>
+        <S ID="S-22242">The main source of noise in the phrase table is errors from the word alignment process.</S>
+        <S ID="S-22243">For example, many function words occur so frequently that they are incorrectly mapped to translations of many function words in the other language to which they are, in fact, unrelated.</S>
+        <S ID="S-22244">On the other hand, many words remain unaligned on account of their very low frequency.</S>
+        <S ID="S-22245">Another source noise comes from the phrase extraction algorithm itself.</S>
+        <S ID="S-22246">The unaligned words are usually attached to aligned sequences In order to achieve longer phrase pairs.</S>
+      </P>
+      <P>
+        <S ID="S-22247">The final selection of entries from the phrase table is based not only on the values assigned to them there, but also to values coming from the language and reordering models, so that entries that receive an initially high value may end up not being preferred.</S>
+      </P>
+      <P>
+        <S ID="S-22248">(1) Sie lieben ihre Kinder nicht.</S>
+        <S ID="S-22249">they love their children not</S>
+      </P>
+      <P>
+        <S ID="S-22250">They don&#8217;t love their children.</S>
+      </P>
+      <P>
+        <S ID="S-22251">The frequently occurring German negative &#8220;nicht&#8221; in (1).</S>
+        <S ID="S-22252">is sometimes difficult for SMT systems to translate into English because it may appear in many positions of a sentence.</S>
+        <S ID="S-22253">For instance, it occurs at the end of the sentence in (1).</S>
+        <S ID="S-22254">The phrase pairs &#8220;ihre kinder nicht &#8594; their children are not&#8221; and &#8220;ihre kinder nicht &#8594; their children&#8221; are both likely also to appear in the phrase table and the former has greater estimated probability.</S>
+        <S ID="S-22255">However, the language model would preferred the latter in this example because the sentence &#8220;They love their children are not.&#8221; is unlikely to be attested.</S>
+        <S ID="S-22256">Accordingly, SMT system may therefore produce the misleading translation in (2).</S>
+      </P>
+      <P>
+        <S ID="S-22257">(2) They love their children.</S>
+      </P>
+      <P>
+        <S ID="S-22258">The system would not produce translations with the opposite meanings if the noisy entries like &#8220;ihre kinder nicht &#8594; their children&#8221; were excluded from the translation candidates.</S>
+        <S ID="S-22259">Eliminating the noise should help to improve the system&#8217;s performance, for both efficiency and translation quality.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Triangulated filtering</HEADER>
+      <P>
+        <S ID="S-22260">While direct translation and pivot translation through a bridge language presumably introduce noise, in substantially similar amounts, there is no reason to expect the noise in the two systems to correlate strongly.</S>
+        <S ID="S-22261">In fact, the noise from such different sources, tends to be quite distinct, whereas the more useful information is often retained.</S>
+        <S ID="S-22262">This encourages us to hope that information gathered from various sources will be more reliable overall.</S>
+      </P>
+      <P>
+        <S ID="S-22263">Our plan is to ameliorate the noise problem by constructing a smaller phrase-table by taking the intersection of a number of sources.</S>
+        <S ID="S-22264">We reason that a target phrase is will appear as a candidate translation of a given source phrase, only if it also appears as a candidate translation for some word or phrase in the bridge language mapping to the source phrase.</S>
+        <S ID="S-22265">We refer to this triangulation approach as triangulated phrase-table filtering.</S>
+      </P>
+      <P>
+        <S ID="S-22266">Source&#8722;Bridge Model</S>
+      </P>
+      <P>
+        <S ID="S-22267">Target&#8722;Bridge Model</S>
+      </P>
+      <P>
+        <S ID="S-22268">Source Text</S>
+      </P>
+      <P>
+        <S ID="S-22269">Monolingual Corpus Parallel Corpus</S>
+      </P>
+      <P>
+        <S ID="S-22270">Translation Model</S>
+      </P>
+      <P>
+        <S ID="S-22271">Filtered Model</S>
+      </P>
+      <P>
+        <S ID="S-22272">Counting Smoothing</S>
+      </P>
+      <P>
+        <S ID="S-22273">SMT Decoder</S>
+      </P>
+      <P>
+        <S ID="S-22274">Language Model</S>
+      </P>
+      <P>
+        <S ID="S-22275">Alignment, Phrase Extraction</S>
+      </P>
+      <P>
+        <S ID="S-22276">Filtering</S>
+      </P>
+      <P>
+        <S ID="S-22277">Target Text</S>
+      </P>
+      <P>
+        <S ID="S-22278">Figure 1 illustrates our triangulation approach.</S>
+        <S ID="S-22279">Two bridge models are first constructed: one from the source language to the bridge language, and another from the target language to the bridge language.</S>
+        <S ID="S-22280">Then, we use these two models to filter the original source-target model.</S>
+        <S ID="S-22281">For each phrase pair in the original table, we try to find a common link in these bridge models to connect both phrases.</S>
+        <S ID="S-22282">If such links do not exist, we remove the entry from the table.</S>
+        <S ID="S-22283">The probability values in the table remain</S>
+      </P>
+      <P>
+        <S ID="S-22284">unchanged.</S>
+        <S ID="S-22285">The reduced table can be used in place of the original one in the SMT system.</S>
+      </P>
+      <P>
+        <S ID="S-22286">There are various forms of links that can be used as our evidence for the filtering process.</S>
+        <S ID="S-22287">One obvious form is complete phrases in the bridge language, which means, for each phrase pair in the model to be filtered, we should look for a third phrase in the bridge language that can relate the two phrases in the pair.</S>
+        <S ID="S-22288">This approach to filtering examines each phrase pair presented in the phrase-table one by one.</S>
+        <S ID="S-22289">For each phrase pair, we collect the corresponding translations using the models for translation into a third language.</S>
+        <S ID="S-22290">If both phrases can be mapped to some phrases in the bridge language, but to different ones, we should remove it from the model.</S>
+        <S ID="S-22291">It is also possible that neither of the phrases appear in corresponding bridge models.</S>
+        <S ID="S-22292">In this case, we consider the bridge models insufficient for making the filtering decision and prefer to keep the pair in the table.</S>
+      </P>
+      <P>
+        <S ID="S-22293">The way a decoder constructs translation hypotheses is directly related to the weights for different model features in a SMT system, which are usually optimized for a given set of models with minimum error rate training (MERT) (<REF ID="R-10" RPTR="10">Och, 2003</REF>) to achieve better translation performance.</S>
+        <S ID="S-22294">In other words, the weights obtained for a model do not necessarily apply to another model.</S>
+        <S ID="S-22295">Since the triangulated filtering method removes a part of the model, it is important to readjust the feature weights for the reduced phrase-table.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experimental design</HEADER>
+      <P>
+        <S ID="S-22296">All the text data used in our experiments are from Release v3 of &#8220;European Parliament Proceedings Parallel Corpus 1996-2006&#8221; (Europarl) corpus (<REF ID="R-07" RPTR="7">Koehn, 2005</REF>).</S>
+        <S ID="S-22297">We mainly investigated translations from Spanish to English.</S>
+        <S ID="S-22298">There are enough structural differences in these two language to introduce some noise in the phrase table.</S>
+        <S ID="S-22299">French, Portuguese, Danish, German and Finnish were used as bridge languages.</S>
+        <S ID="S-22300">Portuguese is very similar to Spanish and French somewhat less so.</S>
+        <S ID="S-22301">Finnish is unrelated and fairly different typologically with Danish and German occupying the middle ground.</S>
+        <S ID="S-22302">In addition, we also present briefly the results on German- English translations with Dutch, Spanish and Danish as bridges.</S>
+      </P>
+      <P>
+        <S ID="S-22303">For the Spanish-English pair, three translation models were constructed over the same parallel corpora.</S>
+        <S ID="S-22304">We acquired comparable data sets by drawing several subsets from the same corpus according to various maximal sentence lengths.</S>
+        <S ID="S-22305">The subsets</S>
+      </P>
+      <P>
+        <S ID="S-22306">we used in the experiments are presented by &#8220;EP- 20&#8221;, &#8220;EP-40&#8221; and &#8220;EP-50&#8221;, in which the numbers indicate the maximal sentence length in respective Europarl subsets.</S>
+        <S ID="S-22307">Table 1 lists the characteristics of the Spanish-English subsets.</S>
+        <S ID="S-22308">Although the maximal sentence length in these sets is far less than that of the whole corpus (880 tokens), EP-50 already includes nearly 85% of Spanish-English sentence pairs from Europarl.</S>
+        <S ID="S-22309">The translations models, both the models to be filtered and the bridge models, were generated from compatible Europarl subsets using the Moses toolkit (<REF ID="R-05" RPTR="5">Koehn et al., 2007</REF>) with the most basic configurations.</S>
+        <S ID="S-22310">The feature weights for the Spanish- English translation models were optimized over a development set of 500 sentences using MERT to maximize BLEU (<REF ID="R-11" RPTR="11">Papineni et al., 2001</REF>).</S>
+        <S ID="S-22311">The triangulated filtering algorithm was applied to each combination of a translation model and a third language.</S>
+        <S ID="S-22312">The reordering models were also filtered according to the phrase-table.</S>
+        <S ID="S-22313">Only those phrase pairs that appeared in the phrase-table remained in the reordering table.</S>
+        <S ID="S-22314">We rerun the MERT process solely based on the remaining entries in the filtered tables.</S>
+        <S ID="S-22315">Each table is used to translate a set of 2,000 sentences of test data (from the shared task of the third Workshop on Statistical Machine Translation, 2008 1 ).</S>
+        <S ID="S-22316">Both the test set and the development data set have been excluded from the training data.</S>
+        <S ID="S-22317">We evaluated the proposed phrase-table filtering</S>
+      </P>
+      <P>
+        <S ID="S-22318">1 For details, see</S>
+      </P>
+      <P>
+        <S ID="S-22319">http://www.statmt.org/wmt08/shared-task.html</S>
+      </P>
+      <P>
+        <S ID="S-22320">method mainly from two points of view: the efficiency of systems with filtered tables and the quality of output translations produced by the systems.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Results</HEADER>
+      <P>
+        <S ID="S-22460"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 System efficiency</HEADER>
+        <P>
+          <S ID="S-22321">Often the question of machine translation is not only how to produce a good translation, but also how to produce it quickly.</S>
+          <S ID="S-22322">To evaluate the system efficiency, we measured both storage space and time consumption.</S>
+          <S ID="S-22323">For recording the computation time, we run an identical of installation of the decoder with different models and then measure the average execution time for the given translation task.</S>
+        </P>
+        <P>
+          <S ID="S-22324">In Table 2, we give the number of entries in each phrase table (N), and the physical file size of the phrase table (S P T ) and the reordering table (S RT ) (without any compression or binarization), T l , the time for the program to load phrase tables and T t the time to translate the complete test set.</S>
+          <S ID="S-22325">We also highlighted the largest and the smallest reduction from each group.</S>
+        </P>
+        <P>
+          <S ID="S-22326">All filtered models showed significant reductions in size.</S>
+          <S ID="S-22327">The greatest reduction of model sizes, taking both phrase-table and reordering table into account, is nearly 11 gigabytes for filtering the largest model (EP-50) with a Finnish bridge, which leads to the maximal time saving of 939 seconds, or almost 16 minutes, for translating two thousand sentences.</S>
+          <S ID="S-22328">The reduction rates from two larger models are very close to each other whereas the filtered table scaled down the most significantly on the smallest model (EP-20), which was in fact constructed over a much smaller subset of Europarl corpus, consisting of less than half of the sentences pairs in the other two Europarl subsets.</S>
+          <S ID="S-22329">Compared to the larger Europarl subsets, the small data set is expected to produce more errors through training as there is much less relevant data for the machine learning algorithm to correctly extract useful information from.</S>
+          <S ID="S-22330">Consequently, there are more noisy entries in this small model, and therefore more entries to be removed.</S>
+          <S ID="S-22331">In addition, the filtering is done by exact matching of complete phrases, which presumably happens much less frequently even for correctly paired phrase pairs in the very limited data supplied by the smallest training set.</S>
+          <S ID="S-22332">For the same reason, the distinction between different bridge languages was less clear for this small model.</S>
+        </P>
+        <P>
+          <S ID="S-22333">Due to hardware limitation, we are not able to fit the unfiltered phrase tables completely into the memory.</S>
+          <S ID="S-22334">Every table was filtered based on the given input so only a small portion of each table was loaded into memory.</S>
+          <S ID="S-22335">This may diminish the difference between the original and the filtered table to a certain degree.</S>
+          <S ID="S-22336">The relative time consumptionnevertheless agrees with the reduction in size: phrase tables from the smallest model showed the most reduction for both loading the models and processing the translations.</S>
+        </P>
+        <P>
+          <S ID="S-22337">For loading time, we count the time it takes to start and to load the bilingual phrase-tables plus reordering tables and the monolingual language model into the memory.</S>
+          <S ID="S-22338">The majority of the loading time for the smallest model, even before filtering, has been used for loading language models and other start-up processes, could not be reduced as much as the reduction on table size.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Translation quality</HEADER>
+        <P>
+          <S ID="S-22339">Bridge EP-20 EP-40 EP-50</S>
+        </P>
+        <P>
+          <S ID="S-22340">Efficiency aside, a translation system should be able to produce useful translation.</S>
+          <S ID="S-22341">It is important to verify that the filtering approach does not affect the translation quality of the system.</S>
+          <S ID="S-22342">Table 3 show the BLEU scores of each translation acquired in the experiments.</S>
+        </P>
+        <P>
+          <S ID="S-22343">Between translation models of different sizes, there are obvious performance gaps.</S>
+          <S ID="S-22344">Different bridge languages can cause different effects on performance.</S>
+          <S ID="S-22345">However, the translation qualities from a single model are fairly close to each other.</S>
+          <S ID="S-22346">We therefore take it that the effect of the triangulation approach is rather robust across translation models of different sizes.</S>
+        </P>
+        <P>
+          <S ID="S-22347">Time Table Size Model+Bridge T l (s) T t (s) N S P T (byte) S RT (byte)</S>
+        </P>
+        <P>
+          <S ID="S-22348">It is obvious that the best systems are usually NOT from the filtered tables that preserved the most entries from the original.</S>
+          <S ID="S-22349">All the filtered models showed some improvement in quality with updated model weights.</S>
+          <S ID="S-22350">Mostly around 1.5 BLEU points, the increases ranged from 0.36 to 2.25.</S>
+          <S ID="S-22351">Table 4 gives a set of translations from the experiments.</S>
+          <S ID="S-22352">The unfiltered baseline system inserted the negative by mistake while all the filtered systems are able to avoid this.</S>
+          <S ID="S-22353">It indicates that there are indeed noisy entries affecting translation quality in the original table.</S>
+          <S ID="S-22354">We were able to achieve better translations by eliminating noisy entries.</S>
+        </P>
+        <P>
+          <S ID="S-22355">The filtering methods indeed tend to remove entries composed of long phrases.</S>
+          <S ID="S-22356">Table 5 lists the average length of phrases in several models.</S>
+          <S ID="S-22357">Both source phrases and target phrases are taken into account.</S>
+          <S ID="S-22358">The best models have shortest phrases on average.</S>
+          <S ID="S-22359">Discarding such entries seems to be necessary.</S>
+          <S ID="S-22360">This is consistent with the findings in (<REF ID="R-06" RPTR="6">Koehn, 2003</REF>) that phrases longer than three words improve performance little for training corpora of up to 20 million words.</S>
+        </P>
+        <P>
+          <S ID="S-22361">Quality gains appeared to converge in the results across different bridge languages while the original models became larger.</S>
+          <S ID="S-22362">Translations generated using large models filtered with different bridge lan-</S>
+        </P>
+        <P>
+          <S ID="S-22363">Bridge EP-20 EP-40 EP-50</S>
+        </P>
+        <P>
+          <S ID="S-22364">guages are less diverse.</S>
+          <S ID="S-22365">Meanwhile, the degradation is less for a larger model.</S>
+          <S ID="S-22366">It is reasonable to expect improvements for extremely large models with arbitrary bridge languages.</S>
+          <S ID="S-22367">For relatively small models, the selection of bridge languages would be critical for the effect of our approach.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Language clustering</HEADER>
+        <P>
+          <S ID="S-22368">To further understand how the triangulated filtering approach worked and why it could work as it did, we examined a randomly selected phrase table fragment through the experiments.</S>
+          <S ID="S-22369">The segment included 10 potential English translations of the same Spanish word &#8220;fabricantes&#8221;, the plural form of the word &#8220;fabricante&#8221; (manufacturer).</S>
+        </P>
+        <P>
+          <S ID="S-22370">Table 6 shows the filtering results on a randomly selected segment from the original &#8220;EP-40&#8221; model, including 10 English translations of the same source</S>
+        </P>
+        <P>
+          <S ID="S-22371">source</S>
+        </P>
+        <P>
+          <S ID="S-22372">ref</S>
+        </P>
+        <P>
+          <S ID="S-22373">baseline</S>
+        </P>
+        <P>
+          <S ID="S-22374">pt</S>
+        </P>
+        <P>
+          <S ID="S-22375">fr</S>
+        </P>
+        <P>
+          <S ID="S-22376">da</S>
+        </P>
+        <P>
+          <S ID="S-22377">de</S>
+        </P>
+        <P>
+          <S ID="S-22378">fi</S>
+        </P>
+        <P>
+          <S ID="S-22379">As&#237;, se van modificando poco a poco los principios habituales del Estado de derecho por influencia de una concepcin extremista de la lucha con tra las discriminaciones.. thus , the usual principles of the rule of law are being gradually altered under the influence of an extremist approach to combating discrimination.</S>
+          <S ID="S-22380">we are not changing the usual principles of the rule of law from the influence of an extremist approach in the fight against discrimination.</S>
+          <S ID="S-22381">so , are gradually changing normal principles of the rule of law by influence of an extremist conception of the fight against discrimination.</S>
+          <S ID="S-22382">so , we are gradually changing the usual principles of the rule of law by influence of an extremist conception of the fight against discrimination.</S>
+          <S ID="S-22383">so , are gradually changing the usual principles of the rule of law by influence of an extremist conception of the fight against discrimination.</S>
+          <S ID="S-22384">thus , we are gradually altering the usual principles of the rule of law by influence of an extremist conception of the fight against discrimination.</S>
+          <S ID="S-22385">so , are gradually changing normal principles of the rule of law by influence of an extremist conception of the fight against discrimination.</S>
+        </P>
+        <P>
+          <S ID="S-22386">fabricantes pt fr da de fi</S>
+        </P>
+        <P>
+          <S ID="S-22387">word &#8220;fabricantes&#8221;.</S>
+          <S ID="S-22388">&#780;&#10003; indicates that the corresponding English phrase remained in the table after triangulated filtering with the corresponding bridge language.</S>
+          <S ID="S-22389">We also counted the number of tables that included each phrase pair.</S>
+        </P>
+        <P>
+          <S ID="S-22390">Regardless of the bridge language, the triangulated filtering approach had removed those entries that are clearly noise.</S>
+          <S ID="S-22391">Meanwhile, entries which are surely correct were always preserved in the filtered tables.</S>
+          <S ID="S-22392">The results of using different bridge languages turned out to be consistent on these extreme cases.</S>
+          <S ID="S-22393">The 5 filtering processes agreed on six out of ten pairs.</S>
+        </P>
+        <P>
+          <S ID="S-22394">As for the other 4 pairs, the decisions were different using different bridge languages.</S>
+          <S ID="S-22395">The remaining entries were always different when the bridge was changed.</S>
+          <S ID="S-22396">None of the languages led to the identical eliminations.</S>
+          <S ID="S-22397">None of the cases excludes all errors.</S>
+          <S ID="S-22398">Apparently, the selection of bridge languages had immediate effects on the filtering results.</S>
+        </P>
+        <P>
+          <S ID="S-22399">BLEU (%)</S>
+        </P>
+        <P>
+          <S ID="S-22400">32.8</S>
+        </P>
+        <P>
+          <S ID="S-22401">32.6</S>
+        </P>
+        <P>
+          <S ID="S-22402">32.4</S>
+        </P>
+        <P>
+          <S ID="S-22403">32.2</S>
+        </P>
+        <P>
+          <S ID="S-22404">31.8</S>
+        </P>
+        <P>
+          <S ID="S-22405">31.6</S>
+        </P>
+        <P>
+          <S ID="S-22406">31.4</S>
+        </P>
+        <P>
+          <S ID="S-22407">31.2</S>
+        </P>
+        <P>
+          <S ID="S-22408">31 4 6 8 10 12 14 16 18 20 Phrase-table Entries (Mil.</S>
+          <S ID="S-22409">)</S>
+        </P>
+        <P>
+          <S ID="S-22410">Portugese French Danish German Finnish Baseline</S>
+        </P>
+        <P>
+          <S ID="S-22411">We compared two factors of these filtered tables: their sizes and the corresponding BLEU scores.</S>
+          <S ID="S-22412">Figure 2 shows interesting signs of language similarity/dissimilarity.</S>
+          <S ID="S-22413">There are apparently two groups of languages having extremely close performance, which happen to fall in two language groups: Germanic (German and Danish) and Romance (French and Portuguese).</S>
+          <S ID="S-22414">The Romance group was associated with larger filtered tables that produced slightly better translations.</S>
+          <S ID="S-22415">The filtered tables created with Germanic bridge languages contained ap-</S>
+        </P>
+        <P>
+          <S ID="S-22416">proximately 2 million entries less than Romance groups.</S>
+          <S ID="S-22417">The translation quality difference between these two groups was within 1 point of BLEU.</S>
+        </P>
+        <P>
+          <S ID="S-22418">Observed from this figure, it seems that the translation quality was connected to the similarity between the bridge language and the source language.</S>
+          <S ID="S-22419">The closer the bridge is to the source language, the better translations it may produce.</S>
+          <S ID="S-22420">For instance, Portuguese led to a filtered table that produced the best translations.</S>
+          <S ID="S-22421">On the other hand, the more different the bridge languages compared to the source, the larger portion of the phrase-table the filtering algorithm will remove.</S>
+          <S ID="S-22422">The table filtered with German was the smallest in the four cases.</S>
+        </P>
+        <P>
+          <S ID="S-22423">Finnish, a language that is unrelated to others, was associated with distinctive results.</S>
+          <S ID="S-22424">The size of the table filtered with Finnish is only 23% of the original, almost half of the table generated with Portuguese.</S>
+          <S ID="S-22425">Finnish has extremely rich morphology, hence a great many word-forms, which would make exact matching in bridge models less likely to happen.</S>
+          <S ID="S-22426">Many more phrase pairs in the original table were removed for this reason even though some of these entries were beneficial for translations.</S>
+          <S ID="S-22427">Even though the improvement on translation quality due to the Finnish bridge was less significant than the others, it is clear that triangulated filtering retained the useful information from the original model.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Further filtering</HEADER>
+        <P>
+          <S ID="S-22428">The filtering decision with a bridge language on a particular phrase pair is fixed: either to keep the entry or to discard it.</S>
+          <S ID="S-22429">It is difficult to adjust the system to work differently.</S>
+          <S ID="S-22430">However, as the triangulated filtering procedure does not consider probability distributions in the models, it is possible to further filter the tables according to the probabilities.</S>
+        </P>
+        <P>
+          <S ID="S-22431">The phrase pairs are associated with values computed from the given set of feature weights and sorted, so that we can remove any portions of the remain entries based on the values.</S>
+          <S ID="S-22432">Each generated table is used to translate the test set again.</S>
+          <S ID="S-22433">Figure 3 shows BLEU scores of the translation outputs produced with tables derived from the &#8220;EP-50&#8221; model with respect to their sizes.</S>
+          <S ID="S-22434">We also included the curve of probability-based filtering alone as the baseline.</S>
+        </P>
+        <P>
+          <S ID="S-22435">The difference between filtered tables at the same</S>
+        </P>
+        <P>
+          <S ID="S-22436">BLEU (%) 32</S>
+        </P>
+        <P>
+          <S ID="S-22437">0 10 20 30 40 50 Phrase-table Entries (Mil.</S>
+          <S ID="S-22438">)</S>
+        </P>
+        <P>
+          <S ID="S-22439">Baseline Portugese</S>
+        </P>
+        <P>
+          <S ID="S-22440">French Danish German Finnish</S>
+        </P>
+        <P>
+          <S ID="S-22441">size can be over 6 BLEU points, which is a remarkable advantage for the triangulated filtering approach always producing better translations.</S>
+          <S ID="S-22442">The curves of the triangulated filtered models are clearly much steeper than that of the naive pruned ones.</S>
+          <S ID="S-22443">Data in these filtered models are more compact than the original model before any filtering.</S>
+          <S ID="S-22444">The triangulated filtered phrase-tables contain more useful information than a normal phrase-table of the same size.</S>
+          <S ID="S-22445">The curves representing the triangulated filtering performance are always on the left of the original curves.</S>
+        </P>
+        <P>
+          <S ID="S-22446">We are able to use less than 6% of the original phrase table (40% of the table filtered with Finnish) to obtain translations with the same quality as the original.</S>
+          <S ID="S-22447">The extreme case, using only 1.4% of the original table, leads to a reasonable BLEU score, indicating that most of the output sentences should still be understandable.</S>
+          <S ID="S-22448">In this case, the overall size of the phrase table and the reordering table was less than 100 megabytes, potentially feasible for mobile devices, whereas the original models took nearly 12.5 gigabytes of disk space.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.5 Different source language Table 7:</HEADER>
+        <P>
+          <S ID="S-22449">BLEU)</S>
+        </P>
+        <P>
+          <S ID="S-22450">Bridge EP-40 EP-50</S>
+        </P>
+        <P>
+          <S ID="S-22451">Filtered German-English systems (Size and</S>
+        </P>
+        <P>
+          <S ID="S-22452">In addition to Spanish-English translation, we also conducted experiments on German-English translation.</S>
+          <S ID="S-22453">The results, shown in Table 7, appear consistent with the results of Spanish-English translation.</S>
+          <S ID="S-22454">Translations in most cases have performance close to the original unfiltered models, whereas the reduction in phrase-table size ranged from 40% to 85%.</S>
+          <S ID="S-22455">Meanwhile, translation speed has been increased up to 17%.</S>
+        </P>
+        <P>
+          <S ID="S-22456">Due to German&#8217;s rich morphology, the unfiltered German-English models contain many more entries than the Spanish-English ones constructed from similar data sets.</S>
+          <S ID="S-22457">Unlike the Spanish-English models, the difference between &#8220;EP-40&#8221; and &#8220;EP- 50&#8221; was not significant.</S>
+          <S ID="S-22458">Neither was the difference between the impacts of the filtering in terms of translation quality.</S>
+          <S ID="S-22459">In addition, German and English are so dissimilar that none of the three bridge languages we chose turned out to be significantly superior.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusions</HEADER>
+      <P>
+        <S ID="S-22461">We highlighted one problem of the state-of-the-art SMT systems that was generally neglected: the noise in the translation models.</S>
+        <S ID="S-22462">Accordingly, we proposed triangulated filtering methods to deal with this problem.</S>
+        <S ID="S-22463">We used data in a third language as evidence to locate the less probable items in the translation models so as to obtain the intersection of information extracted from multilingual data.</S>
+        <S ID="S-22464">Only the occurrences of complete phrases were taken into account.</S>
+        <S ID="S-22465">The probability distributions of the phrases have not been considered so far.</S>
+        <S ID="S-22466">Although the approach was fairly naive, our experiments showed it to be effective.</S>
+        <S ID="S-22467">The approaches were applied to SMT systems built with the Moses toolkit.</S>
+        <S ID="S-22468">The translation quality was improved at least 1 BLEU for all 15 cases (filtering 3 different models with 5 bridge languages).</S>
+        <S ID="S-22469">The improvement can be as much as 2.25 BLEU.</S>
+        <S ID="S-22470">It is also clear that the best translations were not linked to the largest translation models.</S>
+        <S ID="S-22471">We also sketched a simple extension to the triangulated filtering approach to further reduce the model size, which allows us to generate reasonable results with only 1.4% of the entries from the original table.</S>
+        <S ID="S-22472">The results varied for different bridge languages as well as different models.</S>
+        <S ID="S-22473">For translation from Spanish to English, Finnish, the most distinctive bridge language, appeared to be a more effective intermediate language which could remove more phrase pair entries while still improving the translation quality.</S>
+        <S ID="S-22474">Portuguese, the most close to the source language, always leads to a filtered model that produces the best translations.</S>
+        <S ID="S-22475">The selection of bridge languages has more obvious impact on the performance of our approach when the size of the model to filter was larger.</S>
+        <S ID="S-22476">The work gave one instance of the general approach described in Section 3.</S>
+        <S ID="S-22477">There are several potential directions for continuing this work.</S>
+        <S ID="S-22478">The most straightforward one is to use our approaches with more different languages, such as Chinese and Arabic, and incompatible corpora, for example, different segments of Europarl.</S>
+        <S ID="S-22479">The main focus of such experiments should be verifying the conclusions we had in this paper.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-22480"></S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Yu Chen</RAUTHOR>
+      <REFTITLE>Improving Statistical Machine Translation Efficiency by Triangulation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Trevor Cohn</RAUTHOR>
+      <REFTITLE>Machine Translation by Triangulation: Making Effective Use of Multi-Parallel Corpora.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Karim Filali</RAUTHOR>
+      <REFTITLE>Leveraging Multiple Languages to Improve Statistical MT Word Alignments.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>J Howard Johnson</RAUTHOR>
+      <REFTITLE>Improving Translation Quality by Discarding Most of the Phrasetable.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Martin Kay</RAUTHOR>
+      <REFTITLE>The proper place of men and machines in language translation.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Chris Dyer, Ondrej Bojar,</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Noun Phrase Translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Europarl: A Parallel Corpus for Statistical Machine Translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Shankar Kumar</RAUTHOR>
+      <REFTITLE>Improving word alignment with bridge languages.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Statistical multi-source translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>BLEU: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

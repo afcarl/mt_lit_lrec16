@@ -1,0 +1,425 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Chunk-based Verb Reordering in VSO Sentences for Arabic-English Statistical Machine Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>Arianna Bisazza</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-43255">In Arabic-to-English phrase-based statistical machine translation, a large number of syntactic disfluencies are due to wrong long-range reordering of the verb in VSO sentences, where the verb is anticipated with respect to the English word order.</A-S>
+    <A-S ID="S-43256">In this paper, we propose a chunk-based reordering technique to automatically detect and displace clause-initial verbs in the Arabic side of a word-aligned parallel corpus.</A-S>
+    <A-S ID="S-43257">This method is applied to preprocess the training data, and to collect statistics about verb movements.</A-S>
+    <A-S ID="S-43258">From this analysis, specific verb reordering lattices are then built on the test sentences before decoding them.</A-S>
+    <A-S ID="S-43259">The application of our reordering methods on the training and test sets results in consistent BLEU score improvements on the NIST-MT 2009 Arabic- English benchmark.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-43260">Shortcomings of phrase-based statistical machine translation (PSMT) with respect to word reordering have been recently shown on the Arabic- English pair by <REF ID="R-00" RPTR="0">Birch et al. (2009)</REF>.</S>
+        <S ID="S-43261">An empirical investigation of the output of a strong baseline we developed with the Moses toolkit (<REF ID="R-12" RPTR="14">Koehn et al., 2007</REF>) for the NIST 2009 evaluation, revealed that an evident cause of syntactic disfluency is the anticipation of the verb in Arabic Verb-Subject- Object (VSO) sentences &#8211; a class that is highly represented in the news genre 1 .</S>
+      </P>
+      <P>
+        <S ID="S-43262">Fig.</S>
+        <S ID="S-43263">1 shows two examples where the Arabic main verb phrase comes before the subject.</S>
+        <S ID="S-43264">In such sentences, the subject can be followed by adjectives, adverbs, coordinations, or appositions that further increase the distance between the verb</S>
+      </P>
+      <P>
+        <S ID="S-43265">1 In fact, Arabic syntax admits both SVO and VSO orders.</S>
+      </P>
+      <P>
+        <S ID="S-43266">and its object.</S>
+        <S ID="S-43267">When translating into English &#8211; a primarily SVO language &#8211; the resulting long verb reorderings are often missed by the PSMT decoder either because of pure modeling errors or because of search errors (<REF ID="R-08" RPTR="9">Germann et al., 2001</REF>): i.e. their span is longer than the maximum allowed distortion distance, or the correct reordering hypothesis does not emerge from the explored search space because of a low score.</S>
+        <S ID="S-43268">In the two examples, the missed verb reorderings result in different translation errors by the decoder, respectively, the introduction of a subject pronoun before the verb and, even worse, a verbless sentence.</S>
+      </P>
+      <P>
+        <S ID="S-43269">In Arabic-English machine translation, other kinds of reordering are of course very frequent: for instance, adjectival modifiers following their noun and head-initial genitive constructions (Idafa).</S>
+        <S ID="S-43270">These, however, appear to be mostly local, therefore more likely to be modeled through phrase internal alignments, or to be captured by the reordering capabilities of the decoder.</S>
+        <S ID="S-43271">In general there is a quite uneven distribution of word-reordering phenomena in Arabic-English, and long-range movements concentrate on few patterns.</S>
+      </P>
+      <P>
+        <S ID="S-43272">Reordering in PSMT is typically performed by (i) constraining the maximum allowed word movement and exponentially penalizing long reorderings (distortion limit and penalty), and (ii) through so-called lexicalized orientation models (<REF ID="R-16" RPTR="19">Och et al., 2004</REF>; <REF ID="R-12" RPTR="15">Koehn et al., 2007</REF>; <REF ID="R-07" RPTR="8">Galley and Manning, 2008</REF>).</S>
+        <S ID="S-43273">While the former is mainly aimed at reducing the computational complexity of the decoding algorithm, the latter assigns at each decoding step a score to the next source phrase to cover, according to its orientation with respect to the last translated phrase.</S>
+        <S ID="S-43274">In fact, neither method discriminates among different reordering distances for a specific word or syntactic class.</S>
+        <S ID="S-43275">To our view, this could be a reason for their inadequacy to properly deal with the reordering peculiarities of the Arabic-English language pair.</S>
+        <S ID="S-43276">In</S>
+      </P>
+      <P>
+        <S ID="S-43277">src: ref: MT: jdd AlEAhl Almgrby Almlk mHmd AlsAds Subj dEm h Obj l m$rwE Alr}ys Alfrnsy The Moroccan monarch King Mohamed VI Subj renewed his support Obj to the project of French President The Moroccan monarch King Mohamed VI his support to the French President</S>
+      </P>
+      <P>
+        <S ID="S-43278">this work, we introduce a reordering technique that addresses this limitation.</S>
+      </P>
+      <P>
+        <S ID="S-43279">The remainder of the paper is organized as follows.</S>
+        <S ID="S-43280">In Sect.</S>
+        <S ID="S-43281">2 we describe our verb reordering technique and in Sect.</S>
+        <S ID="S-43282">3 we present statistics about verb movement collected through this technique.</S>
+        <S ID="S-43283">We then discuss the results of preliminary MT experiments involving verb reordering of the training based on these findings (Sect.</S>
+        <S ID="S-43284">4).</S>
+        <S ID="S-43285">Afterwards, we explain our lattice approach to verb reordering in the test and provide evaluation on a well-known MT benchmark (Sect.</S>
+        <S ID="S-43286">5).</S>
+        <S ID="S-43287">In the last two sections we review some related work and draw the final conclusions.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Chunk-based Verb Reordering</HEADER>
+      <P>
+        <S ID="S-43288">The goal of our work is to displace Arabic verbs from their clause-initial position to a position that minimizes the amount of word reordering needed to produce a correct translation.</S>
+        <S ID="S-43289">In order to restrict the set of possible movements of a verb and to abstract from the usual token-based movement length measure, we decided to use shallow syntax chunking of the source language.</S>
+        <S ID="S-43290">Full syntactic parsing is another option which we have not tried so far mainly because popular parsers that are available for Arabic do not mark grammatical relations such as the ones we are interested in.</S>
+        <S ID="S-43291">We assume that Arabic verb reordering only occurs between shallow syntax chunks, and not within them.</S>
+        <S ID="S-43292">For this purpose we annotated our Arabic data with the AMIRA chunker by <REF ID="R-04" RPTR="4">Diab et al. (2004)</REF> 2 .</S>
+        <S ID="S-43293">The resulting chunks are generally short (1.6 words on average).</S>
+        <S ID="S-43294">We then consider a specific type of reordering by defining a production rule of the kind: &#8220;move a chunk of type T along with its L left neighbours and R right neighbours by a shift of S chunks&#8221;.</S>
+        <S ID="S-43295">A basic set of rules</S>
+      </P>
+      <P>
+        <S ID="S-43296">2 This tool implies morphological segmentation of the</S>
+      </P>
+      <P>
+        <S ID="S-43297">Arabic text.</S>
+        <S ID="S-43298">All word statistics in this paper refer to AMIRAsegmented text.</S>
+      </P>
+      <P>
+        <S ID="S-43299">that displaces the verbal chunk to the right by at most 10 positions corresponds to the setting: T=&#8217;VP&#8217;, L=0, R=0, S=1..10 In order to address cases where the verb is moved along with its adverbial, we also add a set of rules that include a one-chunk right context in the movement: T=&#8217;VP&#8217;, L=0, R=1, S=1..10 To prevent verb reordering from overlapping with the scope of the following clause, we always limit the maximum movement to the position of the next verb.</S>
+        <S ID="S-43300">Thus, for each verb occurrence, the number of allowed movements for our setting is at most 2 &#215; 10 = 20.</S>
+      </P>
+      <P>
+        <S ID="S-43301">Assuming that a word-aligned translation of the sentence is available, the best movement, if any, will be the one that reduces the amount of distortion in the alignment, that is: (i) it reduces the number of swaps by 1 or more, and (ii) it minimizes the sum of distances between source positions aligned to consecutive target positions, i.e. &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-43302">i |a i &#8722; (a i&#8722;1 + 1)| where a i is the index of the</S>
+      </P>
+      <P>
+        <S ID="S-43303">foreign word aligned to the i th English word.</S>
+        <S ID="S-43304">In case several movements are optimal according to these two criteria, e.g. because of missing wordalignment links, only the shortest good movement is retained.</S>
+        <S ID="S-43305">The proposed reordering method has been applied to various parallel data sets in order to perform a quantitative analysis of verb anticipation, and to train a PSMT system on more monotonic alignments.</S>
+      </P>
+      <P>
+        <S ID="S-43306">3 Analysis of Verb Reordering</S>
+      </P>
+      <P>
+        <S ID="S-43307">We applied the above technique to two parallel corpora 3 provided by the organizers of the NIST- MT09 Evaluation.</S>
+        <S ID="S-43308">The first corpus (Gale-NW) contains human-made alignments.</S>
+        <S ID="S-43309">As these refer to non-segmented text, they were adjusted to</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Newswire sections of LDC2006E93 and LDC2009E08,</HEADER>
+      <P>
+        <S ID="S-43332">respectively 4337 and 777 sentence pairs.</S>
+      </P>
+      <P>
+        <S ID="S-43333">agree with AMIRA-style segmentation.</S>
+        <S ID="S-43334">For the second corpus (Eval08-NW), we filtered out sentences longer than 80 tokens in order to make word alignment feasible with GIZA++ (<REF ID="R-15" RPTR="18">Och and Ney, 2003</REF>).</S>
+        <S ID="S-43335">We then used the Intersection of the direct and inverse alignments, as computed by Moses.</S>
+        <S ID="S-43336">The choice of such a high-precision, lowrecall alignment set is supported by the findings of <REF ID="R-10" RPTR="11">Habash (2007)</REF> on syntactic rule extraction from parallel corpora.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 The Verb&#8217;s Dance</HEADER>
+        <P>
+          <S ID="S-43310">There are 1,955 verb phrases in Gale-NW and 11,833 in Eval08-NW.</S>
+          <S ID="S-43311">Respectively 86% and 84% of these do not need to be moved according to the alignments.</S>
+          <S ID="S-43312">The remaining 14% and 16% are distributed by movement length as shown in Fig.</S>
+          <S ID="S-43313">2: most verb reorderings consist in a 1-chunk long jump to the right (8.3% in Gale-NW and 11.6% in Eval08-NW).</S>
+          <S ID="S-43314">The rest of the distribution is similar in the two corpora, which indicates a good correspondence between verb reordering observed in automatic and manual alignments.</S>
+          <S ID="S-43315">By increasing the maximum movement length from 1 to 2, we can cover an additional 3% of verb reorderings, and around 1% when passing from 2 to 3.</S>
+          <S ID="S-43316">We recall that the length measured in chunks doesn&#8217;t necessarily correspond to the number of jumped tokens.</S>
+          <S ID="S-43317">These figures are useful to determine an optimal set of reordering rules.</S>
+          <S ID="S-43318">From now on we will focus on verb movements of at most 6 chunks, as these account for about 99.5% of the verb occurrences.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Impact on Corpus Global Distortion</HEADER>
+        <P>
+          <S ID="S-43319">We tried to measure the impact of chunk-based verb reordering on the total word distortion found in parallel data.</S>
+          <S ID="S-43320">For the sake of reliability, this investigation was carried out on the manually aligned corpus (Gale-NW) only.</S>
+          <S ID="S-43321">Fig.</S>
+          <S ID="S-43322">3 shows the positive effect of verb reordering on the total distortion, which is measured as the number of words that have to be jumped on the source side in order to cover the sentence in the target order (that is |a i &#8722; (a i&#8722;1 + 1)|).</S>
+          <S ID="S-43323">Jumps have been grouped by length and the relative decrease of jumps per length is shown on top of each double column.</S>
+        </P>
+        <P>
+          <S ID="S-43324">These figures do not prove as we hoped that verb reordering resolves most of the long range reorderings.</S>
+          <S ID="S-43325">Thus we manually inspected a sample of verb-reordered sentences that still contain long jumps, and found out that many of these were due to what we could call &#8220;unnecessary&#8221; reordering.</S>
+          <S ID="S-43326">In fact, human translations that are free to some extent, often display a global sentence restructuring that makes distortion dramatically increase.</S>
+          <S ID="S-43327">We believe this phenomenon introduces noise in our analysis since these are not reorderings that an MT system needs to capture to produce an accurate and fluent translation.</S>
+          <S ID="S-43328">Nevertheless, we can see from the relative decrease percentages shown in the plot, that although short jumps are by far the most frequent, verb reordering affects especially medium and long range distortion.</S>
+          <S ID="S-43329">More precisely, our selective reordering technique solves 21.8% of the 5-to-6- words jumps, 25.9% of the 7-to-9-words jumps and 24.2% of the 10-to-14-words jumps, against</S>
+        </P>
+        <P>
+          <S ID="S-43330">only 9.5% of the 2-words jumps, for example.</S>
+          <S ID="S-43331">Since our primary goal is to improve the handling of long reorderings, this makes us think that we are advancing in a promising direction.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Preliminary Experiments</HEADER>
+      <P>
+        <S ID="S-43362">In this section we investigate how verb reordering on the source language can affect translation quality.</S>
+        <S ID="S-43363">We apply verb reordering both on the training and the test data.</S>
+        <S ID="S-43364">However, while the parallel corpus used for training can be reordered by exploiting word alignments, for the test corpus we need a verb reordering &#8221;prediction model&#8221;.</S>
+        <S ID="S-43365">For these preliminary experiments, we assumed that optimal verb-reordering of the test data is provided by an oracle that has access to the word alignments with the reference translations.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Setup</HEADER>
+        <P>
+          <S ID="S-43337">We trained a Moses-based system on a subset of the NIST-MT09 Evaluation data 4 for a total of 981K sentences, 30M words.</S>
+          <S ID="S-43338">We first aligned the data with GIZA++ and use the resulting Intersection set to apply the technique explained in Sect.</S>
+          <S ID="S-43339">2.</S>
+          <S ID="S-43340">We then retrained the whole system &#8211; from word alignment to phrase scoring &#8211; on the reordered data and evaluated it on two different versions of Eval08-NW: plain and oracle verb-reordered, obtained by exploiting word alignments with the first of the four available English references.</S>
+          <S ID="S-43341">The first experiment is meant to measure the impact of the verb reordering procedure on training only.</S>
+          <S ID="S-43342">The latter will provide an estimate of the maximum improvement we can expect from the application to the test of an optimal verb reordering prediction technique.</S>
+          <S ID="S-43343">Given our experimental setting, one could argue that our BLEU score is biased because one of the references was also used to generate the verb reordering.</S>
+          <S ID="S-43344">However, in a series of experiments not reported here, we evaluated the same systems using only the remaining three references and observed similar trends as when all four references are used.</S>
+        </P>
+        <P>
+          <S ID="S-43345">Feature weights were optimized through MERT (Och, 2003) on the newswire section of the NIST- MT06 evaluation set (Dev06-NW), in the original version for the baseline system, in the verbreordered version for the reordered system.</S>
+        </P>
+        <P>
+          <S ID="S-43346">4 LDC2007T08, 2003T07, 2004E72, 2004T17, 2004T18,</S>
+        </P>
+        <P>
+          <S ID="S-43347">2005E46, 2006E25, 2006E44 and LDC2006E39 &#8211; the two last with first reference only.</S>
+        </P>
+        <P>
+          <S ID="S-43348">Fig.</S>
+          <S ID="S-43349">4 shows the results in terms of BLEU score for (i) the baseline system, (ii) the reordered system on a plain version of Eval08-NW and (iii) the reordered system on the reordered test.</S>
+          <S ID="S-43350">The scores are plotted against the distortion limit (DL) used in decoding.</S>
+          <S ID="S-43351">Because high DL values (8-10) imply a larger search space and because we want to give Moses the best possible conditions to properly handle long reordering, we relaxed for these conditions the default pruning parameter to the point that led the highest BLEU score 5 .</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Discussion</HEADER>
+        <P>
+          <S ID="S-43352">The first observation is that the reordered system always performs better (0.5&#8764;0.6 points) than the baseline on the plain test, despite the mismatch between training and test ordering.</S>
+          <S ID="S-43353">This may be due to the fact that automatic word alignments are more accurate when less reordering is present in the data, although previous work (<REF ID="R-13" RPTR="16">Lopez and Resnik, 2006</REF>) showed that even large gains in alignment accuracy seldom lead to better translation performances.</S>
+          <S ID="S-43354">Moreover phrase extraction may benefit from a distortion reduction, since its heuristics rely on word order in order to expand the context of alignment links.</S>
+        </P>
+        <P>
+          <S ID="S-43355">The results on the oracle reordered test are also interesting: a gain of at least 1.2 point absolute over the baseline is reported in all tested DL conditions.</S>
+          <S ID="S-43356">These improvements are remarkable, keeping in mind that only 31% of the train and 33% of the test sentences get modified by verb reordering.</S>
+        </P>
+        <P>
+          <S ID="S-43357">5 That is, the histogram pruning maximum stack size was</S>
+        </P>
+        <P>
+          <S ID="S-43358">set to 1000 instead of the default 200.</S>
+        </P>
+        <P>
+          <S ID="S-43359">Concerning distortion, although long verb movements are often observed in parallel corpora, relaxing the DL to high values does not benefit the translation, even with our &#8216;generous&#8217; setting (wider beam search).</S>
+          <S ID="S-43360">This is probably due to the fact that, with weakly constrained distortion, the risk of search errors increases as the reordering model fails to properly rank an exponentially growing set of permutations.</S>
+          <S ID="S-43361">Therefore many correct reordering hypotheses receive low scores and get lost in pruning or recombination.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Verb Reordering Lattices</HEADER>
+      <P>
+        <S ID="S-43402">Having assessed the negative impact of VSO sentences on Arabic-English translation performance, we now propose a method to improve the handling of this phenomenon at decoding time.</S>
+        <S ID="S-43403">As in real working conditions word alignments of the input text are not available, we explore a reordering lattice approach.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Lattice Construction</HEADER>
+        <P>
+          <S ID="S-43366">Firstly conceived to optimally encode multiple transcription hypothesis produced by a speech recognizer, word lattices have later been used to represent various forms of input ambiguity, mainly at the level of token boundaries (e.g. word segmentation, morphological decomposition, word decompounding (<REF ID="R-05" RPTR="5">Dyer et al., 2008</REF>)).</S>
+          <S ID="S-43367">A main problem when dealing with permutations is that the lattice size can grow very quickly when medium to long reorderings are represented.</S>
+          <S ID="S-43368">We are particularly concerned with this issue because our decoding will perform additional reordering on the lattice input.</S>
+          <S ID="S-43369">Thanks to the restrictions we set on our verb movement reordering rules described in Sect.</S>
+          <S ID="S-43370">2 &#8211; i.e. only reordering between chunks and no overlap between consecutive verb chunks movement &#8211; we are able to produce quite compact word lattices.</S>
+        </P>
+        <P>
+          <S ID="S-43371">Fig.</S>
+          <S ID="S-43372">5 illustrates how a chunk-based reordering lattice is generated.</S>
+          <S ID="S-43373">Suppose we want to translate the Arabic sentence &#8220;w &gt;kdt mSAdr rsmyp wjwd rAbT byn AlAEtdA&#8217;At&#8221;, whose English meaning is &#8220;Official sources confirmed that there was a link between the attacks&#8221;.</S>
+          <S ID="S-43374">The Arabic main verb &gt;kdt (confirmed) is in pre-subject position.</S>
+          <S ID="S-43375">If we applied word-based rather than chunk-based rules to move the verb to the right, we would produce the first lattice of the figure, containing 7 paths (the original plus 6 verb movements).</S>
+          <S ID="S-43376">With the chunkbased rules, we treat instead chunks as units and get the second lattice.</S>
+          <S ID="S-43377">Then, by expanding each chunk, we obtain the final, less dense lattice, that compared to the first does not contain 3 (unlikely) reordering edges.</S>
+        </P>
+        <P>
+          <S ID="S-43378">To be consistent with the reordering applied to the training data, we use a set of rules that move each verb phrase alone or with its following chunk by 1 to 6 chunks to the right.</S>
+          <S ID="S-43379">With this settings,</S>
+        </P>
+        <P>
+          <S ID="S-43380">our lattice generation algorithm computes a compact lattice (Fig.</S>
+          <S ID="S-43381">6) that introduces at most 5&#215;&#8710;S chunk edges for each verb chunk, where &#8710;S is the permitted movement range (6 in this case).</S>
+        </P>
+        <P>
+          <S ID="S-43382">Before translation, each edge has to be associated with a weight that the decoder will use as additional feature.</S>
+          <S ID="S-43383">To differentiate between the original word order and verb reordering we assign a fixed weight of 1 to the edges of the plain path, and 0.25 to the other edges.</S>
+          <S ID="S-43384">As future work we will devise more discriminative weighting schemes.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Evaluation</HEADER>
+        <P>
+          <S ID="S-43385">For the experiments, we relied on the existing Moses-implementation of non-monotonic decoding for word lattices (<REF ID="R-05" RPTR="6">Dyer et al., 2008</REF>) with some fixes concerning the computation of reordering distance.</S>
+          <S ID="S-43386">The translation system is the same as the one presented in Sect.</S>
+          <S ID="S-43387">4, to which we added an additional feature function evaluating the lattice weights (weight-i).</S>
+          <S ID="S-43388">Instead of rerunning MERT, we directly estimated the additional feature-function weight over a suitable interval (0.002 to 0.5), by running the decoder several times on the development set.</S>
+          <S ID="S-43389">The resulting optimal weight was 0.05.</S>
+        </P>
+        <P>
+          <S ID="S-43390">Table 1 presents results on three test sets: Eval08-NW which was used to calibrate the reordering rules, Reo08-NW a specific test set consisting of the 33% of Eval08-NW sentences that actually require verb reordering, and Eval09-NW a yet unseen dataset (newswire section of the NIST-MT09 evaluation set, 586 sentences).</S>
+          <S ID="S-43391">Best results with lattice decoding were obtained with a distortion limit (DL) of 4, while best performance of text decoding was obtained with a DL of 6.</S>
+        </P>
+        <P>
+          <S ID="S-43392">As we hoped, translating a verb reordering lattice yields an additional improvement to the reordering of the training corpus: from 43.67% to 44.04% on Eval08-NW and from 48.53% to 48.96% on Eval09-NW.</S>
+          <S ID="S-43393">The gap between the baseline and the score obtainable by oracle verb reordering, as estimated in the preliminary experiments on Eval08-NW (44.36%), has been largely filled.</S>
+        </P>
+        <P>
+          <S ID="S-43394">On the specific test set &#8211; Reo08-NW &#8211; we observe a performance drop when reordered models are applied to non-reordered (plain) input: from 46.90% to 46.64%.</S>
+          <S ID="S-43395">Hence it seems that the mismatch between training and test data is significantly impacting on the reordering capabilities of the system with respect to verbs.</S>
+          <S ID="S-43396">We speculate that such negative effect is diluted in the full test set (Eval08-NW) and compensated by the positive influence of verb reordering on phrase extraction.</S>
+          <S ID="S-43397">Indeed, when the lattice technique is applied we get an improvement of about 0.6 point over the baseline, which is still a fair result, but not as good as the one obtained on the general test sets.</S>
+        </P>
+        <P>
+          <S ID="S-43398">Finally, our approach led to an overall gain of 0.8 point BLEU over the baseline, on Eval09-NW.</S>
+          <S ID="S-43399">We believe this is a satisfactory result, given the fairly good starting performance, and given that the BLEU metric is known not to be very sensitive to word order variations (<REF ID="R-02" RPTR="2">Callison-Burch et al., 2006</REF>).</S>
+          <S ID="S-43400">For the future, we plan to also use specific evaluation metrics that will allow us to isolate the impact of our approach on reordering, like the ones by <REF ID="R-01" RPTR="1">Birch et al. (2010)</REF>.</S>
+        </P>
+        <P>
+          <S ID="S-43401">System DL eval08nw reo08nw eval09nw baseline 6 43.10 46.90 48.13</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Related Work</HEADER>
+      <P>
+        <S ID="S-43404">Linguistically motivated word reordering for Arabic-English has been proposed in several recent works.</S>
+        <S ID="S-43405"><REF ID="R-10" RPTR="12">Habash (2007)</REF> extracts syntactic reordering rules from a word-aligned parallel corpus whose Arabic side has been fully parsed.</S>
+        <S ID="S-43406">The rules involve reordering of syntactic constituents and are applied in a deterministic way (always the most probable) as preprocessing of training and test data.</S>
+        <S ID="S-43407">The technique achieves consistent improvements only in very restrictive conditions: maximum phrase size of 1 and monotonic decoding, thus failing to enhance the existing reordering capabilities of PSMT.</S>
+        <S ID="S-43408">In (<REF ID="R-03" RPTR="3">Crego and Habash, 2008</REF>; <REF ID="R-06" RPTR="7">Elming and Habash, 2009</REF>) possible input permutations are represented through a word graph, which is then processed by a monotonic phrase- or n-gram-based decoder.</S>
+        <S ID="S-43409">Thus, these approaches are conceived as alternatives, rather than integrations, to PSMT reordering.</S>
+        <S ID="S-43410">On the contrary, we focused on a single type of significant long reorderings, in order to integrate class-specific reordering methods into a standard PSMT system.</S>
+      </P>
+      <P>
+        <S ID="S-43411">To our knowledge, the work by <REF ID="R-14" RPTR="17">Niehues and Kolss (2009)</REF> on German-English is the only example of a lattice-based reordering approach being coupled with reordering at decoding time.</S>
+        <S ID="S-43412">In their paper, discontinuous non-deterministic POSbased rules learned from a word-aligned corpus are applied to German sentences in the form of weighted edges in a word lattice.</S>
+        <S ID="S-43413">Their phrasebased decoder admits local reordering within a fixed window of 2 words, while, in our work, we performed experiments up to a distortion limit of 10.</S>
+        <S ID="S-43414">Another major difference is that we used shallow syntax annotation to effectively reduce the number of possible permutations.</S>
+        <S ID="S-43415">A first attempt to adapt our technique to the German language is described in <REF ID="R-11" RPTR="13">Hardmeier et al. (2010)</REF>.</S>
+      </P>
+      <P>
+        <S ID="S-43416">Our work is also tightly related to the problem of noun-phrase subject detection, recently addressed by <REF ID="R-09" RPTR="10">Green et al. (2009)</REF>.</S>
+        <S ID="S-43417">In fact, detecting the extension of the subject can be a sufficient condition to guess the optimal reordering of the verb.</S>
+        <S ID="S-43418">In their paper, a discriminative classifier was trained on a rich variety of linguistic features to detect the full scope of Arabic NP subjects in verb-initial clauses.</S>
+        <S ID="S-43419">The authors reported an F- score of 61.3%, showing that the problem is hard to solve even when more linguistic information is available.</S>
+        <S ID="S-43420">In order to integrate the output of the classifier into a PSMT decoder, a specific translation feature was designed to reward hypotheses in which the subject is translated as a contiguous block.</S>
+        <S ID="S-43421">Unfortunately, no improvement in translation quality was obtained.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusions</HEADER>
+      <P>
+        <S ID="S-43422">Word reordering remains one of the hardest problems in statistical machine translation.</S>
+        <S ID="S-43423">Based on the intuition that few reordering patterns would suffice to handle the most significant cases of long reorderings in Arabic-English, we decided to focus on the problem of VSO sentences.</S>
+        <S ID="S-43424">Thanks to simple linguistic assumptions on verb movement, we developed an efficient, low-cost technique to reorder the training data, on the one hand, and to better handle verb reordering at decoding time, on the other.</S>
+        <S ID="S-43425">In particular, translation is performed on a compact word lattice that represents likely verb movements.</S>
+        <S ID="S-43426">The resulting system outperforms a strong baseline in terms of BLEU, and produces globally more readable translations.</S>
+        <S ID="S-43427">However, the problem is not totally solved because many verb reorderings are still missed, despite the suggestions provided by the lattice.</S>
+        <S ID="S-43428">Different factors can explain these errors: poor interaction between lattice and distortion/orientation models used by the decoder; poor discriminative power of the target language model with respect to different reorderings of the source.</S>
+        <S ID="S-43429">As a first step to improvement, we will devise a discriminative weighting scheme based on the length of the reorderings represented in the lattice.</S>
+        <S ID="S-43430">For the longer term we are working towards bringing linguistically informed reordering constraints inside decoding, as an alternative to the lattice solution.</S>
+        <S ID="S-43431">In addition, we plan to couple our reordering technique with more informative language models, including for instance syntactic analysis of the hypothesis under construction.</S>
+        <S ID="S-43432">Finally we would like to compare the proposed chunk-based technique with one that exploits full syntactic parsing of the Arabic sentence to further decrease the reordering possibilities of the verb.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-43433">This work was supported by the EuroMatrixPlus project (IST-231720) which is funded by the European Commission under the Seventh Framework Programme for Research and Technological Development.</S>
+      <S ID="S-43434">241 src: ref: base MT: new MT: w A$Ar AlsnAtwr AlY dEm h m$rwEA ErD ElY mjls Al$ywx The Senator referred to his support for a project proposed to the Senate The Senator to support projects presented to the Senate Senator noted his support projects presented to the Senate src: mn jAnb h hdd &amp;gt;bw mSEb EbdAlwdwd Amyr AlqAEdp b blAd Almgrb AlAslAmy fy nfs Al$ryT b AlqyAm b slslp AEtdA&#8217;At w &amp;gt;EmAl &amp;lt;rhAbyp Dd AlmSAlH w Alm&amp;ssAt AljzA}ryp fy AlEdyd mn AlmnATq AljzA}ryp ref: For his part , Abu Musab Abd al-Wadud , the commander of al-Qaeda in the Islamic Maghreb Countries , threatened in the same tape to carry out a series of attacks and terrorist actions against Algerian interests and organizations in many parts of Algeria base MT: For his part threatened Abu Musab EbdAlwdwd Amir al-Qaeda Islamic Morocco country in the same tape to carry out a series of attacks and terrorist acts against the interests and the Algerian institutions in many areas of Algiers new MT: For his part , Abu Musab EbdAlwdwd Amir al Qaida threatened to Morocco Islamic country in the same tape to carry out a series of attacks and terrorist acts against the interests of the Algerian and institutions in many areas of Algiers src: w ymtd Alm$rwE 500 km mtr w yrbT Almdyntyn Almqdstyn b mdynp jdp ElY sAHl AlbHr Al&amp;gt;Hmr .</S>
+      <S ID="S-43435">ref: The project is 500 kilometers long and connects the two holy cities with the city of Jeddah on the Red Sea coast.</S>
+      <S ID="S-43436">base MT: It extends the project 500 km and linking the two holy cities in the city of Jeddah on the Red Sea coast .</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Alexandra Birch</RAUTHOR>
+      <REFTITLE>A quantitative analysis of reordering phenomena.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Alexandra Birch</RAUTHOR>
+      <REFTITLE>Metrics for MT evaluation: evaluating reordering. Machine Translation,</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Chris Callison-Burch</RAUTHOR>
+      <REFTITLE>Re-evaluation the role of BLEU in machine translation research.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Josep M Crego</RAUTHOR>
+      <REFTITLE>Using shallow syntax information to improve word alignment and reordering for smt.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Mona Diab</RAUTHOR>
+      <REFTITLE>Automatic Tagging of Arabic Text: From Raw Text to Base Phrase Chunks.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Christopher Dyer</RAUTHOR>
+      <REFTITLE>Generalizing word lattice translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Jakob Elming</RAUTHOR>
+      <REFTITLE>Syntactic reordering for English-Arabic phrase-based machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>A simple and effective hierarchical phrase reordering model.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Ulrich Germann</RAUTHOR>
+      <REFTITLE>Fast decoding and optimal decoding for machine translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Spence Green</RAUTHOR>
+      <REFTITLE>NP subject detection in verb-initial Arabic clauses.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Nizar Habash</RAUTHOR>
+      <REFTITLE>Syntactic preprocessing for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Christian Hardmeier</RAUTHOR>
+      <REFTITLE>FBK at WMT 2010: Word lattices for morphological reduction and chunk-based 242</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>P Koehn</RAUTHOR>
+      <REFTITLE>Moses: Open source toolkit for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Adam Lopez</RAUTHOR>
+      <REFTITLE>Word-based alignment, phrase-based translation: What&#8217;s the link?</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Jan Niehues</RAUTHOR>
+      <REFTITLE>A POS-based model for long-range reorderings in SMT.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>F J Och</RAUTHOR>
+      <REFTITLE>A smorgasbord of features for statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

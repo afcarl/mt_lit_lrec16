@@ -1,0 +1,1348 @@
+<document>
+  <filename>W09-0405</filename>
+  <authors/>
+  <title>Combining Multi-Engine Translations with Moses</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>We present a simple method for generating translations with the Moses toolkit (Koehn et al., 2007) from existing hypotheses produced by other translation engines. As the structures underlying these translation engines are not known, an evaluationbased strategy is applied to select systems for combination. The experiments show promising improvements in terms of BLEU.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We present a simple method for generating translations with the Moses toolkit (Koehn et al., 2007) from existing hypotheses produced by other translation engines.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>As the structures underlying these translation engines are not known, an evaluationbased strategy is applied to select systems for combination.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The experiments show promising improvements in terms of BLEU.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>With the wealth of machine translation systems available nowadays (many of them online and for free), it makes increasing sense to investigate clever ways of combining them. Obviously, the main objective lies in finding out how to integrate the respective advantages of different approaches: Statistical machine translation (SMT) and rulebased machine translation (RBMT) systems often have complementary characteristics. Previous work on building hybrid systems includes, among others, approaches using reranking, regeneration with an SMT decoder (Eisele et al., 2008; Chen et al., 2007), and confusion networks (Matusov et al., 2006; Rosti et al., 2007; He et al., 2008). The approach by (Eisele et al., 2008) aimed specifically at filling lexical gaps in an SMT system with information from a number of RBMT systems. The output of the RBMT engines was word-aligned with the input, yielding a total of seven phrase tables which where simply concatenated to expand the phrase table constructed from the training corpus. This approach differs from the confusion network approaches mainly in that the final hypotheses do not necessarily follow any of the input translations as the skeleton. On the other hand, it emphasizes that the additional translations should be produced by RBMT systems with lexicons that cannot be learned from the data.
+The present work continues on the same track as the paper mentioned above but implements a number of important changes, most prominently a relaxation of the restrictions on the number and type of input systems. These differences are described in more detail in Section 2. Section 3 explains the implementation of our system and Section 4 its application in a number of experiments. Finally, Section 5 concludes this paper with a summary and some thoughts on future work.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>With the wealth of machine translation systems available nowadays (many of them online and for free), it makes increasing sense to investigate clever ways of combining them.</text>
+              <doc_id>3</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Obviously, the main objective lies in finding out how to integrate the respective advantages of different approaches: Statistical machine translation (SMT) and rulebased machine translation (RBMT) systems often have complementary characteristics.</text>
+              <doc_id>4</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Previous work on building hybrid systems includes, among others, approaches using reranking, regeneration with an SMT decoder (Eisele et al., 2008; Chen et al., 2007), and confusion networks (Matusov et al., 2006; Rosti et al., 2007; He et al., 2008).</text>
+              <doc_id>5</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The approach by (Eisele et al., 2008) aimed specifically at filling lexical gaps in an SMT system with information from a number of RBMT systems.</text>
+              <doc_id>6</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The output of the RBMT engines was word-aligned with the input, yielding a total of seven phrase tables which where simply concatenated to expand the phrase table constructed from the training corpus.</text>
+              <doc_id>7</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>This approach differs from the confusion network approaches mainly in that the final hypotheses do not necessarily follow any of the input translations as the skeleton.</text>
+              <doc_id>8</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>On the other hand, it emphasizes that the additional translations should be produced by RBMT systems with lexicons that cannot be learned from the data.</text>
+              <doc_id>9</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>The present work continues on the same track as the paper mentioned above but implements a number of important changes, most prominently a relaxation of the restrictions on the number and type of input systems.</text>
+              <doc_id>10</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>These differences are described in more detail in Section 2.</text>
+              <doc_id>11</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Section 3 explains the implementation of our system and Section 4 its application in a number of experiments.</text>
+              <doc_id>12</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally, Section 5 concludes this paper with a summary and some thoughts on future work.</text>
+              <doc_id>13</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Integrating Multiple Systems of Unknown Type and Quality</title>
+        <text>When comparing (Eisele et al., 2008) to the present work, our proposal is more general in a way that the requirement for knowledge about the systems is minimum. The types and the identities of the participated systems are assumed unknown. Accordingly, we are not able to restrict ourselves to a certain class of systems as (Eisele et al., 2008) did. We rely on a standard phrase-based SMT framework to extract the valuable pieces from the system outputs. These extracted segments are also used to improve an existing SMT system that we have access to.
+While (Eisele et al., 2008) included translations from all of a fixed number of RBMT systems and added one feature to the translation model for each system, integrating all given system outputs in this way in our case could expand the search space tremendously. Meanwhile, we cannot rely on the assumption that all candidate systems actually have the potential to improve our baseline. This implies the need for a first step of system selection where the best candidate systems are identified and a limited number of them is chosen to be included in the combination. Our approach would not work without a small set of tuning data being available so that we can evaluate the systems for later selection and adjust the weights of our systems. Such tuning data is included in this year&#8217;s
+task.
+In this paper, we use the Moses decoder to construct translations from the given system outputs. We mainly propose two slightly different ways: One is to construct translation models solely from the given translations and the other is to extend an existing translation model with these additional translations.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>When comparing (Eisele et al., 2008) to the present work, our proposal is more general in a way that the requirement for knowledge about the systems is minimum.</text>
+              <doc_id>14</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The types and the identities of the participated systems are assumed unknown.</text>
+              <doc_id>15</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Accordingly, we are not able to restrict ourselves to a certain class of systems as (Eisele et al., 2008) did.</text>
+              <doc_id>16</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We rely on a standard phrase-based SMT framework to extract the valuable pieces from the system outputs.</text>
+              <doc_id>17</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>These extracted segments are also used to improve an existing SMT system that we have access to.</text>
+              <doc_id>18</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>While (Eisele et al., 2008) included translations from all of a fixed number of RBMT systems and added one feature to the translation model for each system, integrating all given system outputs in this way in our case could expand the search space tremendously.</text>
+              <doc_id>19</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Meanwhile, we cannot rely on the assumption that all candidate systems actually have the potential to improve our baseline.</text>
+              <doc_id>20</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This implies the need for a first step of system selection where the best candidate systems are identified and a limited number of them is chosen to be included in the combination.</text>
+              <doc_id>21</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our approach would not work without a small set of tuning data being available so that we can evaluate the systems for later selection and adjust the weights of our systems.</text>
+              <doc_id>22</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Such tuning data is included in this year&#8217;s</text>
+              <doc_id>23</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>task.</text>
+              <doc_id>24</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this paper, we use the Moses decoder to construct translations from the given system outputs.</text>
+              <doc_id>25</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>We mainly propose two slightly different ways: One is to construct translation models solely from the given translations and the other is to extend an existing translation model with these additional translations.</text>
+              <doc_id>26</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Implementation</title>
+        <text>Despite the fact that the output of current MT systems is usually not comparable in quality to human translations, the machine-generated translations are nevertheless &#8220;parallel&#8221; to the input so that it is straightforward to construct a translation model from data of this kind. This is the spirit behind our method for combining multiple translations.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Despite the fact that the output of current MT systems is usually not comparable in quality to human translations, the machine-generated translations are nevertheless &#8220;parallel&#8221; to the input so that it is straightforward to construct a translation model from data of this kind.</text>
+              <doc_id>27</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This is the spirit behind our method for combining multiple translations.</text>
+              <doc_id>28</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Direct combination</title>
+            <text>Clearly, for the same source sentence, we expect to have different translations from different translation systems, just like we would expect from human translators. Also, every system may have its own advantages. We break these translations into smaller units and hope to be able to select the best ones and form them into a better translation. One single translation of a few thousand sentences is normally inadequate for building a reliable general-purpose SMT system (data sparseness problem). However, in the system combination task, this is no longer an issue as the system only needs to translate sentences within the data set. When more translation engines are available,
+the size of this set becomes larger. Hence, we collect translations from all available systems and pair them with the corresponding input text, thus forming a medium-sized &#8220;hypothesis&#8221; corpus. Our system starts processing this corpus with a standard phrase-based SMT setup, using the Moses toolkit (Koehn et al., 2007). The hypothesis corpus is first tokenized and lowercased. Then, we run GIZA++ (Och and Ney, 2003) on the corpus to obtain word alignments in both directions. The phrases are extracted from the intersection of the alignments with the &#8220;grow&#8221; heuristics. In addition, we also generate a reordering model with the default configuration as included in the Moses toolkit. This &#8220;hypothesis&#8221; translation model can already be used by the
+Moses decoder together with a language model to perform translations over the corresponding sentence set.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Clearly, for the same source sentence, we expect to have different translations from different translation systems, just like we would expect from human translators.</text>
+                  <doc_id>29</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Also, every system may have its own advantages.</text>
+                  <doc_id>30</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We break these translations into smaller units and hope to be able to select the best ones and form them into a better translation.</text>
+                  <doc_id>31</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>One single translation of a few thousand sentences is normally inadequate for building a reliable general-purpose SMT system (data sparseness problem).</text>
+                  <doc_id>32</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, in the system combination task, this is no longer an issue as the system only needs to translate sentences within the data set.</text>
+                  <doc_id>33</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When more translation engines are available,</text>
+                  <doc_id>34</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>the size of this set becomes larger.</text>
+                  <doc_id>35</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Hence, we collect translations from all available systems and pair them with the corresponding input text, thus forming a medium-sized &#8220;hypothesis&#8221; corpus.</text>
+                  <doc_id>36</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our system starts processing this corpus with a standard phrase-based SMT setup, using the Moses toolkit (Koehn et al., 2007).</text>
+                  <doc_id>37</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The hypothesis corpus is first tokenized and lowercased.</text>
+                  <doc_id>38</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Then, we run GIZA++ (Och and Ney, 2003) on the corpus to obtain word alignments in both directions.</text>
+                  <doc_id>39</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The phrases are extracted from the intersection of the alignments with the &#8220;grow&#8221; heuristics.</text>
+                  <doc_id>40</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In addition, we also generate a reordering model with the default configuration as included in the Moses toolkit.</text>
+                  <doc_id>41</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This &#8220;hypothesis&#8221; translation model can already be used by the</text>
+                  <doc_id>42</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Moses decoder together with a language model to perform translations over the corresponding sentence set.</text>
+                  <doc_id>43</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Integration into existing SMT system</title>
+            <text>Sometimes, the goal of system combination is not only to produce a translation but also to improve one of the systems. In this paper, we aim at incorporating the additional system outputs to improve an out-of-domain SMT system trained on the Europarl corpus (Koehn, 2005). Our hope is that the additional translation hypotheses could bring in new phrases or, more generally, new information that was not contained in the Europarl model. In order to facilitate comparisons, we use in-domain LMs for all setups.
+We investigate two alternative ways of integrating the additional phrases into the existing SMT system: One is to take the hypothesis translation model described in Section 3.1, the other is to construct system-specific models constructed with only translations from one system at a time.
+Although the Moses decoder is able to work with two phrase tables at once (Koehn and Schroeder, 2007), it is difficult to use this method when there is more than one additional model. The method requires tuning on at least six more features, which expands the search space for the translation task unnecessarily. We instead integrate the translation models from multiple sources by extending the phrase table. In contrast to the prior approach presented in (Chen et al., 2007) and (Eisele et al., 2008) which concatenates the phrase tables and adds new features as system markers, our extension method avoids duplicate entries in the final combined table. Given a set of hypothesis translation models (derived from an arbitrary number of system outputs) and an original large translation model to be improved, we first sort the models by quality (see Section 3.3), always assigning the highest priority to the original model. The additional phrase tables are appended to the large model in sorted order such that only phrase pairs that were never seen before are included. Lastly, we add new features (in the form of additional columns in the phrase table) to the translation model to indicate each pair&#8217;s origin.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Sometimes, the goal of system combination is not only to produce a translation but also to improve one of the systems.</text>
+                  <doc_id>44</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In this paper, we aim at incorporating the additional system outputs to improve an out-of-domain SMT system trained on the Europarl corpus (Koehn, 2005).</text>
+                  <doc_id>45</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our hope is that the additional translation hypotheses could bring in new phrases or, more generally, new information that was not contained in the Europarl model.</text>
+                  <doc_id>46</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In order to facilitate comparisons, we use in-domain LMs for all setups.</text>
+                  <doc_id>47</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We investigate two alternative ways of integrating the additional phrases into the existing SMT system: One is to take the hypothesis translation model described in Section 3.1, the other is to construct system-specific models constructed with only translations from one system at a time.</text>
+                  <doc_id>48</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Although the Moses decoder is able to work with two phrase tables at once (Koehn and Schroeder, 2007), it is difficult to use this method when there is more than one additional model.</text>
+                  <doc_id>49</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The method requires tuning on at least six more features, which expands the search space for the translation task unnecessarily.</text>
+                  <doc_id>50</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We instead integrate the translation models from multiple sources by extending the phrase table.</text>
+                  <doc_id>51</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In contrast to the prior approach presented in (Chen et al., 2007) and (Eisele et al., 2008) which concatenates the phrase tables and adds new features as system markers, our extension method avoids duplicate entries in the final combined table.</text>
+                  <doc_id>52</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given a set of hypothesis translation models (derived from an arbitrary number of system outputs) and an original large translation model to be improved, we first sort the models by quality (see Section 3.3), always assigning the highest priority to the original model.</text>
+                  <doc_id>53</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The additional phrase tables are appended to the large model in sorted order such that only phrase pairs that were never seen before are included.</text>
+                  <doc_id>54</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Lastly, we add new features (in the form of additional columns in the phrase table) to the translation model to indicate each pair&#8217;s origin.</text>
+                  <doc_id>55</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>3.3 System evaluation</title>
+            <text>Since both the system translations and the reference translations are available for the tuning
+set, we first compare each output to the reference translation using BLEU (Papineni et al., 2001) and METEOR (Banerjee and Lavie, 2005) and a combined scoring scheme provided by the ULC toolkit (Gimenez and Marquez, 2008). In our experiments, we selected a subset of 5 systems for the combination, in most cases, based on BLEU.
+On the other hand, some systems may be designed in a way that they deliver interesting unique translation segments. Therefore, we also measure the similarity among system outputs as shown in Table 2 in a given collection by calculating average similarity scores across every pair of outputs.
+The range of BLEU scores cannot indicate the similarity of the systems. The direction with the most systems submitted is Spanish-English but their respective performances are very close to each other. As for the selected subset, the English- French systems have the most similar performance in terms of BLEU scores. The French-English translations have the largest range in BLEU but the similarity in this group is not the lowest.
+Ideally, we should select systems with highest quality scores and lowest similarity scores. For German-English, we selected the three with the highest METEOR scores and another two with high METEOR scores but low similarity scores to the first three. For the other language directions, we chose five systems from different institutions with the highest scores.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Since both the system translations and the reference translations are available for the tuning</text>
+                  <doc_id>56</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>set, we first compare each output to the reference translation using BLEU (Papineni et al., 2001) and METEOR (Banerjee and Lavie, 2005) and a combined scoring scheme provided by the ULC toolkit (Gimenez and Marquez, 2008).</text>
+                  <doc_id>57</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In our experiments, we selected a subset of 5 systems for the combination, in most cases, based on BLEU.</text>
+                  <doc_id>58</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>On the other hand, some systems may be designed in a way that they deliver interesting unique translation segments.</text>
+                  <doc_id>59</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Therefore, we also measure the similarity among system outputs as shown in Table 2 in a given collection by calculating average similarity scores across every pair of outputs.</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The range of BLEU scores cannot indicate the similarity of the systems.</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The direction with the most systems submitted is Spanish-English but their respective performances are very close to each other.</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As for the selected subset, the English- French systems have the most similar performance in terms of BLEU scores.</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The French-English translations have the largest range in BLEU but the similarity in this group is not the lowest.</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Ideally, we should select systems with highest quality scores and lowest similarity scores.</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For German-English, we selected the three with the highest METEOR scores and another two with high METEOR scores but low similarity scores to the first three.</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the other language directions, we chose five systems from different institutions with the highest scores.</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>3.4 Language models</title>
+            <text>We use a standard n-gram language model for each target language using the monolingual training data provided in the translation task. These LMs are thus specific to the same domain as the input texts. Moreover, we also generate &#8220;hypothesis&#8221; LMs solely based on the given system outputs, that is, LMs that model how the candidate systems convey information in the target language. These LMs do not require any additional training data. Therefore, we do not require any training data other than the given system outputs by using the &#8220;hypothesis&#8221; language model and the &#8220;hypothesis&#8221; translation model.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We use a standard n-gram language model for each target language using the monolingual training data provided in the translation task.</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These LMs are thus specific to the same domain as the input texts.</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Moreover, we also generate &#8220;hypothesis&#8221; LMs solely based on the given system outputs, that is, LMs that model how the candidate systems convey information in the target language.</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These LMs do not require any additional training data.</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Therefore, we do not require any training data other than the given system outputs by using the &#8220;hypothesis&#8221; language model and the &#8220;hypothesis&#8221; translation model.</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>4</index>
+            <title>3.5 Tuning</title>
+            <text>After building the models, it is essential to tune the SMT system to optimize the feature weights. We use Minimal Error Rate Training (Och, 2003) to maximize BLEU on the complete development data. Unlike the standard tuning procedure, we do not tune the final system directly. Instead, we obtain the weights using models built from the tuning portion of the system outputs.
+For each combination variant, we first train models on the provided outputs corresponding to the tuning set. This system, called the tuning system, is also tuned on the tuning set. The initial weights of any additional features not included in the standard setting are set to 0. We then adapt the weights to the system built with translations corresponding to the test set. The procedure and the settings for building this system must be identical to that of the tuning system.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>After building the models, it is essential to tune the SMT system to optimize the feature weights.</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use Minimal Error Rate Training (Och, 2003) to maximize BLEU on the complete development data.</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Unlike the standard tuning procedure, we do not tune the final system directly.</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Instead, we obtain the weights using models built from the tuning portion of the system outputs.</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For each combination variant, we first train models on the provided outputs corresponding to the tuning set.</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This system, called the tuning system, is also tuned on the tuning set.</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The initial weights of any additional features not included in the standard setting are set to 0.</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We then adapt the weights to the system built with translations corresponding to the test set.</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The procedure and the settings for building this system must be identical to that of the tuning system.</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Experiments</title>
+        <text>The purpose of this exercise is to understand the nature of the system combination task in practice. Therefore, we restrict ourselves to the training data and system translations provided by the shared task. The types of the systems that produced the translations are assumed to be unknown. We report results for six translation directions between four languages.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The purpose of this exercise is to understand the nature of the system combination task in practice.</text>
+              <doc_id>82</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Therefore, we restrict ourselves to the training data and system translations provided by the shared task.</text>
+              <doc_id>83</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The types of the systems that produced the translations are assumed to be unknown.</text>
+              <doc_id>84</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We report results for six translation directions between four languages.</text>
+              <doc_id>85</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 Data and baseline</title>
+            <text>We build an SMT system from release v4 of the Europarl corpus (Koehn, 2005), following a standard routine using the Moses toolkit. The system also includes 5-gram language models trained on in-domain corpora of the respective target languages using SRILM (Stolcke, 2002). The systems in this paper, including the baseline, are all tuned on the same 501-sentence tuning set. Note also that the provided n-best outputs are excluded in our experiments.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We build an SMT system from release v4 of the Europarl corpus (Koehn, 2005), following a standard routine using the Moses toolkit.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The system also includes 5-gram language models trained on in-domain corpora of the respective target languages using SRILM (Stolcke, 2002).</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The systems in this paper, including the baseline, are all tuned on the same 501-sentence tuning set.</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note also that the provided n-best outputs are excluded in our experiments.</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 Results</title>
+            <text>The experiments include three different setups for direct system combination, involving only hypothesis translation models. System S 0 , the baseline for this group, uses a hypothesis translation model built with all available system translations and a hypothesis LM (also from the machine-generated outputs). S 1 differs from S 0 in that the LM in S 1 is generated from a large news corpus. S 2 consists of translation models built with only the five selected systems. The BLEU scores of these systems are shown in Table 3.
+When all outputs are included, the combined system can always produce translations better than most of the systems. When only a hypothesis LM is used, the BLEU scores are always higher than the average BLEU scores of the outputs. It even outperforms the top system for English-French. This simple setup (S 0 ) is certainly a feasible solution when no additional data is available and no system evaluation is possible. This approach appears to be more effective on typically difficult language pairs that involve German.
+As for the systems with normal language models, neither of the systems ensure better translations. The translation quality is not completely determined by the number of included translations and their quality. On the other hand, the output set with higher diversity (Table 2) usually leads to better combination results. This observation is consistent with the results from the system integration experiments shown in Table 4.
+There are two variants in our experiments on system integration. All in Table 4 represents the system that integrates the complete hypothesis translation model with the Europarl model, while Top 5 refers to the system that incorporates the five system-specific models separately. Both setups result in an improvement over the baseline Europarlbased SMT system. BLEU scores increase by up to 4.25 points. The integrated SMT system sometimes produces translations better than the best system (7 out of 12 cases).</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The experiments include three different setups for direct system combination, involving only hypothesis translation models.</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>System S 0 , the baseline for this group, uses a hypothesis translation model built with all available system translations and a hypothesis LM (also from the machine-generated outputs).</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>S 1 differs from S 0 in that the LM in S 1 is generated from a large news corpus.</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>S 2 consists of translation models built with only the five selected systems.</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The BLEU scores of these systems are shown in Table 3.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>When all outputs are included, the combined system can always produce translations better than most of the systems.</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When only a hypothesis LM is used, the BLEU scores are always higher than the average BLEU scores of the outputs.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It even outperforms the top system for English-French.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This simple setup (S 0 ) is certainly a feasible solution when no additional data is available and no system evaluation is possible.</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This approach appears to be more effective on typically difficult language pairs that involve German.</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>As for the systems with normal language models, neither of the systems ensure better translations.</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The translation quality is not completely determined by the number of included translations and their quality.</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>On the other hand, the output set with higher diversity (Table 2) usually leads to better combination results.</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This observation is consistent with the results from the system integration experiments shown in Table 4.</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>There are two variants in our experiments on system integration.</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All in Table 4 represents the system that integrates the complete hypothesis translation model with the Europarl model, while Top 5 refers to the system that incorporates the five system-specific models separately.</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Both setups result in an improvement over the baseline Europarlbased SMT system.</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>BLEU scores increase by up to 4.25 points.</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The integrated SMT system sometimes produces translations better than the best system (7 out of 12 cases).</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Conclusion</title>
+        <text>This work uses the Moses toolkit to combine translations from multiple engines in a simple way. The experiments on six translation directions show interesting results: The final translations are always better than the majority of the given systems, while the combination performs better than the best system in half the cases. A similar approach was applied to improve an existing SMT system which was built in a domain different from the test task. We achieved improvements in all cases. There are many possible future directions to continue this work. As we have shown, the quality of the combined system is more related to the diversity of the involved systems than to the number of the systems or their quality. Hand-picked systems lead to better combinations than those selected by BLEU scores. It would be interesting to develop a more comprehensive system selection strategy.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>This work uses the Moses toolkit to combine translations from multiple engines in a simple way.</text>
+              <doc_id>109</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The experiments on six translation directions show interesting results: The final translations are always better than the majority of the given systems, while the combination performs better than the best system in half the cases.</text>
+              <doc_id>110</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>A similar approach was applied to improve an existing SMT system which was built in a domain different from the test task.</text>
+              <doc_id>111</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We achieved improvements in all cases.</text>
+              <doc_id>112</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>There are many possible future directions to continue this work.</text>
+              <doc_id>113</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>As we have shown, the quality of the combined system is more related to the diversity of the involved systems than to the number of the systems or their quality.</text>
+              <doc_id>114</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Hand-picked systems lead to better combinations than those selected by BLEU scores.</text>
+              <doc_id>115</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>It would be interesting to develop a more comprehensive system selection strategy.</text>
+              <doc_id>116</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>6</index>
+        <title>Acknowledgments</title>
+        <text>This work was supported by the EuroMatrix project (IST-034291) which is funded by the European Community under the Sixth Framework Programme for Research and Technological Development.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>This work was supported by the EuroMatrix project (IST-034291) which is funded by the European Community under the Sixth Framework Programme for Research and Technological Development.</text>
+              <doc_id>117</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TET</source>
+        <caption>Table 1: Statistics of system outputs&#8217; BLEU scores</caption>
+        <reference_text></reference_text>
+        <page_num>2</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>de-en</cell>
+              <cell>fr-en</cell>
+              <cell>es-en</cell>
+              <cell>en-de</cell>
+              <cell>en-fr</cell>
+              <cell>en-es</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Num.</cell>
+              <cell>20</cell>
+              <cell>23</cell>
+              <cell>28</cell>
+              <cell>15</cell>
+              <cell>16</cell>
+              <cell>9</cell>
+            </row>
+            <row>
+              <cell>Median</cell>
+              <cell>19.87</cell>
+              <cell>26.55</cell>
+              <cell>22.50</cell>
+              <cell>13.78</cell>
+              <cell>24.76</cell>
+              <cell>23.70</cell>
+            </row>
+            <row>
+              <cell>Range</cell>
+              <cell>16.37</cell>
+              <cell>17.06</cell>
+              <cell>9.74</cell>
+              <cell>4.75</cell>
+              <cell>11.05</cell>
+              <cell>13.94</cell>
+            </row>
+            <row>
+              <cell>Top 5</cell>
+              <cell>de-en</cell>
+              <cell>fr-en</cell>
+              <cell>es-en</cell>
+              <cell>en-de</cell>
+              <cell>en-fr</cell>
+              <cell>en-es</cell>
+            </row>
+            <row>
+              <cell>Median</cell>
+              <cell>22.26</cell>
+              <cell>27.93</cell>
+              <cell>26.43</cell>
+              <cell>15.21</cell>
+              <cell>26.62</cell>
+              <cell>26.61</cell>
+            </row>
+            <row>
+              <cell>Range</cell>
+              <cell>4.31</cell>
+              <cell>4.76</cell>
+              <cell>5.71</cell>
+              <cell>1.71</cell>
+              <cell>0.68</cell>
+              <cell>5.56</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TableSeer</source>
+        <caption>Table 2: Similarity of the system outputs</caption>
+        <reference_text>In PAGE 3: ... On the other hand, some systems may be de- signed in a way that they deliver interesting unique translation segments. Therefore, we also measure the similarity among system outputs as shown in  Table2  in a given collection by calculating aver- age similarity scores across every pair of outputs. de-en fr-en es-en en-de en-fr en-es Num....  In PAGE 4: ... The translation quality is not completely determined by the number of included translations and their quality. On the other hand, the output set with higher diversity ( Table2 ) usually leads to better combination results. This observation is consistent with the results from the system inte- gration experiments shown in Table 4....</reference_text>
+        <page_num>3</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>similarity in this group is not the lowest.#@#@</cell>
+              <cell>similarity in this group is not the lowest.   de-en#@#@de-en</cell>
+              <cell>similarity in this group is not the lowest.   fr-en#@#@fr-en</cell>
+              <cell>similarity in this group is not the lowest.   es-en#@#@es-en</cell>
+              <cell>similarity in this group is not the lowest.   en-de#@#@en-de</cell>
+              <cell>similarity in this group is not the lowest.   en-fr#@#@en-fr</cell>
+              <cell>en-es</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>All</cell>
+              <cell>34.09</cell>
+              <cell>46.48</cell>
+              <cell>61.83</cell>
+              <cell>31.74</cell>
+              <cell>44.95</cell>
+              <cell>38.11</cell>
+            </row>
+            <row>
+              <cell>Selected</cell>
+              <cell>36.65</cell>
+              <cell>56.16</cell>
+              <cell>56.06</cell>
+              <cell>33.92</cell>
+              <cell>52.78</cell>
+              <cell>57.25</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TableSeer</source>
+        <caption>Table 3: BLEU scores of direct system combination</caption>
+        <reference_text>None</reference_text>
+        <page_num>4</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>shown in Table 3.#@#@</cell>
+              <cell>shown in Table 3.   de-en#@#@de-en</cell>
+              <cell>shown in Table 3.   fr-en#@#@fr-en</cell>
+              <cell>es-en</cell>
+              <cell>en-de</cell>
+              <cell>en-fr</cell>
+              <cell>en-es</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Top 1</cell>
+              <cell>21.16</cell>
+              <cell>30.91</cell>
+              <cell>28.54</cell>
+              <cell>14.96</cell>
+              <cell>26.55</cell>
+              <cell>27.84</cell>
+            </row>
+            <row>
+              <cell>Mean</cell>
+              <cell>17.29</cell>
+              <cell>23.78</cell>
+              <cell>21.39</cell>
+              <cell>12.76</cell>
+              <cell>22.96</cell>
+              <cell>21.43</cell>
+            </row>
+            <row>
+              <cell>S0#@#@S 0</cell>
+              <cell>20.46</cell>
+              <cell>27.50</cell>
+              <cell>23.35</cell>
+              <cell>13.95</cell>
+              <cell>27.29</cell>
+              <cell>25.59</cell>
+            </row>
+            <row>
+              <cell>S1#@#@S 1</cell>
+              <cell>21.76</cell>
+              <cell>28.05</cell>
+              <cell>25.49</cell>
+              <cell>15.16</cell>
+              <cell>27.70</cell>
+              <cell>26.09</cell>
+            </row>
+            <row>
+              <cell>S2#@#@S 2</cell>
+              <cell>21.71</cell>
+              <cell>24.98</cell>
+              <cell>27.26</cell>
+              <cell>15.62</cell>
+              <cell>24.28</cell>
+              <cell>25.22</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TableSeer</source>
+        <caption>Table 4: BLEU scores of integrated SMT systems (Bas: Baseline, Med: Median)</caption>
+        <reference_text>In PAGE 4: ...Table 4: BLEU scores of integrated SMT systems (Bas: Baseline, Med: Median) There are two variants in our experiments on system integration. All in  Table4  represents the system that integrates the complete hypothesis translation model with the Europarl model, while Top 5 refers to the system that incorporates the five system-specific models separately. Both setups re- sult in an improvement over the baseline Europarl- based SMT system....</reference_text>
+        <page_num>4</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>gration experiments shown in Table 4.#@#@</cell>
+              <cell>gration experiments shown in Table 4.   de-en#@#@de-en</cell>
+              <cell>gration experiments shown in Table 4.   fr-en#@#@fr-en</cell>
+              <cell>gration experiments shown in Table 4.   es-en#@#@es-en</cell>
+              <cell>gration experiments shown in Table 4.   en-de#@#@en-de</cell>
+              <cell>gration experiments shown in Table 4.   en-fr#@#@en-fr</cell>
+              <cell>en-es</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Bas</cell>
+              <cell>19.13</cell>
+              <cell>25.07</cell>
+              <cell>24.55</cell>
+              <cell>13.59</cell>
+              <cell>23.67</cell>
+              <cell>23.67</cell>
+            </row>
+            <row>
+              <cell>Med</cell>
+              <cell>17.99</cell>
+              <cell>24.56</cell>
+              <cell>20.70</cell>
+              <cell>13.19</cell>
+              <cell>24.19</cell>
+              <cell>22.12</cell>
+            </row>
+            <row>
+              <cell>All</cell>
+              <cell>21.40</cell>
+              <cell>28.00</cell>
+              <cell>27.75</cell>
+              <cell>15.21</cell>
+              <cell>27.20</cell>
+              <cell>26.41</cell>
+            </row>
+            <row>
+              <cell>Top5</cell>
+              <cell>21.70</cell>
+              <cell>26.01</cell>
+              <cell>28.53</cell>
+              <cell>15.52</cell>
+              <cell>27.87</cell>
+              <cell>27.92</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Satanjeev Banerjee</author>
+          <author>Alon Lavie</author>
+        </authors>
+        <title>METEOR: An automatic metric for MT evaluation with improved correlation with human judgments.</title>
+        <publication>In Proceedings of the ACL Workshop on Intrinsic and Extrinsic Evaluation Measures for Machine Translation and/or Summarization,</publication>
+        <pages>65--72</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Yu Chen</author>
+          <author>Andreas Eisele</author>
+          <author>Christian Federmann</author>
+          <author>Eva Hasler</author>
+          <author>Michael Jellinghaus</author>
+          <author>Silke Theison</author>
+        </authors>
+        <title>Multi-engine machine translation with an open-source SMT decoder.</title>
+        <publication>In Proceedings of 45</publication>
+        <pages>193--196</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Andreas Eisele</author>
+          <author>Christian Federmann</author>
+          <author>Herv&#233; SaintAmand</author>
+          <author>Michael Jellinghaus</author>
+          <author>Teresa Herrmann</author>
+          <author>Yu Chen</author>
+        </authors>
+        <title>Using Moses to integrate multiple rule-based machine translation engines into a hybrid system.</title>
+        <publication>In Proceedings of the Third Workshop on Statistical Machine Translation,</publication>
+        <pages>179--182</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Jesus Gimenez</author>
+          <author>Lluis Marquez</author>
+        </authors>
+        <title>A smorgasbord of features for automatic MT evaluation.</title>
+        <publication>In Proceedings of the Third Workshop on Statistical Machine Translation,</publication>
+        <pages>195--198</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>Xiaodong He</author>
+          <author>Mei Yang</author>
+          <author>Jianfeng Gao</author>
+          <author>Patrick Nguyen</author>
+          <author>Robert Moore</author>
+        </authors>
+        <title>Indirect-HMMbased hypothesis alignment for combining outputs from machine translation systems.</title>
+        <publication>In Proceedings of the 2008 Conference on Empirical Methods in Natural Language Processing,</publication>
+        <pages>98--107</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Josh Schroeder</author>
+        </authors>
+        <title>Experiments in domain adaptation for statistical machine translation.</title>
+        <publication>In Proceedings of the Second Workshop on Statistical Machine Translation,</publication>
+        <pages>224--227</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Hieu Hoang</author>
+          <author>Alexandra Birch Mayne</author>
+          <author>Christopher Callison-Burch</author>
+          <author>Marcello Federico</author>
+          <author>Nicola Bertoldi</author>
+          <author>Brooke Cowan</author>
+          <author>Wade Shen</author>
+          <author>Christine Moran</author>
+          <author>Richard Zens</author>
+        </authors>
+        <title>Chris Dyer, Ondrej Bojar, Alexandra Constantin, and Evan Herbs.</title>
+        <publication>In Proceedings of Annual meeting of</publication>
+        <pages>177--180</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>Europarl: A Parallel Corpus for Statistical Machine Translation.</title>
+        <publication>In Proceedings of MT Summit</publication>
+        <pages>None</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Evgeny Matusov</author>
+          <author>Nicola Ueffing</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>Computing consensus translation from multiple machine translation systems using enhanced hypotheses alignment.</title>
+        <publication>In Conference of the European Chapter of the Association for Computational Linguistics,</publication>
+        <pages>33--40</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>A systematic comparison of various statistical alignment models.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Franz Josef Och</author>
+        </authors>
+        <title>Minimum error rate training in statistical machine translation.</title>
+        <publication>In ACL &#8217;03: Proceedings of the 41st Annual Meeting on Association for Computational Linguistics,</publication>
+        <pages>160--167</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Kishore Papineni</author>
+          <author>Salim Roukos</author>
+          <author>Todd Ward</author>
+          <author>WeiJing Zhu</author>
+        </authors>
+        <title>BLEU: a method for automatic evaluation of machine translation.</title>
+        <publication>In Proceedings of the 40th Annual Meeting on Association for Computational Linguistics,</publication>
+        <pages>311--318</pages>
+        <date>2001</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Antti-Veikko I Rosti</author>
+          <author>Spyridon Matsoukas</author>
+          <author>Richard M Schwartz</author>
+        </authors>
+        <title>Improved word-level system combination for machine translation.</title>
+        <publication>In ACL.</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Banerjee and Lavie, 2005</string>
+        <sentence_id>40692</sentence_id>
+        <char_offset>110</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>1</reference_id>
+        <string>Chen et al., 2007</string>
+        <sentence_id>40642</sentence_id>
+        <char_offset>148</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>1</reference_id>
+        <string>Chen et al., 2007</string>
+        <sentence_id>40687</sentence_id>
+        <char_offset>48</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>2</reference_id>
+        <string>Eisele et al., 2008</string>
+        <sentence_id>40642</sentence_id>
+        <char_offset>127</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>2</reference_id>
+        <string>Eisele et al., 2008</string>
+        <sentence_id>40643</sentence_id>
+        <char_offset>17</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>2</reference_id>
+        <string>Eisele et al., 2008</string>
+        <sentence_id>40651</sentence_id>
+        <char_offset>16</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>2</reference_id>
+        <string>Eisele et al., 2008</string>
+        <sentence_id>40653</sentence_id>
+        <char_offset>85</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>2</reference_id>
+        <string>Eisele et al., 2008</string>
+        <sentence_id>40656</sentence_id>
+        <char_offset>7</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>2</reference_id>
+        <string>Eisele et al., 2008</string>
+        <sentence_id>40687</sentence_id>
+        <char_offset>72</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>3</reference_id>
+        <string>Gimenez and Marquez, 2008</string>
+        <sentence_id>40692</sentence_id>
+        <char_offset>195</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>4</reference_id>
+        <string>He et al., 2008</string>
+        <sentence_id>40642</sentence_id>
+        <char_offset>234</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>5</reference_id>
+        <string>Koehn and Schroeder, 2007</string>
+        <sentence_id>40684</sentence_id>
+        <char_offset>75</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>6</reference_id>
+        <string>Koehn et al., 2007</string>
+        <sentence_id>40637</sentence_id>
+        <char_offset>79</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>6</reference_id>
+        <string>Koehn et al., 2007</string>
+        <sentence_id>40672</sentence_id>
+        <char_offset>106</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>7</reference_id>
+        <string>Koehn, 2005</string>
+        <sentence_id>40680</sentence_id>
+        <char_offset>140</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>7</reference_id>
+        <string>Koehn, 2005</string>
+        <sentence_id>40719</sentence_id>
+        <char_offset>63</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>8</reference_id>
+        <string>Matusov et al., 2006</string>
+        <sentence_id>40642</sentence_id>
+        <char_offset>192</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>9</reference_id>
+        <string>Och and Ney, 2003</string>
+        <sentence_id>40674</sentence_id>
+        <char_offset>21</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>10</reference_id>
+        <string>Och, 2003</string>
+        <sentence_id>40709</sentence_id>
+        <char_offset>36</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>11</reference_id>
+        <string>Papineni et al., 2001</string>
+        <sentence_id>40692</sentence_id>
+        <char_offset>75</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>12</reference_id>
+        <string>Rosti et al., 2007</string>
+        <sentence_id>40642</sentence_id>
+        <char_offset>214</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

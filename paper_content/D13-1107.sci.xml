@@ -1,0 +1,710 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Multi-domain Adaptation for SMT Using Multi-task Learning &#8727;</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-15392">Domain adaptation for SMT usually adapts models to an individual specific domain.</A-S>
+    <A-S ID="S-15393">However, it often lacks some correlation among different domains where common knowledge could be shared to improve the overall translation quality.</A-S>
+    <A-S ID="S-15394">In this paper, we propose a novel multi-domain adaptation approach for SMT using Multi-Task Learning (MTL), with in-domain models tailored for each specific domain and a general-domain model shared by different domains.</A-S>
+    <A-S ID="S-15395">The parameters of these models are tuned jointly via MTL so that they can learn general knowledge more accurately and exploit domain knowledge better.</A-S>
+    <A-S ID="S-15396">Our experiments on a largescale English-to-Chinese translation task validate that the MTL-based adaptation approach significantly and consistently improves the translation quality compared to a non-adapted baseline.</A-S>
+    <A-S ID="S-15397">Furthermore, it also outperforms the individual adaptation of each specific domain.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-15398">Domain adaptation is an active topic in statistical machine learning and aims to alleviate the domain mismatch between training and testing data.</S>
+        <S ID="S-15399">Like many machine learning tasks, Statistical Machine Translation (SMT) assumes that the data distributions of training and testing domains are similar.</S>
+        <S ID="S-15400">However, this assumption does not hold for real world SMT systems since training data for SMT models may come from a variety of domains.</S>
+        <S ID="S-15401">The translation quality is often unsatisfactory when</S>
+      </P>
+      <P>
+        <S ID="S-15402">&#8727;</S>
+      </P>
+      <P>
+        <S ID="S-15403">This work was done while the first and second authors were visiting Microsoft Research Asia.</S>
+      </P>
+      <P>
+        <S ID="S-15404">translating texts from a specific domain using a general model that is trained over a hotchpotch of bilingual corpora.</S>
+        <S ID="S-15405">Therefore, domain adaptation is crucial for SMT systems to achieve better performance.</S>
+      </P>
+      <P>
+        <S ID="S-15406">Previous research on domain adaptation for SMT includes data selection and weighting (<REF ID="R-09" RPTR="13">Eck et al., 2004</REF>; <REF ID="R-17" RPTR="24">L&#252; et al., 2007</REF>; <REF ID="R-12" RPTR="18">Foster et al., 2010</REF>; <REF ID="R-18" RPTR="26">Moore and Lewis, 2010</REF>; <REF ID="R-01" RPTR="1">Axelrod et al., 2011</REF>), mixture models (<REF ID="R-10" RPTR="14">Foster and Kuhn, 2007</REF>; Koehn and Schroeder, 2007; <REF ID="R-23" RPTR="34">Sennrich, 2012</REF>; <REF ID="R-22" RPTR="32">Razmara et al., 2012</REF>), and semi-supervised transductive learning (Ueffing et al., 2007), etc.</S>
+        <S ID="S-15407">Most of these methods adapt SMT models to a specific domain according to testing data and have achieved good performance.</S>
+        <S ID="S-15408">It is natural that real world SMT systems should adapt the models to multiple domains because the input may be heterogeneous, so that the overall translation quality can be improved.</S>
+        <S ID="S-15409">Although we can easily apply these methods to multiple domains individually, it is difficult to use the common knowledge across different domains.</S>
+        <S ID="S-15410">To leverage the common knowledge, we need to devise a multi-domain adaptation approach that jointly adapts the SMT models.</S>
+        <S ID="S-15411">Multi-domain adaptation has been proved quite effective in sentiment analysis (<REF ID="R-07" RPTR="10">Dredze and Crammer, 2008</REF>) and web ranking (<REF ID="R-03" RPTR="5">Chapelle et al., 2011</REF>), where the commonalities and differences across multiple domains are explicitly addressed by Multitask Learning (MTL).</S>
+        <S ID="S-15412">MTL is an approach that learns one target problem with other related problems at the same time, using a shared feature representation.</S>
+        <S ID="S-15413">The key advantage of MTL is to enable implicit data sharing and regularization.</S>
+        <S ID="S-15414">Therefore, it often leads to a better model for each task.</S>
+        <S ID="S-15415">Analogously, we expect that the overall translation quality can be further improved by using an MTL-based</S>
+      </P>
+      <P>
+        <S ID="S-15416">Entire Training Data T</S>
+      </P>
+      <P>
+        <S ID="S-15417">multi-domain adaptation approach.</S>
+      </P>
+      <P>
+        <S ID="S-15418">In this paper, we use MTL to jointly adapt SMT models to multiple domains.</S>
+        <S ID="S-15419">Specifically, we develop multiple SMT systems based on mixture models, where each system is tailored for one specific domain with an in-domain Translation Model (TM) and an in-domain Language Model (LM).</S>
+        <S ID="S-15420">Meanwhile, all the systems share a same general-domain TM and LM.</S>
+        <S ID="S-15421">These SMT systems are considered as several related tasks with a shared feature representation, which fits well into a unified MTL framework.</S>
+        <S ID="S-15422">With the MTL-based joint tuning, general knowledge can be better learned by the generaldomain models, while domain knowledge can be better exploited by the in-domain models as well.</S>
+        <S ID="S-15423">By using a distributed stochastic learning approach (<REF ID="R-25" RPTR="39">Simianer et al., 2012</REF>), we can estimate the feature weights of multiple SMT systems at the same time.</S>
+        <S ID="S-15424">Furthermore, we modify the algorithm to treat in-domain and general-domain features separately, which brings regularization to multiple SMT systems in an efficient way.</S>
+        <S ID="S-15425">Experimental results have shown that our method can significantly improve the translation quality on multiple domains over a nonadapted baseline.</S>
+        <S ID="S-15426">Moreover, the MTL-based adaptation also outperforms the conventional individual adaptation approach towards each domain.</S>
+      </P>
+      <P>
+        <S ID="S-15427">The rest of the paper is organized as follows: The proposed approach is explained in Section 2.</S>
+        <S ID="S-15428">Experimental results are presented in Section 3.</S>
+        <S ID="S-15429">Section 4 introduces some related work.</S>
+        <S ID="S-15430">Section 5 concludes the paper and suggests future research directions.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 The Proposed Approach</HEADER>
+      <P>
+        <S ID="S-15548">Figure 1 gives an example with N pre-defined domains to illustrate the main idea.</S>
+        <S ID="S-15549">There are three steps in the training phase.</S>
+        <S ID="S-15550">First, in-domain training data is selected according to the pre-defined domains (Section 2.1).</S>
+        <S ID="S-15551">Second, in-domain models and general-domain models are trained to develop the domain-specific SMT systems (Section 2.2).</S>
+        <S ID="S-15552">Third, multiple domain-specific SMT systems are tuned jointly by using an MTL-based approach (Section 2.3).</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 In-domain Data Selection</HEADER>
+        <P>
+          <S ID="S-15431">In the first step, in-domain bilingual data is selected from all the bilingual data to train in-domain TMs.</S>
+          <S ID="S-15432">We use the bilingual cross-entropy based approach (<REF ID="R-01" RPTR="2">Axelrod et al., 2011</REF>) to obtain the in-domain data:</S>
+        </P>
+        <P>
+          <S ID="S-15433">[H I&#8722;src (s)&#8722;H G&#8722;src (s)]+[H I&#8722;tgt (t)&#8722;H G&#8722;tgt (t)] (1)</S>
+        </P>
+        <P>
+          <S ID="S-15434">where {s,t} is a bilingual sentence pair in the entire bilingual corpus.</S>
+          <S ID="S-15435">H I&#8722;xxx (&#183;) and H G&#8722;xxx (&#183;) represent the cross-entropy of a string according to an indomain LM and a general-domain LM, respectively.</S>
+          <S ID="S-15436">&#8221;xxx&#8221; denotes either the source language (src) or the target language (tgt).</S>
+          <S ID="S-15437">H I&#8722;src (s) &#8722; H G&#8722;src (s) is the cross-entropy difference of string s between the indomain and general-domain source-side LMs, and H I&#8722;tgt (t) &#8722; H G&#8722;tgt (t) is the cross-entropy difference of string t between the in-domain and generaldomain target-side LMs.</S>
+          <S ID="S-15438">This criterion biases towards sentence pairs that are like the in-domain corpus but unlike the general-domain corpus.</S>
+          <S ID="S-15439">Therefore, the sentence pairs with lower scores (larger differences) are presumed to be better.</S>
+        </P>
+        <P>
+          <S ID="S-15440">Now, the question is how to find sufficient monolingual data to train in-domain LMs.</S>
+          <S ID="S-15441">A straightforward solution is to collect the data from the internet.</S>
+          <S ID="S-15442">There are a large number of monolingual webpages with domain information from web portal sites 1 , which can be collected to train in-domain LMs.</S>
+          <S ID="S-15443">In large-scale real world SMT systems, practical domain adaptation techniques should target more domains rather than just one due to heterogeneous input.</S>
+          <S ID="S-15444">Therefore, we use a web crawler to collect monolingual webpages of N domains from web portal sites, for both the source language and the target language.</S>
+          <S ID="S-15445">The statistics of web-crawled data is given in Section 3.1.</S>
+          <S ID="S-15446">We use the web-crawled monolingual documents to train N in-domain source-side LMs and N in-domain target-side LMs.</S>
+          <S ID="S-15447">Additionally, we also train the source-side and target-side general-domain LMs with all the web-crawled documents from different domains.</S>
+          <S ID="S-15448">Finally, these indomain and general-domain LMs are used to select in-domain bilingual data for different domains according to Formula (1).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 SMT Systems with Mixture Models</HEADER>
+        <P>
+          <S ID="S-15449">In the second step, with the selected in-domain training data, we develop SMT systems based on mixture models.</S>
+          <S ID="S-15450">In particular, we use the mixture model based approach proposed by Koehn and Schroeder</S>
+        </P>
+        <P>
+          <S ID="S-15451">1 Many web portal sites contain domain information</S>
+        </P>
+        <P>
+          <S ID="S-15452">for webpages, such as &#8221;www.yahoo.com&#8221; in English and &#8221;www.sina.com.cn&#8221; in Chinese and etc.</S>
+          <S ID="S-15453">The webpages are often categorized by human editors into different domains, such as politics, sports, business, etc.</S>
+        </P>
+        <P>
+          <S ID="S-15454">(2007).</S>
+          <S ID="S-15455">Specifically, we have developed N SMT systems for N domains respectively, where each system is a typical log-linear model.</S>
+          <S ID="S-15456">For each system, the best translation candidate &#710;f is given by:</S>
+        </P>
+        <P>
+          <S ID="S-15457">&#710;f = arg max {P (f|e)} (2)</S>
+        </P>
+        <P>
+          <S ID="S-15458">f</S>
+        </P>
+        <P>
+          <S ID="S-15459">where the translation probability P (f |e) is given by:</S>
+        </P>
+        <P>
+          <S ID="S-15460">P (f|e) &#8733; &#8721; i w i &#183; log &#966; i (f, e)</S>
+        </P>
+        <P>
+          <S ID="S-15461">= &#8721; w j &#183; log &#966; j (f, e) + &#8721; w k &#183; log &#966; k (f, e)</S>
+        </P>
+        <P>
+          <S ID="S-15462">j&#8712;I k&#8712;G</S>
+        </P>
+        <P>
+          <S ID="S-15463">where &#966; j (f, e) is the in-domain feature function and w j is the corresponding feature weight.</S>
+          <S ID="S-15464">&#966; k (f, e) is the general-domain feature function and w k is the feature weight.</S>
+          <S ID="S-15465">The detailed feature description is as follows:</S>
+        </P>
+        <P>
+          <S ID="S-15466">In-domain features</S>
+        </P>
+        <P>
+          <S ID="S-15467">&#8226; An in-domain TM, including phrase translation probabilities and lexical weights for both directions (4 features)</S>
+        </P>
+        <P>
+          <S ID="S-15468">&#8226; An in-domain target-side LM (1 feature)</S>
+        </P>
+        <P>
+          <S ID="S-15469">&#8226; word count (1 feature)</S>
+        </P>
+        <P>
+          <S ID="S-15470">&#8226; phrase count (1 feature)</S>
+        </P>
+        <P>
+          <S ID="S-15471">&#8226; NULL penalty (1 feature)</S>
+        </P>
+        <P>
+          <S ID="S-15472">&#8226; Number of hierarchical rules used (1 feature)</S>
+        </P>
+        <P>
+          <S ID="S-15473">General-domain features</S>
+        </P>
+        <P>
+          <S ID="S-15474">&#8226; A general-domain TM, including phrase translation probabilities and lexical weights for both directions (4 features)</S>
+        </P>
+        <P>
+          <S ID="S-15475">&#8226; A general-domain target-side LM (1 feature)</S>
+        </P>
+        <P>
+          <S ID="S-15476">The feature description indicates that each SMT system contains two TMs and two LMs.</S>
+          <S ID="S-15477">The indomain TMs are trained using the selected bilingual training data according to Formula (1), and the general-domain TM is trained using the entire bilingual training data.</S>
+          <S ID="S-15478">For the LMs, we re-use the targetside in-domain LMs and general-domain LM trained</S>
+        </P>
+        <P>
+          <S ID="S-15479">for data selection (Section 2.1).</S>
+          <S ID="S-15480">Compared with a normal single-model system, the system with mixture models can balance the contributions from the general-domain and in-domain knowledge.</S>
+          <S ID="S-15481">Hence it potentially benefits from both.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 MTL-based Tuning</HEADER>
+        <P>
+          <S ID="S-15482">In the third step, the feature weights in multiple domain-specific SMT systems are estimated.</S>
+          <S ID="S-15483">Instead of tuning each domain-specific system separately, we treat different systems as related tasks and tune them jointly in an MTL framework.</S>
+          <S ID="S-15484">There are two main reasons for MTL-based tuning:</S>
+        </P>
+        <P>
+          <S ID="S-15485">1.</S>
+          <S ID="S-15486">Domain-specific translation tasks share the same general-domain LM and TM.</S>
+          <S ID="S-15487">MTL often leads to better performance by leveraging commonalities among different tasks.</S>
+        </P>
+        <P>
+          <S ID="S-15488">2.</S>
+          <S ID="S-15489">By enforcing that the general-domain LM and TM perform equally across different domains, MTL provides a kind of regularization to prevent over-fitting.</S>
+        </P>
+        <P>
+          <S ID="S-15490">Formally, the objective function of the proposed MTL-based approach is described as follows:</S>
+        </P>
+        <P>
+          <S ID="S-15491">min</S>
+        </P>
+        <P>
+          <S ID="S-15492">W</S>
+        </P>
+        <P>
+          <S ID="S-15493">{ &#8721; N }</S>
+        </P>
+        <P>
+          <S ID="S-15494">Loss(E i , &#234;(F i , w i ))</S>
+        </P>
+        <P>
+          <S ID="S-15495">i=1</S>
+        </P>
+        <P>
+          <S ID="S-15496">(4)</S>
+        </P>
+        <P>
+          <S ID="S-15497">where N is the number of pre-defined domains.</S>
+          <S ID="S-15498">{F i ,E i } is the in-domain development dataset for the i-th domain.</S>
+          <S ID="S-15499">F i denotes the source sentences and E i denotes the reference translations.</S>
+          <S ID="S-15500">w i is a D-length feature weight column vector for the i-th domain, where D is the dimension of the feature space.</S>
+          <S ID="S-15501">W is a N-by-D matrix, representing [w 1 |w 2 | .</S>
+          <S ID="S-15502">.</S>
+          <S ID="S-15503">.</S>
+          <S ID="S-15504">|w N ] T .</S>
+          <S ID="S-15505">&#234;(F i , w i ) are the best translations obtained for F i with parameters w i .</S>
+          <S ID="S-15506">Loss(&#183;, &#183;) denotes the loss between the system&#8217;s output and the reference translations.</S>
+          <S ID="S-15507">The basic idea of the objective function is to minimize the sum of loss functions for all the domains, rather than one domain at a time.</S>
+          <S ID="S-15508">Therefore, by adjusting the in-domain and general-domain feature weights, the translation quality is expected to be good across different domains.</S>
+        </P>
+        <P>
+          <S ID="S-15509">To effectively tune SMT systems jointly, we modify the asynchronous Stochastic Gradient Descend (SGD) Algorithm (<REF ID="R-25" RPTR="40">Simianer et al., 2012</REF>) to optimize objective function (4).</S>
+          <S ID="S-15510">We follow the pairwise ranking approach with the perceptron algorithm (<REF ID="R-24" RPTR="35">Shen and Joshi, 2005</REF>) to update feature weights.</S>
+          <S ID="S-15511">Let a translation candidate be denoted by its feature vector v &#8712; R D , the pairwise preference for training is constructed by ranking two candidates according to the smoothed sentence-level BLEU (<REF ID="R-16" RPTR="22">Liang et al., 2006</REF>).</S>
+          <S ID="S-15512">For a preference pair v [j] =(v (1) , v (2) ) where v (1) is preferred, a hinge loss is used:</S>
+        </P>
+        <P>
+          <S ID="S-15513">L(w i ) = (&#8722;&#12296;w i , v (1) &#8722; v (2) &#12297;) + (5)</S>
+        </P>
+        <P>
+          <S ID="S-15514">where (x) + = max(0, x) and &#12296;&#183;, &#183;&#12297; denotes the inner product of two vectors.</S>
+          <S ID="S-15515">With the perceptron algorithm (<REF ID="R-24" RPTR="36">Shen and Joshi, 2005</REF>), the gradient of the hinge loss is:</S>
+        </P>
+        <P>
+          <S ID="S-15516">&#8711;L(w i ) =</S>
+        </P>
+        <P>
+          <S ID="S-15517">{ v (2) &#8722; v (1) if&#12296;w i , v (1) &#8722; v (2) &#12297; &#8804; 0 0 otherwise (6)</S>
+        </P>
+        <P>
+          <S ID="S-15518">The training instances for the discriminative learning in pairwise ranking are made by comparing the N-best list of the translation candidates scored by the smoothed sentence-level BLEU (<REF ID="R-16" RPTR="23">Liang et al., 2006</REF>).</S>
+          <S ID="S-15519">Following <REF ID="R-25" RPTR="37">Simianer et al. (2012)</REF>, the N-best list is divided into three bins: the top 10% (High), the middle 80% (Middle), and the last 10% (Low).</S>
+          <S ID="S-15520">These bins are used for pairwise ranking where the translation preference pairs are built between the candidates in High-Middle, Middle-Low, and High- Low, but not the candidates within the same bin, which is shown in Figure 2.</S>
+          <S ID="S-15521">The idea is to guarantee that the ranker is more discriminative to prefer the good translations to the bad ones.</S>
+        </P>
+        <P>
+          <S ID="S-15522">N-best list</S>
+        </P>
+        <P>
+          <S ID="S-15523">High: 10%</S>
+        </P>
+        <P>
+          <S ID="S-15524">Middle: 80%</S>
+        </P>
+        <P>
+          <S ID="S-15525">Low: 10%</S>
+        </P>
+        <P>
+          <S ID="S-15526">Our modified algorithm is illustrated in Algorithm 1.</S>
+          <S ID="S-15527">Each column vector w i is further split into two parts w I i and w G i , representing the In-domain and General-domain feature weights respectively.</S>
+          <S ID="S-15528">In Algorithm 1, we first distribute the domain-specific SMT decoders to different machines and initialize the feature weights (line 1-2).</S>
+          <S ID="S-15529">Typically, the SGD algorithm runs in several iterations (In this study, we set the number of epochs T to 20) (line 3).</S>
+          <S ID="S-15530">Multiple SMT decoders run in parallel and each decoder updates its feature weights individually using its indomain development data (line 4-15).</S>
+          <S ID="S-15531">For each domain, the domain-specific decoder translates each in-domain development sentence and determines the N-best translations (line 4-8).</S>
+          <S ID="S-15532">The preference pairs are built and used to update the parameters by gradient descent with &#951; = 0.0001 (line 9-13).</S>
+          <S ID="S-15533">Each domain-specific decoder translates its in-domain development data multiple times.</S>
+          <S ID="S-15534">After each iteration, feature weights from all decoders are collected (line 16-19).</S>
+          <S ID="S-15535">In contrast to the original algorithm (<REF ID="R-25" RPTR="41">Simianer et al., 2012</REF>), we only average the generaldomain feature weights w G 1 , .</S>
+          <S ID="S-15536">.</S>
+          <S ID="S-15537">.</S>
+          <S ID="S-15538">, wG N , but do not average the in-domain feature weights (line 20-25).</S>
+          <S ID="S-15539">The reason is we hope to leverage the commonalities among these systems.</S>
+          <S ID="S-15540">Meanwhile, general knowledge is enforced to be conveyed equally across different domains.</S>
+          <S ID="S-15541">Finally, the algorithm returns all the domain-specific feature weights w 1 , w 2 , .</S>
+          <S ID="S-15542">.</S>
+          <S ID="S-15543">.</S>
+          <S ID="S-15544">, w N that are used for testing (line 27).</S>
+        </P>
+        <P>
+          <S ID="S-15545">After the joint MTL-based tuning, the feature weights tailored for domain-specific SMT systems are used to translate the testing data.</S>
+          <S ID="S-15546">We collect indomain testing data for each domain to evaluate the domain-specific systems.</S>
+          <S ID="S-15547">Although this is not always the case in real applications where the testing domain is known, this study mainly focuses on the effectiveness of the MTL-based tuning approach.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Experiments</HEADER>
+      <P>
+        <S ID="S-15658"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Data</HEADER>
+        <P>
+          <S ID="S-15553">We evaluated our MTL-based domain adaptation approach on a large-scale English-to-Chinese machine translation task.</S>
+          <S ID="S-15554">The training data consisted of two parts: monolingual data and bilingual data.</S>
+          <S ID="S-15555">The monolingual data was used to train the sourceside and target-side LMs, both of which were used for data selection in Section 2.1.</S>
+          <S ID="S-15556">In addition, the target-side LMs were re-used in the SMT systems as features.</S>
+          <S ID="S-15557">As mentioned in Section 2.1, we built a web crawler to collect a large number of webpages from web portal sites in English and Chinese respectively.</S>
+          <S ID="S-15558">In the experiments, we mainly focused on six popular domains, namely Business, Entertainment, Health, Science &amp; Technology, Sports, and Politics.</S>
+          <S ID="S-15559">For both English and Chinese webpages, the HTML tags were removed and the main content was extracted.</S>
+          <S ID="S-15560">The data statistics are shown in Table 1.</S>
+          <S ID="S-15561">The bilingual data we used was mainly mined from the web using the method proposed by <REF ID="R-13" RPTR="19">Jiang et al. (2009)</REF>, with a post-processing step using our bilingual data cleaning method (<REF ID="R-06" RPTR="9">Cui et al., 2013</REF>).</S>
+          <S ID="S-15562">Therefore, the data quality is pretty good.</S>
+          <S ID="S-15563">In addition, we also used the English-Chinese parallel corpus released by LDC 2 .</S>
+          <S ID="S-15564">In total, the bilingual data</S>
+        </P>
+        <P>
+          <S ID="S-15565">2 LDC2003E07, LDC2003E14, LDC2004E12,</S>
+        </P>
+        <P>
+          <S ID="S-15566">LDC2005T06, LDC2005T10, LDC2005E83, LDC2006E26,</S>
+        </P>
+        <P>
+          <S ID="S-15567">contained around 30 million sentence pairs, with 404M words in English and 329M words in Chinese.</S>
+          <S ID="S-15568">For each domain, we used the cross-entropy based method in Section 2.1 to rank the entire bilingual data, and the top 10% sentence pairs from the ranked bilingual data were selected as the in-domain data to train the in-domain TM.</S>
+          <S ID="S-15569">Moreover, we prepared 2,000 in-domain sentences for development and 1,000 in-domain sentences for testing in each domain.</S>
+          <S ID="S-15570">The details are shown in Table 2.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Setup</HEADER>
+        <P>
+          <S ID="S-15571">An in-house hierarchical phrase-based SMT decoder was implemented for our experiments.</S>
+          <S ID="S-15572">The CKY decoding algorithm was used and cube pruning was performed with the same default parameter settings as in <REF ID="R-04" RPTR="7">Chiang (2007)</REF>.</S>
+          <S ID="S-15573">We used a 100-best list from the decoder for the pairwise ranking algorithm.</S>
+          <S ID="S-15574">Translation models were trained over the bilingual data that was automatically word-aligned using GIZA++ (<REF ID="R-19" RPTR="28">Och and Ney, 2003</REF>) in both directions, and the diag-grow-final heuristic was used to</S>
+        </P>
+        <P>
+          <S ID="S-15575">LDC2006E34, LDC2006E85, LDC2006E92.</S>
+        </P>
+        <P>
+          <S ID="S-15576">refine the symmetric word alignment.</S>
+          <S ID="S-15577">The phrase tables were filtered to retain top-20 translation candidates for each source phrase for efficiency.</S>
+          <S ID="S-15578">An in-house language modeling toolkit was used to train the 4-gram language models with modified Kneser-Ney smoothing (<REF ID="R-14" RPTR="20">Kneser and Ney, 1995</REF>) over the web-crawled data.</S>
+          <S ID="S-15579">The evaluation metric for the overall translation quality was case-insensitive BLEU4 (<REF ID="R-21" RPTR="30">Papineni et al., 2002</REF>).</S>
+          <S ID="S-15580">A statistical significance test was performed using the bootstrap resampling method (<REF ID="R-15" RPTR="21">Koehn, 2004</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Baseline</HEADER>
+        <P>
+          <S ID="S-15581">We have two baselines.</S>
+          <S ID="S-15582">The first baseline is a nonadapted Hiero using our implementation.</S>
+          <S ID="S-15583">It contained the general-domain TM and LM, as well as other standard features.</S>
+          <S ID="S-15584">In addition, the fix-discount method (<REF ID="R-11" RPTR="16">Foster et al., 2006</REF>) for phrase table smoothing was also used.</S>
+          <S ID="S-15585">The system was general-domain oriented and it was tuned by using MERT (<REF ID="R-20" RPTR="29">Och, 2003</REF>) with a combination of six in-domain development datasets.</S>
+          <S ID="S-15586">The second baseline is Google Online Translation Service 3 .</S>
+          <S ID="S-15587">We obtained the English-to- Chinese translations of the testing data from Google Translation to have a more solid comparison.</S>
+        </P>
+        <P>
+          <S ID="S-15588">Moreover, we also compared our method with the adapted systems towards each domain individually (Koehn and Schroeder, 2007).</S>
+          <S ID="S-15589">This is to demonstrate the superiority of our MTL-based tuning approach across different domains.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.4 Results</HEADER>
+        <P>
+          <S ID="S-15590">The end-to-end translation performance is shown in Table 3.</S>
+          <S ID="S-15591">We found that the baseline has a similar performance to Google Translation, with certain domains performed even better (Business, Sci&amp;Tech, Sports, Politics).</S>
+          <S ID="S-15592">This demonstrates that the translation quality of our baseline is state-of-the-art.</S>
+          <S ID="S-15593">Moreover, we can answer three questions according to the experimental results as follow: First, is domain mismatch a significant problem for a real world SMT system?</S>
+          <S ID="S-15594">We used the same system only with general-domain TM and LM, but tuned towards each domain individually using in-domain dev data.</S>
+          <S ID="S-15595">Table 3 shows that the setting &#8221;[A] G-TM + G-LM&#8221; performs much better than</S>
+        </P>
+        <P>
+          <S ID="S-15596">3 http://translate.google.com</S>
+        </P>
+        <P>
+          <S ID="S-15597">the non-adapted baseline across all domains with at least 1.2 BLEU points.</S>
+          <S ID="S-15598">In addition, the setting &#8221;[A] G-TM + G-LM&#8221; also outperforms Google Translation on all domains.</S>
+          <S ID="S-15599">Analogous to previous research, this confirms that the domain mismatch indeed exists and the parameter estimation using in-domain dev data is quite useful.</S>
+        </P>
+        <P>
+          <S ID="S-15600">Second, does the mixture models based adaptation work for a variety of domains?</S>
+          <S ID="S-15601">We experimented with different settings with multiple TMs or LMs, or both.</S>
+          <S ID="S-15602">It is interesting to note that for largescale SMT systems, using in-domain models alone is inferior to using the general models alone.</S>
+          <S ID="S-15603">The setting &#8221;[A] G-TM + G-LM&#8221; is better than the setting &#8221;[A] I-TM + I-LM&#8221; across different domains.</S>
+          <S ID="S-15604">The reason is the data for general models has already included the in-domain data and the data coverage is much larger, thus the probability estimation is more reliable and the translation quality is much better.</S>
+        </P>
+        <P>
+          <S ID="S-15605">For the LM, the in-domain LM performs better than the general-domain LM because our monolingual data (Table 1) for each domain is already sufficient for training an in-domain LM with good performance.</S>
+          <S ID="S-15606">From Table 3, we observed that the setting &#8221;[A] (G+I)-TM + I-LM&#8221; outperforms &#8221;[A] (G+I)-TM + G-LM&#8221;, with the &#8221;Sports&#8221; domain being the most significant.</S>
+          <S ID="S-15607">For the TM, the performance of the in-domain TM is inferior to the general-domain TM.</S>
+          <S ID="S-15608">The results show that the setting &#8221;[A] (G+I)-LM + G-TM&#8221; is significantly better than &#8221;[A] (G+I)-LM + I-TM&#8221;.</S>
+          <S ID="S-15609">The main reason is the data coverage for in-domain TM is much smaller than the general model.</S>
+          <S ID="S-15610">When each system uses two TMs and two LMs, it consistently results in better performance, indicating that mixture models are crucial for domain adaptation in SMT.</S>
+        </P>
+        <P>
+          <S ID="S-15611">Third, can MTL further improve the translation quality?</S>
+          <S ID="S-15612">We used the MTL-based approach to jointly tune multiple domain-specific systems, leveraging the commonalities among different but related tasks.</S>
+          <S ID="S-15613">From Table 3, the MTL-based approach significantly improve the translation quality over the non-adapted baseline, and also outperforms conventional mixture models based methods.</S>
+          <S ID="S-15614">In particular, the &#8221;Sports&#8221; domain benefits the most from the indomain knowledge, which confirms that domain discrepancy should be addressed and may bring large improvements on certain domains.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.5 Discussion</HEADER>
+        <P>
+          <S ID="S-15615">According to our experiments, only averaging over the out-of-domain feature weights returned robust and converged results.</S>
+          <S ID="S-15616">We do not have theoretically grounded guarantee.</S>
+          <S ID="S-15617">However, we observed that the BLEU score of our method on DEV data was slightly lower than that in the baseline system, which indicates the out-of-domain features are less over-fitting on the domain-specific DEV data since</S>
+        </P>
+        <P>
+          <S ID="S-15618">SOURSE</S>
+        </P>
+        <P>
+          <S ID="S-15619">REF</S>
+        </P>
+        <P>
+          <S ID="S-15620">A point begins with a player serving the ball.</S>
+          <S ID="S-15621">This means one player hits the ball towards the other player.</S>
+          <S ID="S-15622">(The serve must be played from behind the</S>
+        </P>
+        <P>
+          <S ID="S-15623">baseline and must &#10047;&#10047;&#10047;&#10047; land in the service box .</S>
+          <S ID="S-15624">Players get two attempts to make a good serve.</S>
+          <S ID="S-15625">) &#24471; &#20998; &#30001; &#19968; &#20010; &#29699; &#21592; &#21457; &#29699; &#24320; &#22987; , &#36825; &#26159; &#25351; &#19968; &#20010; &#29699; &#21592; &#21521; &#21478; &#19968; &#20010; &#29699; &#21592; &#20987;</S>
+        </P>
+        <P>
+          <S ID="S-15626">&#29699; &#12290;( &#21457; &#29699; &#26102; &#36873; &#25163; &#24517; &#39035; &#31449; &#22312; &#24213; &#32447; &#20043; &#22806; , &#29699; &#24517; &#39035; &#35201; &#33853; &#22312; &#23545; &#26041; &#30340; &#21457; &#29699; &#21306; &#20869; ,</S>
+        </P>
+        <P>
+          <S ID="S-15627">&#10047;&#10047;&#10047;&#10047;</S>
+        </P>
+        <P>
+          <S ID="S-15628">&#27599; &#27425; &#21457; &#29699; &#20801; &#35768; &#26377; &#19968; &#27425; &#22833; &#35823; &#12290;) [N] Baseline (G-TM + G-LM) &#33310; &#20250; &#22987; &#20110; &#29609; &#23478; &#26381; &#21153; &#30340; &#19968; &#20010; &#28857; &#12290; &#36825; &#24847; &#21619; &#30528; &#29609; &#23478; &#23545; &#20854; &#20182; &#29609; &#23478; &#30340; &#20987; &#29699; &#12290;</S>
+        </P>
+        <P>
+          <S ID="S-15629">[A] (G+I)-TM + (G+I)-LM</S>
+        </P>
+        <P>
+          <S ID="S-15630">[A,MTL](G+I)-TM + (G+I)-LM ( &#35813; &#26381; &#21153; &#24517; &#39035; &#20174; &#32972; &#21518; &#25171; &#30340; &#22522; &#32447; &#21644; &#24517; &#39035; &#38477; &#33853; &#22312; &#26381; &#21153; &#26694; &#12290; &#29699; &#21592; &#20004; &#27425; &#35797; &#22270; &#25104;</S>
+        </P>
+        <P>
+          <S ID="S-15631">&#10047;&#10047;&#10047;&#10047;&#10047;&#10047;&#10047;</S>
+        </P>
+        <P>
+          <S ID="S-15632">&#20026; &#19968; &#20010; &#22909; &#30340; &#26381; &#21153; &#12290;) &#19968; &#24320; &#22987; &#29699; &#30340; &#29699; &#21592; , &#36825; &#24847; &#21619; &#30528; &#19968; &#21517; &#29699; &#21592; &#29699; &#25171; &#21521; &#20854; &#20182; &#29699; &#21592; &#12290;( &#24517; &#39035; &#20174;</S>
+        </P>
+        <P>
+          <S ID="S-15633">&#24213; &#32447; &#21457; &#29699; , &#24517; &#39035; &#22312; &#21457; &#29699; &#21306; &#30340; &#21306; &#22495; &#12290; &#29699; &#21592; &#21482; &#26377; &#20004; &#27425; &#23581; &#35797; &#21435; &#20570; &#19968; &#20010; &#22909;</S>
+        </P>
+        <P>
+          <S ID="S-15634">&#10047;&#10047;&#10047;&#10047;&#10047;</S>
+        </P>
+        <P>
+          <S ID="S-15635">&#30340; &#21457; &#29699; &#12290;) &#31532; &#19968; &#29699; &#30340; &#29699; &#21592; , &#36825; &#24847; &#21619; &#30528; &#19968; &#21517; &#29699; &#21592; &#23545; &#21478; &#19968; &#20010; &#29699; &#21592; &#20987; &#29699; &#12290;( &#24517; &#39035; &#22312; &#24213;</S>
+        </P>
+        <P>
+          <S ID="S-15636">&#32447; &#21518; &#38754; &#21457; &#29699; , &#24182; &#19988; &#24517; &#39035; &#38477; &#33853; &#22312; &#21457; &#29699; &#21306; &#12290; &#29699; &#21592; &#20004; &#27425; &#35797; &#22270; &#25104; &#20026; &#19968; &#20010; &#22909;</S>
+        </P>
+        <P>
+          <S ID="S-15637">&#10047;&#10047;&#10047;&#10047;&#10047;&#10047;&#10047;</S>
+        </P>
+        <P>
+          <S ID="S-15638">&#30340; &#21457; &#29699; &#12290;)</S>
+        </P>
+        <P>
+          <S ID="S-15639">we enforced them to play the same role across different domains.</S>
+          <S ID="S-15640">It seems that averaging the out-ofdomain feature weights can be considered as a kind of regularization.</S>
+        </P>
+        <P>
+          <S ID="S-15641">An example sentence from the Sports domain with translations from different methods is shown in Table 4.</S>
+          <S ID="S-15642">In this sentence, the baseline always translates &#8221;player&#8221; to &#8221; &#29609; &#23478; &#8221; (game player), which should be &#8221; &#29699; &#21592; &#8221; (ball player).</S>
+          <S ID="S-15643">And, the baseline translates &#8221;serve&#8221; to &#8221; &#26381; &#21153; &#8221; (work for), which should be &#8221; &#21457; &#29699; &#8221; (put the ball into play).</S>
+          <S ID="S-15644">The phrase &#8221;service box&#8221; here means &#8221; &#21457; &#29699; &#21306; &#8221;, which denotes the zone where the ball is to be served.</S>
+          <S ID="S-15645">However, the baseline incorrectly splits them into two words, then translates &#8221;service&#8221; to &#8221; &#26381; &#21153; &#8221; and &#8221;box&#8221; to &#8221; &#26694; &#8221;.</S>
+          <S ID="S-15646">In contrast, the approaches with adapted models are able to translate these words very well.</S>
+          <S ID="S-15647">Both our MTL-based approach and the conventional adaptation methods leverage the mixture models.</S>
+          <S ID="S-15648">A natural question is why our MTL-based approach performs better than the individual adaptation.</S>
+          <S ID="S-15649">To answer this question, we looked into the details of the tuning and decoding procedures in the MTL-based approach.</S>
+          <S ID="S-15650">We observed that the BLEU score on the development data for each system was lower than the score when conducting individual adaptation.</S>
+          <S ID="S-15651">Considering that the algorithm enforcing the general features play the same role across different domains, we suspect that MTL-based approach introduces a kind of regularization for each domain-specific system.</S>
+          <S ID="S-15652">The regularization prevents the general features from biasing towards certain domains to the extreme.</S>
+          <S ID="S-15653">This property is quite important for real world SMT systems.</S>
+          <S ID="S-15654">Usually, a sentence is composed of some domain-specific words and some general words, so it is often improper to translate every word in the sentence using the indomain knowledge.</S>
+          <S ID="S-15655">For the example in Table 4, the individual adaptation method &#8221;[A] (G+I)-TM + (G+I)-LM&#8221; translates &#8221;land&#8221; to &#8221; &#21306; &#22495; &#8221; (zone) improperly, because &#8221; &#21306; &#22495; &#8221; appears more often in the Sports text than the general-domain text.</S>
+          <S ID="S-15656">This shows that the individual adaptation methods tend to overfit the in-domain development data.</S>
+          <S ID="S-15657">In contrast, the MTL-based approach &#8221;[A,MTL](G+I)-TM + (G+I)- LM&#8221; just translates &#8221;land&#8221; to &#8221; &#38477; &#33853; &#22312; &#8221; (fall on), which is more appropriate.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Related Work</HEADER>
+      <P>
+        <S ID="S-15688"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Domain Adaptation</HEADER>
+        <P>
+          <S ID="S-15659">One direction of domain adaptation explored the data selection and weighting approach to improve the performance of SMT on specific domains.</S>
+          <S ID="S-15660">Eck</S>
+        </P>
+        <P>
+          <S ID="S-15661">et al. (2004) first decoded the testing data with a general TM, and then used the translation results to train an adapted LM, which was in turn used to re-decode the testing data.</S>
+          <S ID="S-15662"><REF ID="R-17" RPTR="25">L&#252; et al. (2007)</REF> tried to weight the training data according to the similarity with test data using information retrieval models, while <REF ID="R-12" RPTR="17">Foster et al. (2010)</REF> trained a discriminative model to estimate a weight for each sentence in the training corpus.</S>
+          <S ID="S-15663">Other methods conducted data selection based on cross-entropy (<REF ID="R-18" RPTR="27">Moore and Lewis, 2010</REF>), and <REF ID="R-01" RPTR="3">Axelrod et al. (2011)</REF> further extended their cross-entropy based method to the selection of bilingual corpus in the hope that more relevant corpus to the target domain could yield smaller models with better performance.</S>
+          <S ID="S-15664">Other methods included using semi-supervised transductive learning techniques to exploit the monolingual in-domain data (Ueffing et al., 2007).</S>
+        </P>
+        <P>
+          <S ID="S-15665">Adaptation methods also involved the utilization of mixture models.</S>
+          <S ID="S-15666"><REF ID="R-10" RPTR="15">Foster and Kuhn (2007)</REF> explored a number of variants of utilizing multiple TMs and LMs by interpolation.</S>
+          <S ID="S-15667">Koehn and Schroeder (2007) used MERT to simultaneously tune two TMs or LMs.</S>
+          <S ID="S-15668"><REF ID="R-23" RPTR="33">Sennrich (2012)</REF> investigated the TM perplexity minimization as a method to set model weights in mixture modeling.</S>
+          <S ID="S-15669">In addition, inspired by system combination approaches, <REF ID="R-22" RPTR="31">Razmara et al. (2012)</REF> used the ensemble decoding method to mix multiple translation models, which outperformed a variety of strong baselines.</S>
+          <S ID="S-15670">Generally, most previous methods merely conducted domain adaption for a single domain, rather than multiple domains at the same time.</S>
+          <S ID="S-15671">One could also simply build multiple SMT systems that were adapted to multiple domains, but they were often separated and not tuned together.</S>
+          <S ID="S-15672">So far, there has been little research into the multi-domain adaptation problem over mixture models for SMT systems, as proposed in this paper.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Multi-task Learning</HEADER>
+        <P>
+          <S ID="S-15673">In machine learning, MTL is an approach to learn one target problem with other related problems at the same time.</S>
+          <S ID="S-15674">This often leads to a better model for the main task because it allows the learner to use the commonality among the tasks.</S>
+          <S ID="S-15675">MTL is performed by learning tasks in parallel while using a shared representation.</S>
+          <S ID="S-15676">Therefore, what is learned for each task can help other tasks be learned better.</S>
+        </P>
+        <P>
+          <S ID="S-15677">MTL was successfully applied in some Natural Language Processing (NLP) tasks.</S>
+          <S ID="S-15678">For example, <REF ID="R-02" RPTR="4">Blitzer et al. (2006)</REF> extended the MTL approach (<REF ID="R-00" RPTR="0">Ando and Zhang, 2005</REF>) to domain adaptation tasks in part-of-speech tagging.</S>
+          <S ID="S-15679"><REF ID="R-05" RPTR="8">Collobert and Weston (2008)</REF> proposed using deep neural networks to train a set of tasks, including part-of-speech tagging, chunking, named entity recognition, and semantic roles labeling.</S>
+          <S ID="S-15680">They reported that jointly learning these tasks led to superior performance.</S>
+          <S ID="S-15681">MTL was also applied in sentiment analysis (<REF ID="R-07" RPTR="11">Dredze and Crammer, 2008</REF>) and web ranking (<REF ID="R-03" RPTR="6">Chapelle et al., 2011</REF>) to address the multi-domain learning and adaptation.</S>
+          <S ID="S-15682">In SMT, <REF ID="R-08" RPTR="12">Duh et al. (2010)</REF> proposed using MTL for N-best re-ranking on sparse feature sets, where each N-best list corresponded to a distinct task.</S>
+          <S ID="S-15683"><REF ID="R-25" RPTR="38">Simianer et al. (2012)</REF> proposed distributed stochastic learning with feature selection inspired by MTL.</S>
+          <S ID="S-15684">The distributed learning approach outperformed several other training methods including MIRA and SGD.</S>
+        </P>
+        <P>
+          <S ID="S-15685">Inspired by these methods, we used MTL to tune multiple SMT systems at the same time, where each system was composed of in-domain and generaldomain models.</S>
+          <S ID="S-15686">Through a shared feature representation, the commonalities among the SMT systems were better learned by the general models.</S>
+          <S ID="S-15687">In addition, domain-specific translation knowledge was also better characterized by the in-domain models.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusion and Future Work</HEADER>
+      <P>
+        <S ID="S-15689">In this paper, we propose an MTL-based approach to address multi-domain adaptation for SMT.</S>
+        <S ID="S-15690">We first use the cross-entropy based data selection method to obtain in-domain bilingual data.</S>
+        <S ID="S-15691">After that, indomain TMs and LMs are trained for each domainspecific SMT system.</S>
+        <S ID="S-15692">In addition, the generaldomain TM and LM are also trained and shared across different systems.</S>
+        <S ID="S-15693">Finally, MTL is leveraged to tune multiple systems jointly.</S>
+        <S ID="S-15694">Experimental results have shown that our approach is quite promising for the multi-domain adaptation problem, and it brings significant improvement over both the non-adapted baselines and the conventional domain adaptation methods with mixture models.</S>
+        <S ID="S-15695">We assume the domain information for testing 1063 data is known beforehand in this study.</S>
+        <S ID="S-15696">However, this is not always the case for real world SMT systems.</S>
+        <S ID="S-15697">Therefore, to apply our approach in real applications, the domain information needs to be identified automatically.</S>
+        <S ID="S-15698">In the future, we will pre-define more popular domains and develop automatic domain classifiers.</S>
+        <S ID="S-15699">For those domains that are identified with high confidence, we use the domainspecific system to translate the texts.</S>
+        <S ID="S-15700">For other texts, we use the general system to translate them.</S>
+        <S ID="S-15701">Furthermore, since our approach is a general training method, we may also combine this approach with other domain adaptation methods to get more performance improvement.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-15702">We are especially grateful to Nan Yang, Yajuan Duan, Hong Sun and Danran Chen for the helpful discussions.</S>
+      <S ID="S-15703">We also thank the anonymous reviewers for their insightful comments.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Rie Kubota Ando</RAUTHOR>
+      <REFTITLE>A framework for learning predictive structures from multiple tasks and unlabeled data.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Amittai Axelrod</RAUTHOR>
+      <REFTITLE>Domain adaptation via pseudo in-domain data selection.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>John Blitzer</RAUTHOR>
+      <REFTITLE>Domain adaptation with structural correspondence learning.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Olivier Chapelle</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Ronan Collobert</RAUTHOR>
+      <REFTITLE>A unified architecture for natural language processing: deep neural networks with multitask learning.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Lei Cui</RAUTHOR>
+      <REFTITLE>Bilingual data cleaning for smt using graph-based random walk.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Mark Dredze</RAUTHOR>
+      <REFTITLE>Online methods for multi-domain learning and adaptation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Kevin Duh</RAUTHOR>
+      <REFTITLE>N-best reranking by multitask learning.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Matthias Eck</RAUTHOR>
+      <REFTITLE>Language model adaptation for statistical machine translation based on information retrieval.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>George Foster</RAUTHOR>
+      <REFTITLE>Mixture-model adaptation for SMT.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>George Foster</RAUTHOR>
+      <REFTITLE>Phrasetable smoothing for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>George Foster</RAUTHOR>
+      <REFTITLE>Discriminative instance weighting for domain adaptation in statistical machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Long Jiang</RAUTHOR>
+      <REFTITLE>Mining bilingual data from the web with adaptively learnt patterns.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Reinhard Kneser</RAUTHOR>
+      <REFTITLE>Improved backing-off for m-gram language modeling.</REFTITLE>
+      <DATE>1995</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Statistical significance tests for machine translation evaluation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Percy Liang</RAUTHOR>
+      <REFTITLE>An end-to-end discriminative approach to machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Yajuan L&#252;</RAUTHOR>
+      <REFTITLE>Improving statistical machine translation performance by training data selection and optimization.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Robert C Moore</RAUTHOR>
+      <REFTITLE>Intelligent selection of language model training data.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Majid Razmara</RAUTHOR>
+      <REFTITLE>Mixing multiple translation models in statistical machine translation.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Rico Sennrich</RAUTHOR>
+      <REFTITLE>Perplexity minimization for translation model domain adaptation in statistical machine translation.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Libin Shen</RAUTHOR>
+      <REFTITLE>Ranking and reranking with perceptron.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Patrick Simianer</RAUTHOR>
+      <REFTITLE>Joint feature selection in distributed stochastic learning for large-scale discriminative training in smt.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

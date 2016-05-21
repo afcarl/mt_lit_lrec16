@@ -1,0 +1,2593 @@
+<document>
+  <filename>E14-1026</filename>
+  <authors>
+    <author>of Computational Linguistics</author>
+    <author>Heidelberg University Heidelberg</author>
+  </authors>
+  <title>Source-side Preordering for Translation using Logistic Regression and Depth-first Branch-and-Bound Search &#8727;</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>We present a simple preordering approach for machine translation based on a featurerich logistic regression model to predict whether two children of the same node in the source-side parse tree should be swapped or not. Given the pair-wise children regression scores we conduct an efficient depth-first branch-and-bound search through the space of possible children permutations, avoiding using a cascade of classifiers or limiting the list of possible ordering outcomes. We report experiments in translating English to Japanese and Korean, demonstrating superior performance as (a) the number of crossing links drops by more than 10% absolute with respect to other state-of-the-art preordering approaches, (b) BLEU scores improve on 2.2 points over the baseline with lexicalised reordering model, and (c) decoding can be carried out 80 times faster.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We present a simple preordering approach for machine translation based on a featurerich logistic regression model to predict whether two children of the same node in the source-side parse tree should be swapped or not.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Given the pair-wise children regression scores we conduct an efficient depth-first branch-and-bound search through the space of possible children permutations, avoiding using a cascade of classifiers or limiting the list of possible ordering outcomes.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We report experiments in translating English to Japanese and Korean, demonstrating superior performance as (a) the number of crossing links drops by more than 10% absolute with respect to other state-of-the-art preordering approaches, (b) BLEU scores improve on 2.2 points over the baseline with lexicalised reordering model, and (c) decoding can be carried out 80 times faster.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>Source-side preordering for translation is the task of rearranging the order of a given source sentence so that it best resembles the order of the target sentence. It is a divide-and-conquer strategy aiming to decouple long-range word movement from the core translation task. The main advantage is that translation becomes computationally cheaper as less word movement needs to be considered, which results in faster and better translations, if preordering is done well and efficiently. Preordering also can facilitate better estimation of alignment and translation models as the parallel data becomes more monotonically-aligned, and
+&#8727; This work was done during an internship of the first author at SDL Research, Cambridge.
+translation gains can be obtained for various system architectures, e.g. phrase-based, hierarchical phrase-based, etc. For these reasons, preordering has a clear research and commercial interest, as reflected by the extensive previous work on the subject (see Section 2). From these approaches, we are particularly interested in those that (i) involve little or no human intervention, (ii) require limited computational resources at runtime, and (iii) make use of available linguistic analysis tools. In this paper we propose a novel preordering approach based on a logistic regression model trained to predict whether to swap nodes in the source-side dependency tree. For each pair of sibling nodes in the tree, the model uses a feature-rich representation that includes lexical cues to make relative reordering predictions between them. Given these predictions, we conduct a depth-first branch-and-bound search through the space of possible permutations of all sibling nodes, using the regression scores to guide the search. This approach has multiple advantages. First, the search for permutations is efficient and does not require specific heuristics or hard limits for nodes with many children. Second, the inclusion of the regression prediction directly into the search allows for finer-grained global decisions as the predictions that the model is more confident about are preferred. Finally, the use of a single regression model to handle any number of child nodes avoids incurring sparsity issues, while allowing the integration of a vast number of features into the preordering model. We empirically contrast our proposed method against another preordering approach based on automatically-extracted rules when translating English into Japanese and Korean. We demonstrate a significant reduction in number of crossing links of more than 10% absolute, as well as translation gains of over 2.2 BLEU points over the baseline.
+We also show it outperforms a multi-class classification approach and analyse why this is the case.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Source-side preordering for translation is the task of rearranging the order of a given source sentence so that it best resembles the order of the target sentence.</text>
+              <doc_id>3</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>It is a divide-and-conquer strategy aiming to decouple long-range word movement from the core translation task.</text>
+              <doc_id>4</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The main advantage is that translation becomes computationally cheaper as less word movement needs to be considered, which results in faster and better translations, if preordering is done well and efficiently.</text>
+              <doc_id>5</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Preordering also can facilitate better estimation of alignment and translation models as the parallel data becomes more monotonically-aligned, and</text>
+              <doc_id>6</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>&#8727; This work was done during an internship of the first author at SDL Research, Cambridge.</text>
+              <doc_id>7</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>translation gains can be obtained for various system architectures, e.g. phrase-based, hierarchical phrase-based, etc. For these reasons, preordering has a clear research and commercial interest, as reflected by the extensive previous work on the subject (see Section 2).</text>
+              <doc_id>8</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>From these approaches, we are particularly interested in those that (i) involve little or no human intervention, (ii) require limited computational resources at runtime, and (iii) make use of available linguistic analysis tools.</text>
+              <doc_id>9</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>In this paper we propose a novel preordering approach based on a logistic regression model trained to predict whether to swap nodes in the source-side dependency tree.</text>
+              <doc_id>10</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>For each pair of sibling nodes in the tree, the model uses a feature-rich representation that includes lexical cues to make relative reordering predictions between them.</text>
+              <doc_id>11</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Given these predictions, we conduct a depth-first branch-and-bound search through the space of possible permutations of all sibling nodes, using the regression scores to guide the search.</text>
+              <doc_id>12</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>This approach has multiple advantages.</text>
+              <doc_id>13</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>First, the search for permutations is efficient and does not require specific heuristics or hard limits for nodes with many children.</text>
+              <doc_id>14</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>Second, the inclusion of the regression prediction directly into the search allows for finer-grained global decisions as the predictions that the model is more confident about are preferred.</text>
+              <doc_id>15</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+            <sentence>
+              <text>Finally, the use of a single regression model to handle any number of child nodes avoids incurring sparsity issues, while allowing the integration of a vast number of features into the preordering model.</text>
+              <doc_id>16</doc_id>
+              <sec_id>8</sec_id>
+            </sentence>
+            <sentence>
+              <text>We empirically contrast our proposed method against another preordering approach based on automatically-extracted rules when translating English into Japanese and Korean.</text>
+              <doc_id>17</doc_id>
+              <sec_id>9</sec_id>
+            </sentence>
+            <sentence>
+              <text>We demonstrate a significant reduction in number of crossing links of more than 10% absolute, as well as translation gains of over 2.2 BLEU points over the baseline.</text>
+              <doc_id>18</doc_id>
+              <sec_id>10</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>We also show it outperforms a multi-class classification approach and analyse why this is the case.</text>
+              <doc_id>19</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Related work</title>
+        <text>One useful way to organize previous preordering techniques is by how they incorporate linguistic knowledge.
+On one end of the spectrum we find those approaches that rely on syntactic parsers and human knowledge, typically encoded via a set of hand-crafted rules for parse tree rewriting or transformation. Examples of these can be found for French-English (Xia and McCord, 2004), German-English (Collins et al., 2005), Chinese- English (Wang et al., 2007), English-Arabic (Badr et al., 2009), English-Hindi (Ramanathan et al., 2009), English-Korean (Hong et al., 2009), and English-Japanese (Lee et al., 2010; Isozaki et al., 2010). A generic set of rules for transforming SVO to SOV languages has also been described (Xu et al., 2009). The main advantage of these approaches is that a relatively small set of good rules can yield significant improvements in translation. The common criticism they receive is that they are language-specific.
+On the other end of the spectrum, there are preordering models that rely neither on human knowledge nor on syntactic analysis, but only on word alignments. One such approach is to form a cascade of two translation systems, where the first one translates the source to its preordered version (Costa-juss&#224; and Fonollosa, 2006). Alternatively, one can define models that assign a cost to the relative position of each pair of words in the sentence, and search for the sequence that optimizes the global score as a linear ordering problem (Tromble and Eisner, 2009) or as a traveling salesman problem (Visweswariah et al., 2011). Yet another line of work attempts to automatically induce a parse tree and a preordering model from word alignments (DeNero and Uszkoreit, 2011; Neubig et al., 2012). These approaches are attractive due to their minimal reliance on linguistic knowledge. However, their findings reveal that the best performance is obtained when using humanaligned data which is expensive to create. Somewhere in the middle of the spectrum are
+works that rely on automatic source-language syntactic parses, but no direct human intervention. Preordering rules can be automatically extracted from word alignments and constituent trees (Li et al., 2007; Habash, 2007; Visweswariah et al., 2010), dependency trees (Genzel, 2010) or predicate-argument structures (Wu et al., 2011), or simply part-of-speech sequences (Crego and Mari&#241;o, 2006; Rottmann and Vogel, 2007). Rules are assigned a cost based on Maximum Entropy (Li et al., 2007) or Maximum Likelihood estimation (Visweswariah et al., 2010), or directly on their ability to make the training corpus more monotonic (Genzel, 2010). The latter performs very well in practice but comes at the cost of a brute-force extraction heuristic that cannot incorporate lexical information. Recently, other approaches treat ordering the children of a node as a learning to rank (Yang et al., 2012) or discriminative multi-classification task (Lerner and Petrov, 2013). These are appealing for their use of finergrained lexical information, but they struggle to adequately handle nodes with multiple children.
+Our approach is closely related to this latter work, as we are interested in feature-rich discriminative approaches that automatically learn preordering rules from source-side dependency trees. Similarly to Yang et al. (2012) we train a large discriminative linear model, but rather than model each child&#8217;s position in an ordered list of children, we model a more natural pair-wise swap / no-swap preference (like Tromble and Eisner (2009) did at the word level). We then incorporate this model into a global, efficient branch-and-bound search through the space of permutations. In this way, we avoid an error-prone cascade of classifiers or any limit on the possible ordering outcomes (Lerner and Petrov, 2013).</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>One useful way to organize previous preordering techniques is by how they incorporate linguistic knowledge.</text>
+              <doc_id>20</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>On one end of the spectrum we find those approaches that rely on syntactic parsers and human knowledge, typically encoded via a set of hand-crafted rules for parse tree rewriting or transformation.</text>
+              <doc_id>21</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Examples of these can be found for French-English (Xia and McCord, 2004), German-English (Collins et al., 2005), Chinese- English (Wang et al., 2007), English-Arabic (Badr et al., 2009), English-Hindi (Ramanathan et al., 2009), English-Korean (Hong et al., 2009), and English-Japanese (Lee et al., 2010; Isozaki et al., 2010).</text>
+              <doc_id>22</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>A generic set of rules for transforming SVO to SOV languages has also been described (Xu et al., 2009).</text>
+              <doc_id>23</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The main advantage of these approaches is that a relatively small set of good rules can yield significant improvements in translation.</text>
+              <doc_id>24</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The common criticism they receive is that they are language-specific.</text>
+              <doc_id>25</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>On the other end of the spectrum, there are preordering models that rely neither on human knowledge nor on syntactic analysis, but only on word alignments.</text>
+              <doc_id>26</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>One such approach is to form a cascade of two translation systems, where the first one translates the source to its preordered version (Costa-juss&#224; and Fonollosa, 2006).</text>
+              <doc_id>27</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Alternatively, one can define models that assign a cost to the relative position of each pair of words in the sentence, and search for the sequence that optimizes the global score as a linear ordering problem (Tromble and Eisner, 2009) or as a traveling salesman problem (Visweswariah et al., 2011).</text>
+              <doc_id>28</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Yet another line of work attempts to automatically induce a parse tree and a preordering model from word alignments (DeNero and Uszkoreit, 2011; Neubig et al., 2012).</text>
+              <doc_id>29</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>These approaches are attractive due to their minimal reliance on linguistic knowledge.</text>
+              <doc_id>30</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, their findings reveal that the best performance is obtained when using humanaligned data which is expensive to create.</text>
+              <doc_id>31</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Somewhere in the middle of the spectrum are</text>
+              <doc_id>32</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>works that rely on automatic source-language syntactic parses, but no direct human intervention.</text>
+              <doc_id>33</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Preordering rules can be automatically extracted from word alignments and constituent trees (Li et al., 2007; Habash, 2007; Visweswariah et al., 2010), dependency trees (Genzel, 2010) or predicate-argument structures (Wu et al., 2011), or simply part-of-speech sequences (Crego and Mari&#241;o, 2006; Rottmann and Vogel, 2007).</text>
+              <doc_id>34</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Rules are assigned a cost based on Maximum Entropy (Li et al., 2007) or Maximum Likelihood estimation (Visweswariah et al., 2010), or directly on their ability to make the training corpus more monotonic (Genzel, 2010).</text>
+              <doc_id>35</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The latter performs very well in practice but comes at the cost of a brute-force extraction heuristic that cannot incorporate lexical information.</text>
+              <doc_id>36</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Recently, other approaches treat ordering the children of a node as a learning to rank (Yang et al., 2012) or discriminative multi-classification task (Lerner and Petrov, 2013).</text>
+              <doc_id>37</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>These are appealing for their use of finergrained lexical information, but they struggle to adequately handle nodes with multiple children.</text>
+              <doc_id>38</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Our approach is closely related to this latter work, as we are interested in feature-rich discriminative approaches that automatically learn preordering rules from source-side dependency trees.</text>
+              <doc_id>39</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Similarly to Yang et al. (2012) we train a large discriminative linear model, but rather than model each child&#8217;s position in an ordered list of children, we model a more natural pair-wise swap / no-swap preference (like Tromble and Eisner (2009) did at the word level).</text>
+              <doc_id>40</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We then incorporate this model into a global, efficient branch-and-bound search through the space of permutations.</text>
+              <doc_id>41</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>In this way, we avoid an error-prone cascade of classifiers or any limit on the possible ordering outcomes (Lerner and Petrov, 2013).</text>
+              <doc_id>42</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 Preordering using logistic regression and branch-and-bound search</title>
+        <text>Like Genzel (2010), our method starts with dependency parses of source sentences (which we convert to shallow constituent trees; see Figure 1 for an example), and reorders the source text by permuting sibling nodes in the parse tree. For each non-terminal node, we first apply a logistic regression model which predicts, for each pair of child nodes, the probability that they should be swapped or kept in their original order. We then apply a depth-first branch-and-bound search to find the global optimal reordering of children.
+he NN 1 could MD 2
+VB
+nsubj aux HEAD dobj
+stand VB 3 det
+the DT
+NN 4
+HEAD
+smell NN</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Like Genzel (2010), our method starts with dependency parses of source sentences (which we convert to shallow constituent trees; see Figure 1 for an example), and reorders the source text by permuting sibling nodes in the parse tree.</text>
+              <doc_id>43</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>For each non-terminal node, we first apply a logistic regression model which predicts, for each pair of child nodes, the probability that they should be swapped or kept in their original order.</text>
+              <doc_id>44</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We then apply a depth-first branch-and-bound search to find the global optimal reordering of children.</text>
+              <doc_id>45</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>he NN 1 could MD 2</text>
+              <doc_id>46</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>VB</text>
+              <doc_id>47</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>nsubj aux HEAD dobj</text>
+              <doc_id>48</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>stand VB 3 det</text>
+              <doc_id>49</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>the DT</text>
+              <doc_id>50</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>NN 4</text>
+              <doc_id>51</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>HEAD</text>
+              <doc_id>52</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>smell NN</text>
+              <doc_id>53</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Logistic regression</title>
+            <text>We build a regression model that assigns a probability of swapping any two sibling nodes, a and b, in the source-side dependency tree. The probability of swapping them is denoted p(a, b) and the probability of keeping them in their original order is 1 &#8722; p(a, b). We use LIBLINEAR (Fan et al., 2008) for training an L1-regularised logistic regression model based on positively and negatively labelled samples.
+3.1.1 Training data
+We generate training examples for the logistic regression from word-aligned parallel data which is annotated with source-side dependency trees. For each non-terminal node, we extract all possible pairs of child nodes. For each pair, we obtain a binary label y &#8712; {&#8722;1, 1} by calculating whether swapping the two nodes would reduce the number of crossing alignment links. The crossing score of having two nodes a and b in the given order is
+cs(a, b) := |{(i, j) &#8712; A a &#215; A b : i &gt; j}|
+where A a and A b are the target-side positions to which the words spanned by a and b are aligned. The label is then given as
+y(a, b) =
+Instances for which cs(a, b) = cs(b, a) are not included in the training data. This usually happens if either A a or A b is empty, and in this case the alignments provide no indication of which order is better. We also discard any samples from nodes that have more than 16 children, as these are rare cases that often result from parsing errors.
+2 3 4
+2 3
+&#603;
+1 . . .
+. . .
+3.1.2 Features
+Using a machine learning setup allows us to incorporate fine-grained information in the form of features. We use the following features to characterise pairs of nodes:
+l The dependency labels of each node t The part-of-speech tags of each node. hw The head words and classes of each node. lm, rm The left-most and right-most words and classes of a node.
+dst The distances between each node and the head. gap If there is a gap between nodes, the left-most and right-most words and classes in the gap.
+In order to keep the size of our feature space manageable, we only consider features which occur at least 5 times 1 . For the lexical features, we use the top 100 vocabulary items from our training data, and 51 clusters generated by mkcls (Och, 1999). Similarly to previous work (Genzel, 2010; Yang et al., 2012), we also explore feature conjunctions. For the tag and label classes, we generate all possible combinations up to a given size. For the lexical and distance features, we explicitly specify conjunctions with the tag and label features. Results for various feature configurations are discussed in Section 4.3.1.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We build a regression model that assigns a probability of swapping any two sibling nodes, a and b, in the source-side dependency tree.</text>
+                  <doc_id>54</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The probability of swapping them is denoted p(a, b) and the probability of keeping them in their original order is 1 &#8722; p(a, b).</text>
+                  <doc_id>55</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use LIBLINEAR (Fan et al., 2008) for training an L1-regularised logistic regression model based on positively and negatively labelled samples.</text>
+                  <doc_id>56</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3.1.1 Training data</text>
+                  <doc_id>57</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We generate training examples for the logistic regression from word-aligned parallel data which is annotated with source-side dependency trees.</text>
+                  <doc_id>58</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each non-terminal node, we extract all possible pairs of child nodes.</text>
+                  <doc_id>59</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each pair, we obtain a binary label y &#8712; {&#8722;1, 1} by calculating whether swapping the two nodes would reduce the number of crossing alignment links.</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The crossing score of having two nodes a and b in the given order is</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>cs(a, b) := |{(i, j) &#8712; A a &#215; A b : i &gt; j}|</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where A a and A b are the target-side positions to which the words spanned by a and b are aligned.</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The label is then given as</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>y(a, b) =</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Instances for which cs(a, b) = cs(b, a) are not included in the training data.</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This usually happens if either A a or A b is empty, and in this case the alignments provide no indication of which order is better.</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We also discard any samples from nodes that have more than 16 children, as these are rare cases that often result from parsing errors.</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 3 4</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 3</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#603;</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 .</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>.</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3.1.2 Features</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Using a machine learning setup allows us to incorporate fine-grained information in the form of features.</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We use the following features to characterise pairs of nodes:</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>l The dependency labels of each node t The part-of-speech tags of each node.</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>hw The head words and classes of each node.</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>lm, rm The left-most and right-most words and classes of a node.</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>dst The distances between each node and the head.</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>gap If there is a gap between nodes, the left-most and right-most words and classes in the gap.</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In order to keep the size of our feature space manageable, we only consider features which occur at least 5 times 1 .</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the lexical features, we use the top 100 vocabulary items from our training data, and 51 clusters generated by mkcls (Och, 1999).</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Similarly to previous work (Genzel, 2010; Yang et al., 2012), we also explore feature conjunctions.</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the tag and label classes, we generate all possible combinations up to a given size.</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the lexical and distance features, we explicitly specify conjunctions with the tag and label features.</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Results for various feature configurations are discussed in Section 4.3.1.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Search</title>
+            <text>For each non-terminal node in the source-side dependency tree, we search for the best possible
+1 Additional feature selection is achieved through L1-
+regularisation.
+permutation of its children. We define the score of a permutation &#960; as the product of the probabilities of its node pair orientations (swapped or unswapped): &#8719;
+score(&#960;) = p(i, j)
+&#183;
+1&#8804;i&lt;j&#8804;k|&#960;[i]&gt;&#960;[j]
+&#8719;
+1&#8804;i&lt;j&#8804;k|&#960;[i]&lt;&#960;[j]
+1 &#8722; p(i, j)
+Here, we represent a permutation &#960; of k nodes as a k-length sequence containing each integer in {1, ..., k} exactly once. Define a partial permutation of k nodes as a k &#8242; &lt; k length sequence containing each integer in {1, ..., k} at most once. We can construct a search space over partial permutations in the natural way (see Figure 2). The root node represents the empty sequence &#603; and has score 1. Then, given a search node representing a k &#8242; -length partial permutation &#960; &#8242; , its successor nodes are obtained by extending it by one element:
+score(&#960; &#8242; &#183; &#12296;i&#12297;) = score(&#960; &#8242; )
+&#8719; &#183; p(i, j)
+&#183;
+j&#8712;V |i&gt;j
+&#8719;
+j&#8712;V |i&lt;j
+1 &#8722; p(i, j)
+where V = {1, ..., k}\(&#960; &#8242; &#183; &#12296;i&#12297;) is the set of source child positions that have not yet been visited. Observe that the nodes at search depth k correspond exactly to the set of complete permutations. To search this space, we employ depth-first branchand-bound (Balas and Toth, 1983) as our search algorithm. The idea of branch-and-bound is to remember the best scoring goal node found thus far, abandoning any partial paths that cannot lead to a better scoring goal node. Algorithm 1 gives pseudocode for the algorithm 2 . If the initial bound (bound 0 ) is set to 0, the search is guaranteed to find the optimal solution. By raising the bound, which acts as an under-estimate of the best scoring permutation, search can be faster but possibly fail to find any solution. All our experiments were done with bound 0 = 0, i.e. exact search, but we discuss search time in detail and pruning alternatives in Section 4.3.2.
+Since we use a logistic regression model and incorporate its predictions directly as swap probabilities, our search prefers those permutations with swaps which the model is more confident about.
+2 See (Poole and Mackworth, 2010) for more details and a
+worked example.
+Algorithm 1 Depth-first branch-and-bound
+Require: k: maximum sequence length, &#603;: empty sequence, bound 0: initial bound
+procedure BNBSEARCH(&#603;, bound 0, k) best path &#8592; &#8869; bound &#8592; bound 0
+SEARCH(&#12296;&#603;&#12297;)
+return best path end procedure
+procedure SEARCH(&#960; &#8242; ) if score(&#960; &#8242; ) &gt; bound then
+if |&#960; &#8242; | = k then best path &#8592; &#12296;&#960; &#8242; &#12297; bound &#8592; score(&#960; &#8242; ) return else
+for each i &#8712; {1, ..., k}\&#960; &#8242; do
+SEARCH(&#960; &#8242; &#183; &#12296;i&#12297;)
+end for
+end if
+end if end procedure</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>For each non-terminal node in the source-side dependency tree, we search for the best possible</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 Additional feature selection is achieved through L1-</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>regularisation.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>permutation of its children.</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We define the score of a permutation &#960; as the product of the probabilities of its node pair orientations (swapped or unswapped): &#8719;</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>score(&#960;) = p(i, j)</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#183;</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1&#8804;i&lt;j&#8804;k|&#960;[i]&gt;&#960;[j]</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8719;</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1&#8804;i&lt;j&#8804;k|&#960;[i]&lt;&#960;[j]</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 &#8722; p(i, j)</text>
+                  <doc_id>102</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Here, we represent a permutation &#960; of k nodes as a k-length sequence containing each integer in {1, ..., k} exactly once.</text>
+                  <doc_id>103</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Define a partial permutation of k nodes as a k &#8242; &lt; k length sequence containing each integer in {1, ..., k} at most once.</text>
+                  <doc_id>104</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We can construct a search space over partial permutations in the natural way (see Figure 2).</text>
+                  <doc_id>105</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The root node represents the empty sequence &#603; and has score 1.</text>
+                  <doc_id>106</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Then, given a search node representing a k &#8242; -length partial permutation &#960; &#8242; , its successor nodes are obtained by extending it by one element:</text>
+                  <doc_id>107</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>score(&#960; &#8242; &#183; &#12296;i&#12297;) = score(&#960; &#8242; )</text>
+                  <doc_id>108</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8719; &#183; p(i, j)</text>
+                  <doc_id>109</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#183;</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>j&#8712;V |i&gt;j</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8719;</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>j&#8712;V |i&lt;j</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 &#8722; p(i, j)</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>where V = {1, ..., k}\(&#960; &#8242; &#183; &#12296;i&#12297;) is the set of source child positions that have not yet been visited.</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Observe that the nodes at search depth k correspond exactly to the set of complete permutations.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To search this space, we employ depth-first branchand-bound (Balas and Toth, 1983) as our search algorithm.</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The idea of branch-and-bound is to remember the best scoring goal node found thus far, abandoning any partial paths that cannot lead to a better scoring goal node.</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Algorithm 1 gives pseudocode for the algorithm 2 .</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If the initial bound (bound 0 ) is set to 0, the search is guaranteed to find the optimal solution.</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>By raising the bound, which acts as an under-estimate of the best scoring permutation, search can be faster but possibly fail to find any solution.</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All our experiments were done with bound 0 = 0, i.e. exact search, but we discuss search time in detail and pruning alternatives in Section 4.3.2.</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Since we use a logistic regression model and incorporate its predictions directly as swap probabilities, our search prefers those permutations with swaps which the model is more confident about.</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>2 See (Poole and Mackworth, 2010) for more details and a</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>worked example.</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Algorithm 1 Depth-first branch-and-bound</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Require: k: maximum sequence length, &#603;: empty sequence, bound 0: initial bound</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>procedure BNBSEARCH(&#603;, bound 0, k) best path &#8592; &#8869; bound &#8592; bound 0</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>SEARCH(&#12296;&#603;&#12297;)</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>return best path end procedure</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>procedure SEARCH(&#960; &#8242; ) if score(&#960; &#8242; ) &gt; bound then</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>if |&#960; &#8242; | = k then best path &#8592; &#12296;&#960; &#8242; &#12297; bound &#8592; score(&#960; &#8242; ) return else</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>for each i &#8712; {1, ..., k}\&#960; &#8242; do</text>
+                  <doc_id>133</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>SEARCH(&#960; &#8242; &#183; &#12296;i&#12297;)</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>end for</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>end if</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>end if end procedure</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Experiments</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>138</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 Setup</title>
+            <text>We report translation results in English-to- Japanese/Korean. Our corpora are comprised of generic parallel data extracted from the web, with some documents extracted manually and some automatically crawled. Both have about 6M sentence pairs and roughly 100M words per language.
+The dev and test sets are also generic. Source sentences were extracted from the web and one target reference was produced by a bilingual speaker. These sentences were chosen to evenly represent 10 domains, including world news, chat/SMS, health, sport, science, business, and others. The dev/test sets contain 602/903 sentences and 14K/20K words each. We do English part-of-speech tagging using SVMTool (Gim&#233;nez and M&#224;rquez, 2004) and dependency parsing using MaltParser (Nivre et al., 2007). For translation experiments, we use a phrasebased decoder that incorporates a set of standard features and a hierarchical reordering model (Galley and Manning, 2008) with weights tuned using MERT to optimize the character-based BLEU score on the dev set. The Japanese and Korean language models are 5-grams estimated on &gt; 350M words of generic web text. For training the logistic regression model, we automatically align the parallel training data and intersect the source-to-target and target-to-source alignments. We reserve a random 5K-sentence
+approach EJ cs (%) EK cs (%)
+rule-based (Genzel, 2010) 61.9 64.2 multi-class 65.2 - df-bnb 51.4 51.8
+subset for intrinsic evaluation of preordering, and use the remainder for model parameter estimation.
+We evaluate our preordering approach with logistic regression and depth-first branch-and-bound search (in short, &#8216;df-bnb&#8217;) both in terms of reordering via crossing score reduction on the heldout set, and in terms of translation quality as measured by character-based BLEU on the test set.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We report translation results in English-to- Japanese/Korean.</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our corpora are comprised of generic parallel data extracted from the web, with some documents extracted manually and some automatically crawled.</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Both have about 6M sentence pairs and roughly 100M words per language.</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The dev and test sets are also generic.</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Source sentences were extracted from the web and one target reference was produced by a bilingual speaker.</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These sentences were chosen to evenly represent 10 domains, including world news, chat/SMS, health, sport, science, business, and others.</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The dev/test sets contain 602/903 sentences and 14K/20K words each.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We do English part-of-speech tagging using SVMTool (Gim&#233;nez and M&#224;rquez, 2004) and dependency parsing using MaltParser (Nivre et al., 2007).</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For translation experiments, we use a phrasebased decoder that incorporates a set of standard features and a hierarchical reordering model (Galley and Manning, 2008) with weights tuned using MERT to optimize the character-based BLEU score on the dev set.</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The Japanese and Korean language models are 5-grams estimated on &gt; 350M words of generic web text.</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For training the logistic regression model, we automatically align the parallel training data and intersect the source-to-target and target-to-source alignments.</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We reserve a random 5K-sentence</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>8</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>approach EJ cs (%) EK cs (%)</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>rule-based (Genzel, 2010) 61.9 64.2 multi-class 65.2 - df-bnb 51.4 51.8</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>subset for intrinsic evaluation of preordering, and use the remainder for model parameter estimation.</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We evaluate our preordering approach with logistic regression and depth-first branch-and-bound search (in short, &#8216;df-bnb&#8217;) both in terms of reordering via crossing score reduction on the heldout set, and in terms of translation quality as measured by character-based BLEU on the test set.</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 Preordering baselines</title>
+            <text>We contrast our work against two data-driven preordering approaches. First, we implemented the rule-based approach of Genzel (2010) and optimised its multiple parameters for our task. We report only the best results achieved, which correspond to using &#8764;100K training sentences for rule extraction, applying a sliding window width of 3 children, and creating rule sequences of &#8764;60 rules. This approach cannot incorporate lexical features as that would make the brute-force rule extraction algorithm unmanageable. We also implemented a multi-class classification setup where we directly predict complete permutations of children nodes using multi-class classification (Lerner and Petrov, 2013). While this is straightforward for small numbers of children, it leads to a very large number of possible permutations for larger sets of children nodes, making classification too difficult. While Lerner and Petrov (2013) use a cascade of classifiers and impose a hard limit on the possible reordering outcomes to solve this, we follow Genzel&#8217;s heuristic: rather than looking at the complete set of children, we apply a sliding window of size 3 starting from the left, and make classification/reordering decisions for each window separately. Since the windows overlap, decisions made for the first window affect the order of nodes in the second window, etc. We address this by soliciting decisions from the classifier on the fly as we preorder. One lim- Figure 3: Crossing scores and classification accuracy improve with training data size.
+itation of this approach is that it is able to move children only within the window. We try to remedy this by applying the method iteratively, each time re-training the classifier on the preordered data from the previous run.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We contrast our work against two data-driven preordering approaches.</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>First, we implemented the rule-based approach of Genzel (2010) and optimised its multiple parameters for our task.</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We report only the best results achieved, which correspond to using &#8764;100K training sentences for rule extraction, applying a sliding window width of 3 children, and creating rule sequences of &#8764;60 rules.</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This approach cannot incorporate lexical features as that would make the brute-force rule extraction algorithm unmanageable.</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We also implemented a multi-class classification setup where we directly predict complete permutations of children nodes using multi-class classification (Lerner and Petrov, 2013).</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>While this is straightforward for small numbers of children, it leads to a very large number of possible permutations for larger sets of children nodes, making classification too difficult.</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>While Lerner and Petrov (2013) use a cascade of classifiers and impose a hard limit on the possible reordering outcomes to solve this, we follow Genzel&#8217;s heuristic: rather than looking at the complete set of children, we apply a sliding window of size 3 starting from the left, and make classification/reordering decisions for each window separately.</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Since the windows overlap, decisions made for the first window affect the order of nodes in the second window, etc.</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We address this by soliciting decisions from the classifier on the fly as we preorder.</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>8</sec_id>
+                </sentence>
+                <sentence>
+                  <text>One lim- Figure 3: Crossing scores and classification accuracy improve with training data size.</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>9</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>itation of this approach is that it is able to move children only within the window.</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We try to remedy this by applying the method iteratively, each time re-training the classifier on the preordered data from the previous run.</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>4.3 Crossing score</title>
+            <text>We now report contrastive results in the intrinsic preordering task, as measured by the number of crossing links (Genzel, 2010; Yang et al., 2012) on the 5K held-out set. Without preordering, there is an average of 22.2 crossing links in English-Japanese and 20.2 in English-Korean. Table 1 shows what percentage of these links remain after applying each preordering approach to the data. We find that the &#8216;df-bnb&#8217; method outperforms the other approaches in both language pairs, achieving more than 10 additional percentage points reduction over the rule-based approach. Interestingly, the multi-class approach is not able to match the rule-based approach despite using additional lexical cues. We hypothesise that this is due to the sliding window heuristic, which causes a mismatch in train-test conditions: while samples are not independent of each other at test time due to window overlaps, they are considered to be so when training the classifier.
+4.3.1 Impact of training size and feature configuration
+We now report the effects of feature configuration and training data size for the English-Japanese case. We assess our &#8216;df-bnb&#8217; approach in terms of the classification accuracy of the trained logistic
+features used acc (%) cs (%)
+l,t,hw,lm,rm,dst,gap 82.43 51.3 l,t,hw,lm,rm,dst 82.44 51.4 l,t,hw,lm,rm 82.32 53.1 l,t,hw 82.02 55 l,t 81.07 58.4
+regression model (using it to predict &#177;1 labels in the held-out set) and by the percentage of crossing alignment links reduced by preordering.
+Figure 3 shows the performance of the logistic regression model over different training set sizes, extracted from the training corpus as described in Section 3. We observe a constant increase in prediction accuracy, mirrored by a steady decrease in crossing score. However, gains are less for more than 8M training examples. Note that a small variation in accuracy can produce a large variation in crossing score if two nodes are swapped which have a large number of crossing alignments.
+Table 2 shows an ablation test for various feature configurations. We start with all features, including head word and class (hw), left-most and right-most word in each node&#8217;s span (lm, rm), each node&#8217;s distance to the head (dst), and left-most and right-most word of the gap between nodes (gap). We then proceed by removing features to end with only label and tag features (l,t), as in Genzel (2010). For each configuration, we generated all tag- and label- combinations of size 2. We then specified combinations between tag and label and all other features. For the lexical features we always used conjunctions of the word itself, and its class. Class information is included for all words, not just those in the top 100 vocabulary. Table 2 shows that lexical and distance feature groups contribute to prediction accuracy and crossing score, except for the gap features, which we omit from further experiments.
+4.3.2 Run time
+We now demonstrate the efficiency of branch-andbound search for the problem of finding the optimum permutation of n children at runtime. Even though in the worst case the search could explore all n! permutations, making it prohibitive for Figure 4: Average number of nodes explored in branch-and-bound search by number of children.
+nodes with many children, in practice this does not happen. Many low-scoring paths are discarded early by branch-and-bound search so that the optimal solution can be found quickly. The top curve in Figure 4 shows the average number of nodes explored in searches run on our validation set (5K sentences) as a function of the number of children. All instances are far from the worst case 3 .
+In our experiments, the time needed to conduct exact search (bound 0 = 0) was not a problem except for a few bad cases (nodes with more than 16 children), which we simply chose not to preorder; in our data, 90% of the nodes have less than 6 children, while only 0.9% have 10 children or more, so this omission does not affect performance noticeably. We verified this on our held-out set, by carrying out exhaustive searches. We found that not preordering nodes with 16 children did not worsen the crossing score. In fact, setting a harsher limit of 10 nodes would still produce a crossing score of 51.9%, compared to the best score of 51.4%.
+There are various ways to speed up the search, if needed. First, one could impose a hard limit on the number of explored nodes 4 . As shown in Figure 4, a limit of 4K would still allow exact search on average for permutations of up to 11 children, while stopping search early for more children. We tested this for limits of 1K/4K nodes and obtained crossing scores of 51.9/51.5%. Alternatively, one could define a higher initial bound; since the score of a path is a product of probabilities, one would select a threshold probability
+3 Note that 12!&#8776;479M nodes, whereas our search finds the
+optimal permutation path after exploring &lt;10K nodes. 4 As long as the limit exceeds the permutation length, a
+solution will always be found as search is depth-first.
+d approach &#8722;LRM &#8710; +LRM &#8710;
+baseline 25.39 - 26.62 - rule-based 25.93 +0.54 27.65 +1.03 multi-class 25.60 +0.21 26.10 &#8722;0.52 df-bnb 26.73 +1.34 28.09 +1.47
+baseline 25.07 - 25.92 - rule-based 26.35 +1.28 27.54 +1.62 multi-class 25.37 +0.30 26.31 +0.39 df-bnb 26.98 +1.91 28.13 +2.21
+p and calculate a bound depending on the size n of the permutation as bound 0 = p n&#183;(n&#8722;1) 2 . Examples of this would be the lower curves of Figure 4. The curve labels show the crossing score produced with each threshold, and in parenthesis the percentage of searches that fail to find a solution with a better score than bound 0 , in which case children are left in their original order. As shown, this strategy proves less effective than simply limiting the number of explored nodes, because the more frequent cases with less children remain unaffected.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We now report contrastive results in the intrinsic preordering task, as measured by the number of crossing links (Genzel, 2010; Yang et al., 2012) on the 5K held-out set.</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Without preordering, there is an average of 22.2 crossing links in English-Japanese and 20.2 in English-Korean.</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 1 shows what percentage of these links remain after applying each preordering approach to the data.</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We find that the &#8216;df-bnb&#8217; method outperforms the other approaches in both language pairs, achieving more than 10 additional percentage points reduction over the rule-based approach.</text>
+                  <doc_id>170</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Interestingly, the multi-class approach is not able to match the rule-based approach despite using additional lexical cues.</text>
+                  <doc_id>171</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We hypothesise that this is due to the sliding window heuristic, which causes a mismatch in train-test conditions: while samples are not independent of each other at test time due to window overlaps, they are considered to be so when training the classifier.</text>
+                  <doc_id>172</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4.3.1 Impact of training size and feature configuration</text>
+                  <doc_id>173</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We now report the effects of feature configuration and training data size for the English-Japanese case.</text>
+                  <doc_id>174</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We assess our &#8216;df-bnb&#8217; approach in terms of the classification accuracy of the trained logistic</text>
+                  <doc_id>175</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>features used acc (%) cs (%)</text>
+                  <doc_id>176</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>l,t,hw,lm,rm,dst,gap 82.43 51.3 l,t,hw,lm,rm,dst 82.44 51.4 l,t,hw,lm,rm 82.32 53.1 l,t,hw 82.02 55 l,t 81.07 58.4</text>
+                  <doc_id>177</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>regression model (using it to predict &#177;1 labels in the held-out set) and by the percentage of crossing alignment links reduced by preordering.</text>
+                  <doc_id>178</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Figure 3 shows the performance of the logistic regression model over different training set sizes, extracted from the training corpus as described in Section 3.</text>
+                  <doc_id>179</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We observe a constant increase in prediction accuracy, mirrored by a steady decrease in crossing score.</text>
+                  <doc_id>180</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, gains are less for more than 8M training examples.</text>
+                  <doc_id>181</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that a small variation in accuracy can produce a large variation in crossing score if two nodes are swapped which have a large number of crossing alignments.</text>
+                  <doc_id>182</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 2 shows an ablation test for various feature configurations.</text>
+                  <doc_id>183</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We start with all features, including head word and class (hw), left-most and right-most word in each node&#8217;s span (lm, rm), each node&#8217;s distance to the head (dst), and left-most and right-most word of the gap between nodes (gap).</text>
+                  <doc_id>184</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We then proceed by removing features to end with only label and tag features (l,t), as in Genzel (2010).</text>
+                  <doc_id>185</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each configuration, we generated all tag- and label- combinations of size 2.</text>
+                  <doc_id>186</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We then specified combinations between tag and label and all other features.</text>
+                  <doc_id>187</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For the lexical features we always used conjunctions of the word itself, and its class.</text>
+                  <doc_id>188</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Class information is included for all words, not just those in the top 100 vocabulary.</text>
+                  <doc_id>189</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 2 shows that lexical and distance feature groups contribute to prediction accuracy and crossing score, except for the gap features, which we omit from further experiments.</text>
+                  <doc_id>190</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4.3.2 Run time</text>
+                  <doc_id>191</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We now demonstrate the efficiency of branch-andbound search for the problem of finding the optimum permutation of n children at runtime.</text>
+                  <doc_id>192</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Even though in the worst case the search could explore all n!</text>
+                  <doc_id>193</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>permutations, making it prohibitive for Figure 4: Average number of nodes explored in branch-and-bound search by number of children.</text>
+                  <doc_id>194</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>nodes with many children, in practice this does not happen.</text>
+                  <doc_id>195</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Many low-scoring paths are discarded early by branch-and-bound search so that the optimal solution can be found quickly.</text>
+                  <doc_id>196</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The top curve in Figure 4 shows the average number of nodes explored in searches run on our validation set (5K sentences) as a function of the number of children.</text>
+                  <doc_id>197</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All instances are far from the worst case 3 .</text>
+                  <doc_id>198</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In our experiments, the time needed to conduct exact search (bound 0 = 0) was not a problem except for a few bad cases (nodes with more than 16 children), which we simply chose not to preorder; in our data, 90% of the nodes have less than 6 children, while only 0.9% have 10 children or more, so this omission does not affect performance noticeably.</text>
+                  <doc_id>199</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We verified this on our held-out set, by carrying out exhaustive searches.</text>
+                  <doc_id>200</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We found that not preordering nodes with 16 children did not worsen the crossing score.</text>
+                  <doc_id>201</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In fact, setting a harsher limit of 10 nodes would still produce a crossing score of 51.9%, compared to the best score of 51.4%.</text>
+                  <doc_id>202</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>There are various ways to speed up the search, if needed.</text>
+                  <doc_id>203</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>First, one could impose a hard limit on the number of explored nodes 4 .</text>
+                  <doc_id>204</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As shown in Figure 4, a limit of 4K would still allow exact search on average for permutations of up to 11 children, while stopping search early for more children.</text>
+                  <doc_id>205</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We tested this for limits of 1K/4K nodes and obtained crossing scores of 51.9/51.5%.</text>
+                  <doc_id>206</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Alternatively, one could define a higher initial bound; since the score of a path is a product of probabilities, one would select a threshold probability</text>
+                  <doc_id>207</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>3 Note that 12!&#8776;479M nodes, whereas our search finds the</text>
+                  <doc_id>208</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>optimal permutation path after exploring &lt;10K nodes.</text>
+                  <doc_id>209</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>4 As long as the limit exceeds the permutation length, a</text>
+                  <doc_id>210</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>solution will always be found as search is depth-first.</text>
+                  <doc_id>211</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>d approach &#8722;LRM &#8710; +LRM &#8710;</text>
+                  <doc_id>212</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>baseline 25.39 - 26.62 - rule-based 25.93 +0.54 27.65 +1.03 multi-class 25.60 +0.21 26.10 &#8722;0.52 df-bnb 26.73 +1.34 28.09 +1.47</text>
+                  <doc_id>213</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>baseline 25.07 - 25.92 - rule-based 26.35 +1.28 27.54 +1.62 multi-class 25.37 +0.30 26.31 +0.39 df-bnb 26.98 +1.91 28.13 +2.21</text>
+                  <doc_id>214</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>p and calculate a bound depending on the size n of the permutation as bound 0 = p n&#183;(n&#8722;1) 2 .</text>
+                  <doc_id>215</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Examples of this would be the lower curves of Figure 4.</text>
+                  <doc_id>216</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The curve labels show the crossing score produced with each threshold, and in parenthesis the percentage of searches that fail to find a solution with a better score than bound 0 , in which case children are left in their original order.</text>
+                  <doc_id>217</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As shown, this strategy proves less effective than simply limiting the number of explored nodes, because the more frequent cases with less children remain unaffected.</text>
+                  <doc_id>218</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>4.4 Translation performance</title>
+            <text>Table 3 reports English-Japanese translation results for two different values of the distortion limit d, i.e. the maximum number of source words that the decoder is allowed to jump during search. We draw the following conclusions. Firstly, all the preordering approaches outperform the baseline and the BLEU score gain they provide increases as the distortion limit decreases. This is further analysed in Figure 5, where we report BLEU as a function of the distortion limit in decoding for both English-Japanese and English-Korean. This reveals the power of preordering as a targeted strategy to obtain high performance at fast decoding times, since d can be drastically reduced without performance degradation which leads to huge decoding speed-ups; this is consistent with the observations in (Xu et al., 2009; Genzel, 2010; Visweswariah et al., 2011). We also find that with preordering it is possible to apply harsher pruning conditions in decoding while still maintaining the Figure 5: BLEU scores as a function of distortion limit in decoder (+LRM case). Top: English- Japanese. Bottom: English-Korean.
+exact same performance, achieving further speedups. With preordering, our system is able to decode 80 times faster while producing translation output of the same quality.
+Secondly, we observe that the preordering gains, which are correlated with the crossing score reductions of Table 1, are largely orthogonal to the gains obtained when incorporating a lexicalised reordering model (LRM). In fact, preordering gains are slightly larger with LRM, suggesting that this reordering model can be better estimated with preordered text. This echoes the notion that reordering models are particularly sensitive to alignment noise (DeNero and Uszkoreit, 2011; Neubig et al., 2012; Visweswariah et al., 2013), and that a &#8216;more monotonic&#8217; training corpus leads to better translation models.
+Finally, &#8216;df-bnb&#8217; outperforms all other preordering approaches, and achieves an extra 0.5&#8211;0.8 BLEU over the rule-based one even at zero distortion limit. This is consistent with the substantial crossing score reductions reported in Section 4.3. We argue that these improvements are due to the usage of lexical features to facilitate finergrained ordering decisions, and to our better search through the children permutation space which is not restricted by sliding windows, does
+Example 1 Example 2 Example 3
+reference
+source
+rule-based
+df-bnb
+[ 1 &#31169; &#33258; &#36523; &#12398;] my own [ 2 &#32076; &#39443; ] experience [ 3&#12395;&#12362;&#12356;&#12390;] in , [ 4&#12525;&#12540;&#12470;&#12497;&#12523;&#12463;&#12473;] Rosa Parks [ 5&#12392;&#12356;&#12358;] called [ 6 &#40658; &#20154; &#12398;] black [ 7 &#22899; &#24615; &#12399;] woman, [ 8&#12354;&#12427; &#26085; ] one day [ 9&#12392;&#12395;&#12363;&#12367;&#12392;&#12395;&#12363;&#12367;] somehow [ 10&#12496;&#12473;&#12398;] bus of [ 11 &#24460; &#37096; &#24231; &#24109; &#12395;] back seat in [ 12 &#22352; &#12427;] sit &#12424;&#12358;&#12395; [ 13 &#35328; &#12431;&#12428;&#12427;] told being [ 14&#12371;&#12392;&#12395;] of [ 15&#12358;&#12435;&#12374;&#12426;&#12377;] was fed up with &#12290;
+[ 3In] [ 1my own] [ 2experience] , a [ 6black] [ 7woman] [ 5named] [ 4Rosa Parks] [ 14was just tired] [ 8one day] [ 14of] [ 13being told] [ 12to sit] [ 11in the back] [ 10of the bus] .
+[ 1my own] [ 2experience] [ 3In] [ 14was just tired] [ 13being told] [ 10the bus of] [ 11the back in] [ 12sit to] [ 14of] [ 8one day] , [ 6a black] [ 7woman] [ 4Rosa Parks] [ 5named] .
+[ 1my own] [ 2experience] [ 3In] , [ 5named] [ 6a black] [ 7woman] [ 4Rosa Parks] [ 10the bus of] [ 11the back in] [ 12sit to] [ 13told being] [ 14of] [ 8one day] [ 14was just tired] .
+reference [ 1 &#31169; &#12383;&#12385;&#12399;] we&#12289;[ 2&#12377;&#12387;&#12363;&#12426;] quite [ 3 &#35199; &#23433; &#12364;] Xi&#8217;an [ 4 &#22909; &#12365;] like [ 5&#12395;] to [ 6&#12394;&#12426;&#12414;&#12375;&#12383;] come have &#12290;
+not depend heavily on getting the right decision in a multi-class scenario, and which incorporates regression to carry out a score-driven search.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Table 3 reports English-Japanese translation results for two different values of the distortion limit d, i.e. the maximum number of source words that the decoder is allowed to jump during search.</text>
+                  <doc_id>219</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We draw the following conclusions.</text>
+                  <doc_id>220</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Firstly, all the preordering approaches outperform the baseline and the BLEU score gain they provide increases as the distortion limit decreases.</text>
+                  <doc_id>221</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This is further analysed in Figure 5, where we report BLEU as a function of the distortion limit in decoding for both English-Japanese and English-Korean.</text>
+                  <doc_id>222</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This reveals the power of preordering as a targeted strategy to obtain high performance at fast decoding times, since d can be drastically reduced without performance degradation which leads to huge decoding speed-ups; this is consistent with the observations in (Xu et al., 2009; Genzel, 2010; Visweswariah et al., 2011).</text>
+                  <doc_id>223</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We also find that with preordering it is possible to apply harsher pruning conditions in decoding while still maintaining the Figure 5: BLEU scores as a function of distortion limit in decoder (+LRM case).</text>
+                  <doc_id>224</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Top: English- Japanese.</text>
+                  <doc_id>225</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Bottom: English-Korean.</text>
+                  <doc_id>226</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>exact same performance, achieving further speedups.</text>
+                  <doc_id>227</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>With preordering, our system is able to decode 80 times faster while producing translation output of the same quality.</text>
+                  <doc_id>228</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Secondly, we observe that the preordering gains, which are correlated with the crossing score reductions of Table 1, are largely orthogonal to the gains obtained when incorporating a lexicalised reordering model (LRM).</text>
+                  <doc_id>229</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In fact, preordering gains are slightly larger with LRM, suggesting that this reordering model can be better estimated with preordered text.</text>
+                  <doc_id>230</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This echoes the notion that reordering models are particularly sensitive to alignment noise (DeNero and Uszkoreit, 2011; Neubig et al., 2012; Visweswariah et al., 2013), and that a &#8216;more monotonic&#8217; training corpus leads to better translation models.</text>
+                  <doc_id>231</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Finally, &#8216;df-bnb&#8217; outperforms all other preordering approaches, and achieves an extra 0.5&#8211;0.8 BLEU over the rule-based one even at zero distortion limit.</text>
+                  <doc_id>232</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This is consistent with the substantial crossing score reductions reported in Section 4.3.</text>
+                  <doc_id>233</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We argue that these improvements are due to the usage of lexical features to facilitate finergrained ordering decisions, and to our better search through the children permutation space which is not restricted by sliding windows, does</text>
+                  <doc_id>234</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Example 1 Example 2 Example 3</text>
+                  <doc_id>235</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>reference</text>
+                  <doc_id>236</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>source</text>
+                  <doc_id>237</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>rule-based</text>
+                  <doc_id>238</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>df-bnb</text>
+                  <doc_id>239</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>[ 1 &#31169; &#33258; &#36523; &#12398;] my own [ 2 &#32076; &#39443; ] experience [ 3&#12395;&#12362;&#12356;&#12390;] in , [ 4&#12525;&#12540;&#12470;&#12497;&#12523;&#12463;&#12473;] Rosa Parks [ 5&#12392;&#12356;&#12358;] called [ 6 &#40658; &#20154; &#12398;] black [ 7 &#22899; &#24615; &#12399;] woman, [ 8&#12354;&#12427; &#26085; ] one day [ 9&#12392;&#12395;&#12363;&#12367;&#12392;&#12395;&#12363;&#12367;] somehow [ 10&#12496;&#12473;&#12398;] bus of [ 11 &#24460; &#37096; &#24231; &#24109; &#12395;] back seat in [ 12 &#22352; &#12427;] sit &#12424;&#12358;&#12395; [ 13 &#35328; &#12431;&#12428;&#12427;] told being [ 14&#12371;&#12392;&#12395;] of [ 15&#12358;&#12435;&#12374;&#12426;&#12377;] was fed up with &#12290;</text>
+                  <doc_id>240</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>[ 3In] [ 1my own] [ 2experience] , a [ 6black] [ 7woman] [ 5named] [ 4Rosa Parks] [ 14was just tired] [ 8one day] [ 14of] [ 13being told] [ 12to sit] [ 11in the back] [ 10of the bus] .</text>
+                  <doc_id>241</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>[ 1my own] [ 2experience] [ 3In] [ 14was just tired] [ 13being told] [ 10the bus of] [ 11the back in] [ 12sit to] [ 14of] [ 8one day] , [ 6a black] [ 7woman] [ 4Rosa Parks] [ 5named] .</text>
+                  <doc_id>242</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>[ 1my own] [ 2experience] [ 3In] , [ 5named] [ 6a black] [ 7woman] [ 4Rosa Parks] [ 10the bus of] [ 11the back in] [ 12sit to] [ 13told being] [ 14of] [ 8one day] [ 14was just tired] .</text>
+                  <doc_id>243</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>reference [ 1 &#31169; &#12383;&#12385;&#12399;] we&#12289;[ 2&#12377;&#12387;&#12363;&#12426;] quite [ 3 &#35199; &#23433; &#12364;] Xi&#8217;an [ 4 &#22909; &#12365;] like [ 5&#12395;] to [ 6&#12394;&#12426;&#12414;&#12375;&#12383;] come have &#12290;</text>
+                  <doc_id>244</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>not depend heavily on getting the right decision in a multi-class scenario, and which incorporates regression to carry out a score-driven search.</text>
+                  <doc_id>245</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>4</index>
+            <title>4.5 Analysis</title>
+            <text>Table 4 gives three English-Japanese examples to illustrate the different preordering approaches. The first, very short, example is preordered correctly by the rule-based and the df-bnb approach, as the order of the brackets matches the order of the Japanese reference. For longer sentences we see more differences between approaches, as illustrated by Example 2. In this case, both approaches succeed at moving prepositions to the back of the phrase (&#8220;my experience in&#8221;, &#8220;the bus of&#8221;). However, while the dfbnb approach correctly moves the predicate of the second clause (&#8220;was just tired&#8221;) to the back, the rule-based approach incorrectly moves the subject (&#8220;a black woman named Rosa Parks&#8221;) to this position - possibly because of the verb &#8220;named&#8221; which occurs in the phrase. This could be an indication that the df-bnb is better suited for more complicated constructions. With the exception of phrases 4 and 8, all other phrases are in the correct order in the df-bnb reordering. None of the approaches manage to reorder &#8220;a black woman named Rosa Parks&#8221; to the correct order.
+Example 3 shows that the translations into Japanese also reflect preordering quality. The original source results in &#8220;like&#8221; being translated as the main verb (which is incorrectly interpreted as &#8220;to be like, to be equal to&#8221;). The rule-based version correctly moves &#8220;have come&#8221; to the end, but fails to swap &#8220;xi&#8217;an&#8221; and &#8220;like&#8221;, resulting in &#8220;come&#8221; being interpreted as a full verb, rather than an auxiliary. Only the df-bnb version achieves almost perfect reordering, resulting in the correct word choice of &#12394;&#12427; (to get to, to become) for &#8220;have come to&#8221;. 5</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Table 4 gives three English-Japanese examples to illustrate the different preordering approaches.</text>
+                  <doc_id>246</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The first, very short, example is preordered correctly by the rule-based and the df-bnb approach, as the order of the brackets matches the order of the Japanese reference.</text>
+                  <doc_id>247</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For longer sentences we see more differences between approaches, as illustrated by Example 2.</text>
+                  <doc_id>248</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In this case, both approaches succeed at moving prepositions to the back of the phrase (&#8220;my experience in&#8221;, &#8220;the bus of&#8221;).</text>
+                  <doc_id>249</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, while the dfbnb approach correctly moves the predicate of the second clause (&#8220;was just tired&#8221;) to the back, the rule-based approach incorrectly moves the subject (&#8220;a black woman named Rosa Parks&#8221;) to this position - possibly because of the verb &#8220;named&#8221; which occurs in the phrase.</text>
+                  <doc_id>250</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>This could be an indication that the df-bnb is better suited for more complicated constructions.</text>
+                  <doc_id>251</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>With the exception of phrases 4 and 8, all other phrases are in the correct order in the df-bnb reordering.</text>
+                  <doc_id>252</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+                <sentence>
+                  <text>None of the approaches manage to reorder &#8220;a black woman named Rosa Parks&#8221; to the correct order.</text>
+                  <doc_id>253</doc_id>
+                  <sec_id>7</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Example 3 shows that the translations into Japanese also reflect preordering quality.</text>
+                  <doc_id>254</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The original source results in &#8220;like&#8221; being translated as the main verb (which is incorrectly interpreted as &#8220;to be like, to be equal to&#8221;).</text>
+                  <doc_id>255</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The rule-based version correctly moves &#8220;have come&#8221; to the end, but fails to swap &#8220;xi&#8217;an&#8221; and &#8220;like&#8221;, resulting in &#8220;come&#8221; being interpreted as a full verb, rather than an auxiliary.</text>
+                  <doc_id>256</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Only the df-bnb version achieves almost perfect reordering, resulting in the correct word choice of &#12394;&#12427; (to get to, to become) for &#8220;have come to&#8221;.</text>
+                  <doc_id>257</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>5</text>
+                  <doc_id>258</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Conclusion</title>
+        <text>We have presented a novel preordering approach that estimates a preference for swapping or not swapping pairs of children nodes in the sourceside dependency tree by training a feature-rich logistic regression model. Given the pair-wise scores, we efficiently search through the space of possible children permutations using depth-first branch-and-bound search. The approach is able to incorporate large numbers of features including lexical cues, is efficient at runtime even with a large number of children, and proves superior to other state-of-the-art preordering approaches both in terms of crossing score and translation performance. 5 This translation is still not perfect, since it uses the wrong level of politeness, an important distinction in Japanese.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We have presented a novel preordering approach that estimates a preference for swapping or not swapping pairs of children nodes in the sourceside dependency tree by training a feature-rich logistic regression model.</text>
+              <doc_id>259</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Given the pair-wise scores, we efficiently search through the space of possible children permutations using depth-first branch-and-bound search.</text>
+              <doc_id>260</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The approach is able to incorporate large numbers of features including lexical cues, is efficient at runtime even with a large number of children, and proves superior to other state-of-the-art preordering approaches both in terms of crossing score and translation performance.</text>
+              <doc_id>261</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>5 This translation is still not perfect, since it uses the wrong level of politeness, an important distinction in Japanese.</text>
+              <doc_id>262</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>3</id>
+        <source>TableSeer</source>
+        <caption>Table 3: English-Japanese BLEU scores with var- ious preordering approaches (and improvement over baseline) under two distortion limits d. Re- sults reported both excluding and including lexi- calised reordering model features (LRM).#@#@Table 4: Examples from our test data illustrating the differences between the preordering approaches.</caption>
+        <reference_text>In PAGE 7: ... 4.4 Translation performance  Table3  reports English-Japanese translation re- sults for two different values of the distortion limit d, i.e....</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>d</cell>
+              <cell>approach</cell>
+              <cell>?LRM</cell>
+              <cell>?</cell>
+              <cell>+LRM</cell>
+              <cell>?</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>None</cell>
+              <cell>baseline</cell>
+              <cell>25.39</cell>
+              <cell>-</cell>
+              <cell>26.62</cell>
+              <cell>-</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>rule-based</cell>
+              <cell>25.93</cell>
+              <cell>+0.54</cell>
+              <cell>27.65</cell>
+              <cell>+1.03</cell>
+            </row>
+            <row>
+              <cell>1</cell>
+              <cell>0</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>multi-class</cell>
+              <cell>25.60</cell>
+              <cell>+0.21</cell>
+              <cell>26.10</cell>
+              <cell>?0.52</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>df-bnb</cell>
+              <cell>26.73</cell>
+              <cell>+1.34</cell>
+              <cell>28.09</cell>
+              <cell>+1.47</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>baseline</cell>
+              <cell>25.07</cell>
+              <cell>-</cell>
+              <cell>25.92</cell>
+              <cell>-</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>rule-based</cell>
+              <cell>26.35</cell>
+              <cell>+1.28</cell>
+              <cell>27.54</cell>
+              <cell>+1.62</cell>
+            </row>
+            <row>
+              <cell>4</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>multi-class</cell>
+              <cell>25.37</cell>
+              <cell>+0.30</cell>
+              <cell>26.31</cell>
+              <cell>+0.39</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>df-bnb</cell>
+              <cell>26.98</cell>
+              <cell>+1.91</cell>
+              <cell>28.13</cell>
+              <cell>+2.21</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TableSeer</source>
+        <caption>Table 4: Examples from our test data illustrating the differences between the preordering approaches.</caption>
+        <reference_text>In PAGE 8: ... 4.5 Analysis  Table4  gives three English-Japanese examples to illustrate the different preordering approaches. The first, very short, example is preordered cor- rectly by the rule-based and the df-bnb approach, as the order of the brackets matches the order of the Japanese reference....</reference_text>
+        <page_num>8</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>reference</cell>
+              <cell>[1M !/]we [2 # J]quite [3 ! ]Xi?an [4R ]like [5+]to [6*J gt  ]comehave</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>source 3</cell>
+              <cell>[1we] [6have come] [5to] [2quite] [4like] [1xi?an] .</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>[1we] [2quite] [4like] [3xi?an] [5to] [6come have] .</cell>
+            </row>
+            <row>
+              <cell>df-bnb</cell>
+              <cell>[1we] have [2quite] [3xi?an] [4like] [5to] [6come] .</cell>
+            </row>
+            <row>
+              <cell>Example baseline</cell>
+              <cell>M !/R *J !($ ?</cell>
+            </row>
+            <row>
+              <cell>None</cell>
+              <cell>M !/ *J.H + !+  gt</cell>
+              <cell>None</cell>
+            </row>
+            <row>
+              <cell>df-bnb</cell>
+              <cell>M !/ *J ! R +*K</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Ibrahim Badr</author>
+          <author>Rabih Zbib</author>
+          <author>James Glass</author>
+        </authors>
+        <title>Syntactic Phrase Reordering for English-to-Arabic Statistical Machine Translation.</title>
+        <publication>In Proceedings of EACL,</publication>
+        <pages>86--93</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Egon Balas</author>
+          <author>Paolo Toth</author>
+        </authors>
+        <title>Branch and Bound Methods for the Traveling Salesman Problem. Carnegie-Mellon Univ.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>1983</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Michael Collins</author>
+          <author>Philipp Koehn</author>
+          <author>Ivona Kucerova</author>
+        </authors>
+        <title>Clause Restructuring for Statistical Machine Translation.</title>
+        <publication>In Proceedings of ACL,</publication>
+        <pages>531--540</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Marta R Costa-juss&#224;</author>
+          <author>Jos&#233; A R Fonollosa</author>
+        </authors>
+        <title>Statistical Machine Reordering.</title>
+        <publication>In Proceedings of EMNLP,</publication>
+        <pages>70--76</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>Josep M Crego</author>
+          <author>Jos&#233; B Mari&#241;o</author>
+        </authors>
+        <title>Integration of POStag-based Source Reordering into SMT Decoding by an Extended Search Graph.</title>
+        <publication>In Proceedings of AMTA,</publication>
+        <pages>29--36</pages>
+        <date>2006</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>John DeNero</author>
+          <author>Jakob Uszkoreit</author>
+        </authors>
+        <title>Inducing Sentence Structure from Parallel Corpora for Reordering.</title>
+        <publication>In Proceedings of EMNLP,</publication>
+        <pages>193--203</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Rong-En Fan</author>
+          <author>Kai-Wei Chang</author>
+          <author>Cho-Jui Hsieh</author>
+          <author>XiangRui Wang</author>
+          <author>Chih-Jen Lin</author>
+        </authors>
+        <title>LIBLINEAR: A Library for Large Linear Classification.</title>
+        <publication>None</publication>
+        <pages>9--1871</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Michel Galley</author>
+          <author>Christopher D Manning</author>
+        </authors>
+        <title>A Simple and Effective Hierarchical Phrase Reordering Model.</title>
+        <publication>In Proceedings of EMNLP,</publication>
+        <pages>847--855</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Dmitriy Genzel</author>
+        </authors>
+        <title>Automatically learning sourceside reordering rules for large scale machine translation.</title>
+        <publication>In Proceedings of COLING,</publication>
+        <pages>376--384</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>Jes&#250;s Gim&#233;nez</author>
+          <author>Llu&#237;s M&#224;rquez</author>
+        </authors>
+        <title>SVMTool: A general POS tagger generator based on Support Vector Machines.</title>
+        <publication>In Proceedings of LREC,</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Nizar Habash</author>
+        </authors>
+        <title>Syntactic Preprocessing for Statistical Machine Translation.</title>
+        <publication>In Proceedings of MTSummit,</publication>
+        <pages>215--222</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Gumwon Hong</author>
+          <author>Seung-Wook Lee</author>
+          <author>Hae-Chang Rim</author>
+        </authors>
+        <title>Bridging Morpho-Syntactic Gap between Source and Target Sentences for EnglishKorean Statistical Machine Translation.</title>
+        <publication>In Proceedings of ACL-IJCNLP,</publication>
+        <pages>233--236</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors>
+          <author>Hideki Isozaki</author>
+          <author>Katsuhito Sudoh</author>
+          <author>Hajime Tsukada</author>
+          <author>Kevin Duh</author>
+        </authors>
+        <title>Head Finalization: A Simple Reordering Rule for SOV Languages.</title>
+        <publication>In Proceedings of the Joint Fifth Workshop on Statistical Machine Translation and MetricsMATR,</publication>
+        <pages>244--251</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>Young-Suk Lee</author>
+          <author>Bing Zhao</author>
+          <author>Xiaoqian Luo</author>
+        </authors>
+        <title>Constituent Reordering and Syntax Models for English-to-Japanese Statistical Machine Translation.</title>
+        <publication>In Proceedings of COLING,</publication>
+        <pages>626--634</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Uri Lerner</author>
+          <author>Slav Petrov</author>
+        </authors>
+        <title>Source-Side Classifier Preordering for Machine Translation.</title>
+        <publication>In Proceedings of EMNLP,</publication>
+        <pages>None</pages>
+        <date>2013</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>Chi-Ho Li</author>
+          <author>Minghui Li</author>
+          <author>Dongdong Zhang</author>
+          <author>Mu Li</author>
+          <author>Ming Zhou</author>
+          <author>Yi Guan</author>
+        </authors>
+        <title>A Probabilistic Approach to Syntax-based Reordering for Statistical Machine Translation.</title>
+        <publication>In Proceedings of ACL,</publication>
+        <pages>720--727</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>16</id>
+        <authors>
+          <author>Graham Neubig</author>
+          <author>Taro Watanabe</author>
+          <author>Shinsuke Mori</author>
+        </authors>
+        <title>Inducing a Discriminative Parser to Optimize Machine Translation Reordering.</title>
+        <publication>In Proceedings of EMNLP-CoNLL,</publication>
+        <pages>843--853</pages>
+        <date>2012</date>
+      </reference>
+      <reference>
+        <id>17</id>
+        <authors>
+          <author>Joakim Nivre</author>
+          <author>Johan Hall</author>
+          <author>Jens Nilsson</author>
+        </authors>
+        <title>Atanas Chanev, G&#252;lsen Eryigit, Sandra K&#252;bler, Svetoslav Marinov, and Erwin Marsi.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>18</id>
+        <authors>
+          <author>Franz Josef Och</author>
+        </authors>
+        <title>An efficient method for determining bilingual word classes.</title>
+        <publication>In Proceedings of EACL,</publication>
+        <pages>71--76</pages>
+        <date>1999</date>
+      </reference>
+      <reference>
+        <id>19</id>
+        <authors>
+          <author>David L Poole</author>
+          <author>Alan K Mackworth</author>
+        </authors>
+        <title>Artificial Intelligence: Foundations of Computational Agents.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>20</id>
+        <authors>
+          <author>Ananthakrishnan Ramanathan</author>
+          <author>Hansraj Choudhary</author>
+          <author>Avishek Ghosh</author>
+          <author>Pushpak Bhattacharyya</author>
+        </authors>
+        <title>Case markers and Morphology: Addressing the crux of the fluency problem in English-Hindi SMT.</title>
+        <publication>In Proceedings of ACL-IJCNLP,</publication>
+        <pages>800--808</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>21</id>
+        <authors>
+          <author>Kay Rottmann</author>
+          <author>Stephan Vogel</author>
+        </authors>
+        <title>Word Reordering in Statistical Machine Translation with a POS-Based Distortion Model.</title>
+        <publication>In Proceedings of TMI,</publication>
+        <pages>171--180</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>22</id>
+        <authors>
+          <author>Roy Tromble</author>
+          <author>Jason Eisner</author>
+        </authors>
+        <title>Learning linear ordering problems for better translation.</title>
+        <publication>In Proceedings of EMNLP,</publication>
+        <pages>1007--1016</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>23</id>
+        <authors>
+          <author>Karthik Visweswariah</author>
+          <author>Jiri Navratil</author>
+          <author>Jeffrey Sorensen</author>
+          <author>Vijil Chenthamarakshan</author>
+          <author>Nandakishore Kambhatla</author>
+        </authors>
+        <title>Syntax based reordering with automatically derived rules for improved statistical machine translation.</title>
+        <publication>In Proceedings of COLING,</publication>
+        <pages>1119--1127</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>24</id>
+        <authors>
+          <author>Rajakrishnan Rajkumar Visweswariah</author>
+          <author>Ankur Gandhe</author>
+          <author>Ananthakrishnan Ramanathan</author>
+          <author>Jiri Navratil</author>
+        </authors>
+        <title>A word reordering model for improved machine translation.</title>
+        <publication>In Proceedings of EMNLP,</publication>
+        <pages>486--496</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>25</id>
+        <authors>
+          <author>Karthik Visweswariah</author>
+          <author>Mitesh M Khapra</author>
+          <author>Ananthakrishnan Ramanathan</author>
+        </authors>
+        <title>Cut the noise: Mutually reinforcing reordering and alignments for improved machine translation.</title>
+        <publication>In Proceedings of ACL,</publication>
+        <pages>1275--1284</pages>
+        <date>2013</date>
+      </reference>
+      <reference>
+        <id>26</id>
+        <authors>
+          <author>Chao Wang</author>
+          <author>Michael Collins</author>
+          <author>Philipp Koehn</author>
+        </authors>
+        <title>Chinese Syntactic Reordering for Statistical Machine Translation.</title>
+        <publication>In Proceedings of EMNLPCoNLL,</publication>
+        <pages>737--745</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>27</id>
+        <authors>
+          <author>Xianchao Wu</author>
+          <author>Katsuhito Sudoh</author>
+          <author>Kevin Duh</author>
+          <author>Hajime Tsukada</author>
+          <author>Masaaki Nagata</author>
+        </authors>
+        <title>Extracting Pre-ordering Rules from Predicate-Argument Structures.</title>
+        <publication>In Proceedings of IJCNLP,</publication>
+        <pages>29--37</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>28</id>
+        <authors>
+          <author>Fei Xia</author>
+          <author>Michael McCord</author>
+        </authors>
+        <title>Improving a statistical MT system with automatically learned rewrite patterns.</title>
+        <publication>In Proceedings of COLING,</publication>
+        <pages>None</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>29</id>
+        <authors>
+          <author>Peng Xu</author>
+          <author>Jaeho Kang</author>
+          <author>Michael Ringgaard</author>
+          <author>Franz Och</author>
+        </authors>
+        <title>Using a Dependency Parser to Improve SMT for Subject-Object-Verb Languages.</title>
+        <publication>In Proceedings of HTL-NAACL,</publication>
+        <pages>245--253</pages>
+        <date>2009</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Badr et al., 2009</string>
+        <sentence_id>2705</sentence_id>
+        <char_offset>167</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>1</reference_id>
+        <string>Balas and Toth, 1983</string>
+        <sentence_id>2789</sentence_id>
+        <char_offset>61</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>2</reference_id>
+        <string>Collins et al., 2005</string>
+        <sentence_id>2705</sentence_id>
+        <char_offset>90</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>3</reference_id>
+        <string>Costa-juss&#224; and Fonollosa, 2006</string>
+        <sentence_id>2710</sentence_id>
+        <char_offset>136</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>4</reference_id>
+        <string>Crego and Mari&#241;o, 2006</string>
+        <sentence_id>2717</sentence_id>
+        <char_offset>272</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>5</reference_id>
+        <string>DeNero and Uszkoreit, 2011</string>
+        <sentence_id>2712</sentence_id>
+        <char_offset>117</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>5</reference_id>
+        <string>DeNero and Uszkoreit, 2011</string>
+        <sentence_id>2913</sentence_id>
+        <char_offset>93</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>6</reference_id>
+        <string>Fan et al., 2008</string>
+        <sentence_id>2728</sentence_id>
+        <char_offset>18</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>7</reference_id>
+        <string>Galley and Manning, 2008</string>
+        <sentence_id>2829</sentence_id>
+        <char_offset>140</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>8</reference_id>
+        <string>Genzel (2010)</string>
+        <sentence_id>2810</sentence_id>
+        <char_offset>5</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>8</reference_id>
+        <string>Genzel (2010)</string>
+        <sentence_id>2838</sentence_id>
+        <char_offset>49</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>8</reference_id>
+        <string>Genzel (2010)</string>
+        <sentence_id>2867</sentence_id>
+        <char_offset>90</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>8</reference_id>
+        <string>Genzel, 2010</string>
+        <sentence_id>2717</sentence_id>
+        <char_offset>170</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>8</reference_id>
+        <string>Genzel, 2010</string>
+        <sentence_id>2718</sentence_id>
+        <char_offset>204</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>8</reference_id>
+        <string>Genzel, 2010</string>
+        <sentence_id>2760</sentence_id>
+        <char_offset>28</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>8</reference_id>
+        <string>Genzel, 2010</string>
+        <sentence_id>2834</sentence_id>
+        <char_offset>12</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>8</reference_id>
+        <string>Genzel, 2010</string>
+        <sentence_id>2849</sentence_id>
+        <char_offset>114</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>8</reference_id>
+        <string>Genzel, 2010</string>
+        <sentence_id>2905</sentence_id>
+        <char_offset>281</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>9</reference_id>
+        <string>Gim&#233;nez and M&#224;rquez, 2004</string>
+        <sentence_id>2828</sentence_id>
+        <char_offset>52</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>10</reference_id>
+        <string>Habash, 2007</string>
+        <sentence_id>2717</sentence_id>
+        <char_offset>110</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>11</reference_id>
+        <string>Hong et al., 2009</string>
+        <sentence_id>2705</sentence_id>
+        <char_offset>244</char_offset>
+      </citation>
+      <citation>
+        <id>21</id>
+        <reference_id>12</reference_id>
+        <string>Isozaki et al., 2010</string>
+        <sentence_id>2705</sentence_id>
+        <char_offset>304</char_offset>
+      </citation>
+      <citation>
+        <id>22</id>
+        <reference_id>13</reference_id>
+        <string>Lee et al., 2010</string>
+        <sentence_id>2705</sentence_id>
+        <char_offset>286</char_offset>
+      </citation>
+      <citation>
+        <id>23</id>
+        <reference_id>14</reference_id>
+        <string>Lerner and Petrov, 2013</string>
+        <sentence_id>2720</sentence_id>
+        <char_offset>152</char_offset>
+      </citation>
+      <citation>
+        <id>24</id>
+        <reference_id>14</reference_id>
+        <string>Lerner and Petrov, 2013</string>
+        <sentence_id>2725</sentence_id>
+        <char_offset>108</char_offset>
+      </citation>
+      <citation>
+        <id>25</id>
+        <reference_id>14</reference_id>
+        <string>Lerner and Petrov, 2013</string>
+        <sentence_id>2841</sentence_id>
+        <char_offset>155</char_offset>
+      </citation>
+      <citation>
+        <id>26</id>
+        <reference_id>15</reference_id>
+        <string>Li et al., 2007</string>
+        <sentence_id>2717</sentence_id>
+        <char_offset>93</char_offset>
+      </citation>
+      <citation>
+        <id>27</id>
+        <reference_id>15</reference_id>
+        <string>Li et al., 2007</string>
+        <sentence_id>2718</sentence_id>
+        <char_offset>52</char_offset>
+      </citation>
+      <citation>
+        <id>28</id>
+        <reference_id>16</reference_id>
+        <string>Neubig et al., 2012</string>
+        <sentence_id>2712</sentence_id>
+        <char_offset>145</char_offset>
+      </citation>
+      <citation>
+        <id>29</id>
+        <reference_id>16</reference_id>
+        <string>Neubig et al., 2012</string>
+        <sentence_id>2913</sentence_id>
+        <char_offset>121</char_offset>
+      </citation>
+      <citation>
+        <id>30</id>
+        <reference_id>17</reference_id>
+        <string>Nivre et al., 2007</string>
+        <sentence_id>2828</sentence_id>
+        <char_offset>120</char_offset>
+      </citation>
+      <citation>
+        <id>31</id>
+        <reference_id>18</reference_id>
+        <string>Och, 1999</string>
+        <sentence_id>2759</sentence_id>
+        <char_offset>122</char_offset>
+      </citation>
+      <citation>
+        <id>32</id>
+        <reference_id>19</reference_id>
+        <string>Poole and Mackworth, 2010</string>
+        <sentence_id>2796</sentence_id>
+        <char_offset>7</char_offset>
+      </citation>
+      <citation>
+        <id>33</id>
+        <reference_id>20</reference_id>
+        <string>Ramanathan et al., 2009</string>
+        <sentence_id>2705</sentence_id>
+        <char_offset>202</char_offset>
+      </citation>
+      <citation>
+        <id>34</id>
+        <reference_id>21</reference_id>
+        <string>Rottmann and Vogel, 2007</string>
+        <sentence_id>2717</sentence_id>
+        <char_offset>296</char_offset>
+      </citation>
+      <citation>
+        <id>35</id>
+        <reference_id>22</reference_id>
+        <string>Tromble and Eisner (2009)</string>
+        <sentence_id>2723</sentence_id>
+        <char_offset>220</char_offset>
+      </citation>
+      <citation>
+        <id>36</id>
+        <reference_id>22</reference_id>
+        <string>Tromble and Eisner, 2009</string>
+        <sentence_id>2711</sentence_id>
+        <char_offset>210</char_offset>
+      </citation>
+      <citation>
+        <id>37</id>
+        <reference_id>23</reference_id>
+        <string>Visweswariah et al., 2010</string>
+        <sentence_id>2717</sentence_id>
+        <char_offset>124</char_offset>
+      </citation>
+      <citation>
+        <id>38</id>
+        <reference_id>23</reference_id>
+        <string>Visweswariah et al., 2010</string>
+        <sentence_id>2718</sentence_id>
+        <char_offset>103</char_offset>
+      </citation>
+      <citation>
+        <id>39</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>2711</sentence_id>
+        <char_offset>272</char_offset>
+      </citation>
+      <citation>
+        <id>40</id>
+        <reference_id>24</reference_id>
+        <string>Visweswariah et al., 2011</string>
+        <sentence_id>2905</sentence_id>
+        <char_offset>295</char_offset>
+      </citation>
+      <citation>
+        <id>41</id>
+        <reference_id>25</reference_id>
+        <string>Visweswariah et al., 2013</string>
+        <sentence_id>2913</sentence_id>
+        <char_offset>142</char_offset>
+      </citation>
+      <citation>
+        <id>42</id>
+        <reference_id>26</reference_id>
+        <string>Wang et al., 2007</string>
+        <sentence_id>2705</sentence_id>
+        <char_offset>131</char_offset>
+      </citation>
+      <citation>
+        <id>43</id>
+        <reference_id>27</reference_id>
+        <string>Wu et al., 2011</string>
+        <sentence_id>2717</sentence_id>
+        <char_offset>218</char_offset>
+      </citation>
+      <citation>
+        <id>44</id>
+        <reference_id>28</reference_id>
+        <string>Xia and McCord, 2004</string>
+        <sentence_id>2705</sentence_id>
+        <char_offset>51</char_offset>
+      </citation>
+      <citation>
+        <id>45</id>
+        <reference_id>29</reference_id>
+        <string>Xu et al., 2009</string>
+        <sentence_id>2706</sentence_id>
+        <char_offset>86</char_offset>
+      </citation>
+      <citation>
+        <id>46</id>
+        <reference_id>29</reference_id>
+        <string>Xu et al., 2009</string>
+        <sentence_id>2905</sentence_id>
+        <char_offset>264</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

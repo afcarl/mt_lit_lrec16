@@ -1,0 +1,852 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Translingual Document Representations from Discriminative Projections</TITLE>
+  <AUTHORS>
+    <AUTHOR>John C Platt Kristina Toutanova</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-8970">Representing documents by vectors that are independent of language enhances machine translation and multilingual text categorization.</A-S>
+    <A-S ID="S-8971">We use discriminative training to create a projection of documents from multiple languages into a single translingual vector space.</A-S>
+    <A-S ID="S-8972">We explore two variants to create these projections: Oriented Principal Component Analysis (OPCA) and Coupled Probabilistic Latent Semantic Analysis (CPLSA).</A-S>
+    <A-S ID="S-8973">Both of these variants start with a basic model of documents (PCA and PLSA).</A-S>
+    <A-S ID="S-8974">Each model is then made discriminative by encouraging comparable document pairs to have similar vector representations.</A-S>
+    <A-S ID="S-8975">We evaluate these algorithms on two tasks: parallel document retrieval for Wikipedia and Europarl documents, and cross-lingual text classification on Reuters.</A-S>
+    <A-S ID="S-8976">The two discriminative variants, OPCA and CPLSA, significantly outperform their corresponding baselines.</A-S>
+    <A-S ID="S-8977">The largest differences in performance are observed on the task of retrieval when the documents are only comparable and not parallel.</A-S>
+    <A-S ID="S-8978">The OPCA method is shown to perform best.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-8997">Given the growth of multiple languages on the Internet, Natural Language Processing must operate on dozens of languages.</S>
+        <S ID="S-8998">It is becoming critical that computers reach high performance on the following two tasks:</S>
+      </P>
+      <P>
+        <S ID="S-8999">&#8226; Comparable and parallel document retrieval &#8212; Cross-language information retrieval and text categorization have become important with the growth of the Web (<REF ID="R-20" RPTR="36">Oard and Diekema, 1998</REF>).</S>
+        <S ID="S-9000">In addition, machine translation (MT) systems can be improved by training on sentences extracted from parallel or comparable documents mined from the Web (<REF ID="R-19" RPTR="35">Munteanu and Marcu, 2005</REF>).</S>
+        <S ID="S-9001">Comparable documents can also be used for learning word-level translation lexicons (<REF ID="R-11" RPTR="15">Fung and Yee, 1998</REF>; <REF ID="R-22" RPTR="38">Rapp, 1999</REF>).</S>
+      </P>
+      <P>
+        <S ID="S-9002">&#8226; Cross-language text categorization &#8212; Applications of text categorization, such as sentiment classification (<REF ID="R-21" RPTR="37">Pang et al., 2002</REF>), are now required to run on multiple languages.</S>
+        <S ID="S-9003">Categorization is usually trained on the language of the developer: it needs to be easily extended to other languages.</S>
+      </P>
+      <P>
+        <S ID="S-9004">There are two broad approaches to comparable document retrieval and cross-language text categorization.</S>
+        <S ID="S-9005">One approach is to translate queries or a training set from different languages into a single target language.</S>
+        <S ID="S-9006">Standard monolingual retrieval and classification algorithms can then be applied in the target language.</S>
+      </P>
+      <P>
+        <S ID="S-9007">Alternatively, a cross-language system can project a bag-of-words vector into a translingual lowerdimensional vector space.</S>
+        <S ID="S-9008">Ideally, vectors in this space represent the semantics of a document, independent of the language.</S>
+      </P>
+      <P>
+        <S ID="S-9009">The advantage of pre-translation is that MT systems tend to preserve the meaning of documents.</S>
+        <S ID="S-9010">However, MT can be very slow (more than 1 second per document), preventing its use on large training sets.</S>
+        <S ID="S-9011">When full MT is not practical, a fast word-byword translation model can be used instead, (<REF ID="R-03" RPTR="4">Ballesteros and Croft, 1996</REF>) but may be less accurate.</S>
+      </P>
+      <P>
+        <S ID="S-9012">Conversely, applying a projection into a lowdimensional space is quick.</S>
+        <S ID="S-9013">Linear projection algorithms use matrix-sparse vector multiplication, which can be easily parallelized.</S>
+        <S ID="S-9014">However, as seen in section 3, the accuracies of previous projection</S>
+      </P>
+      <P>
+        <S ID="S-9015">techniques are not as high as machine translation.</S>
+      </P>
+      <P>
+        <S ID="S-9016">This paper presents two techniques: Oriented PCA and Coupled PLSA.</S>
+        <S ID="S-9017">These techniques retain the high speed of projection, while approaching or exceeding the quality level of word glossing.</S>
+        <S ID="S-9018">We improve the quality of the projections by the use of discriminative training: we minimize the difference between comparable documents in the projected vector space.</S>
+        <S ID="S-9019">Oriented PCA minimizes the difference by modifying the eigensystem of PCA (<REF ID="R-08" RPTR="10">Diamantaras and Kung, 1996</REF>), while Coupled PLSA uses posterior regularization (<REF ID="R-13" RPTR="19">Graca et al., 2008</REF>; <REF ID="R-12" RPTR="16">Ganchev et al., 2009</REF>) on the topic assignments of the comparable documents.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>1.1 Previous work</HEADER>
+        <P>
+          <S ID="S-8979">There has been extensive work in projecting monolingual documents into a vector space.</S>
+          <S ID="S-8980">The initial algorithm for projecting documents was Latent Semantic Analysis (LSA), which modeled bag-ofword vectors as low-rank Gaussians (<REF ID="R-07" RPTR="8">Deerwester et al., 1990</REF>).</S>
+          <S ID="S-8981">Subsequent projection algorithms were based on generative models of individual terms in the documents, including Probabilistic Latent Semantic Analysis (PLSA) (<REF ID="R-16" RPTR="23">Hofmann, 1999</REF>) and Latent Dirichlet Allocation (LDA) (<REF ID="R-04" RPTR="5">Blei et al., 2003</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-8982">Work on cross-lingual projections followed a similar pattern of moving from Gaussian models to term-wise generative models.</S>
+          <S ID="S-8983">Cross-language Latent Semantic Indexing (CL-LSI) (<REF ID="R-09" RPTR="13">Dumais et al., 1997</REF>) applied LSA to concatenated comparable documents from multiple languages.</S>
+          <S ID="S-8984">Similarly, Polylingual Topic Models (PLTM) (<REF ID="R-18" RPTR="26">Mimno et al., 2009</REF>) generalized LDA to tuples of documents from multiple languages.</S>
+          <S ID="S-8985">The experiments in section 3 use CL-LSI and an algorithm similar to PLTM as benchmarks.</S>
+        </P>
+        <P>
+          <S ID="S-8986">The closest previous work to this paper is the use of Canonical Correlation Analysis (CCA) to find projections for multiple languages whose results are maximally correlated with each other (<REF ID="R-25" RPTR="41">Vinokourov et al., 2003</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-8987">PLSA-, LDA-, and CCA-based cross-lingual models have also been trained without the use of parallel or comparable documents, using only knowledge from a translation dictionary to achieve sharing of topics across languages (<REF ID="R-14" RPTR="21">Haghighi et al., 2008</REF>; <REF ID="R-17" RPTR="25">Jagarlamudi and Daum&#233;, 2010</REF>; <REF ID="R-27" RPTR="44">Zhang et al., 2010</REF>).</S>
+          <S ID="S-8988">Such work is complementary to ours and can be used to extend the models to domains lacking parallel documents.</S>
+          <S ID="S-8989">Outside of NLP, researchers have designed algorithms to find discriminative projections.</S>
+          <S ID="S-8990">We build on the Oriented Principal Component Analysis (OPCA) algorithm (<REF ID="R-08" RPTR="11">Diamantaras and Kung, 1996</REF>), which finds projections that maximize a signal-tonoise ratio (as defined by the user).</S>
+          <S ID="S-8991">OPCA has been used to create discriminative features for audio fingerprinting (<REF ID="R-06" RPTR="6">Burges et al., 2003</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>1.2 Structure of paper</HEADER>
+        <P>
+          <S ID="S-8992">This paper now presents two algorithms for translingual document projection (in section 2): OPCA and Coupled PLSA (CPLSA).</S>
+          <S ID="S-8993">To explain OPCA, we first review CL-LSI in section 2.1, then discuss the details of OPCA (section 2.2), and compare it to CCA (section 2.3).</S>
+          <S ID="S-8994">To explain CPLSA, we first introduce Joint PLSA (JPLSA), analogous to CL- LSI, in section 2.4, and then describe the details of CPLSA (section 2.5).</S>
+          <S ID="S-8995">We have evaluated these algorithms on two different tasks: comparable document retrieval (section 3.2) and cross-language text categorization (section 3.3).</S>
+          <S ID="S-8996">We discuss the findings of the evaluations and extensions to the algorithms in section 4.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Algorithms for translingual document projection</HEADER>
+      <P>
+        <S ID="S-9224"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Cross-language Latent Semantic Indexing Cross-language Latent Semantic Indexing (CL-LSI)</HEADER>
+        <P>
+          <S ID="S-9020">is Latent Semantic Analysis (LSA) applied to multiple languages.</S>
+          <S ID="S-9021">First, we review the mathematics of LSA.</S>
+          <S ID="S-9022">LSA models an n &#215; k document-term matrix D, where n is the number of documents and k is the number of terms.</S>
+          <S ID="S-9023">The model of the document-term matrix is a low-rank Gaussian.</S>
+          <S ID="S-9024">Originally, LSA was presented as performing a Singular Value Decomposition (<REF ID="R-07" RPTR="9">Deerwester et al., 1990</REF>), but here we present it as eigendecomposition, to clarify its relationship with OPCA.</S>
+          <S ID="S-9025">LSA first computes the correlation matrix between terms:</S>
+        </P>
+        <P>
+          <S ID="S-9026">and is equal to the variance of the data projected using the vector &#8407;v, normalized by the length of &#8407;v, if D has columns that are zero mean.</S>
+          <S ID="S-9027">Good projections retain a large amount of variance.</S>
+          <S ID="S-9028">LSA maximizes the Rayleigh ratio by taking its derivative against &#8407;v and setting it to zero.</S>
+          <S ID="S-9029">This yields a set of projections that are eigenvectors of C, C&#8407;v j = &#955; j &#8407;v j , (3) where &#955; j is the jth-largest eigenvalue.</S>
+          <S ID="S-9030">Each eigenvalue is also the variance of the data when projected by the corresponding eigenvector &#8407;v j .</S>
+          <S ID="S-9031">LSA simply uses top d eigenvectors as projections.</S>
+          <S ID="S-9032">LSA is very similar to Principal Components Analysis (PCA).</S>
+          <S ID="S-9033">The only difference is that the correlation matrix C is used, instead of the covariance matrix.</S>
+          <S ID="S-9034">In practice, the document-term matrix D is sparse, so the column means are close to zero, and the correlation matrix is close to the covariance matrix.</S>
+          <S ID="S-9035">There are a number of methods to form the document-term matrix D.</S>
+          <S ID="S-9036">One method that works well in practice is to compute the log(tf)-idf weighting: (<REF ID="R-10" RPTR="14">Dumais, 1990</REF>; <REF ID="R-26" RPTR="43">Wild et al., 2005</REF>) D ij = log 2 (f ij + 1) log 2 (n/d j ), (4) where f ij is the number of times term j occurs in document i, n is the total number of documents, and d j is the total number of documents that contain term j.</S>
+          <S ID="S-9037">Applying a logarthm to the term counts makes the distribution of matrix entries approach Gaussian, which makes the LSA model more valid.</S>
+          <S ID="S-9038">Cross-language LSI is an application of LSA where each row of D is formed by concatenating comparable or parallel documents in multiple languages.</S>
+          <S ID="S-9039">If a single term occurs in multiple languages, the term only has one slot in the concatenation, and the term count accumulates for all languages.</S>
+          <S ID="S-9040">Such terms could be proper nouns, such as &#8220;Smith&#8221; or &#8220;Merkel&#8221;.</S>
+          <S ID="S-9041">In general, the elements of D are computed via</S>
+        </P>
+        <P>
+          <S ID="S-9042">where fij m is the number of times term j occurs in document i in language m.</S>
+          <S ID="S-9043">Here, d j is the number of documents term j appears in, and n is the total number of documents across all languages.</S>
+          <S ID="S-9044">Because CL-LSI is simply LSA applied to concatenated documents, it models terms in document vectors jointly across languages as a single low-rank Gaussian.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Oriented Principal Component Analysis</HEADER>
+        <P>
+          <S ID="S-9045">The limitations of CL-LSI can be illustrated by considering Oriented Principal Components Analysis (OPCA), a generalization of PCA.</S>
+          <S ID="S-9046">A user of OPCA computes a signal covariance matrix S and a noise covariance matrix N. OPCA projections &#8407;v j maximize the ratio of the variance of the signal projected by &#8407;v j to the variance of the noise projected by &#8407;v j .</S>
+          <S ID="S-9047">This signal-to-noise ratio is the generalized Rayleigh quotient: (<REF ID="R-08" RPTR="12">Diamantaras and Kung, 1996</REF>)</S>
+        </P>
+        <P>
+          <S ID="S-9048">&#8407;v T S&#8407;v &#8407;v T N&#8407;v .</S>
+          <S ID="S-9049">(6)</S>
+        </P>
+        <P>
+          <S ID="S-9050">Taking the derivative of the Rayleigh quotient with respect to the projections &#8407;v and setting it to zero yields the generalized eigenproblem</S>
+        </P>
+        <P>
+          <S ID="S-9051">S&#8407;v j = &#955; j N&#8407;v j .</S>
+          <S ID="S-9052">(7)</S>
+        </P>
+        <P>
+          <S ID="S-9053">This eigenproblem has no local minima, and can be solved with commonly available parallel code.</S>
+        </P>
+        <P>
+          <S ID="S-9054">PCA is a specialization of OPCA, where the noise covariance matrix is assumed to be the identity (i.e., uncorrelated noise).</S>
+          <S ID="S-9055">PCA projections maximize the signal-to-noise ratio where the signal is the empirical covariance of the data, and the noise is spherical white noise.</S>
+          <S ID="S-9056">PCA projections are not truly appropriate for forming multilingual document projections.</S>
+          <S ID="S-9057">Instead, we want multilingual document projections to maximize the projected covariance of document vectors across all languages, while simultaneously minimizing the projected distance between comparable documents (see Figure 1).</S>
+          <S ID="S-9058">OPCA gives us a framework for finding such discriminative projections.</S>
+          <S ID="S-9059">The covariance matrix for all documents is the signal covariance in OPCA, and captures the meaning of documents across all languages.</S>
+          <S ID="S-9060">The projection of this covariance matrix should be maximized.</S>
+          <S ID="S-9061">The covariance matrix formed from differences between comparable documents is the noise</S>
+        </P>
+        <P>
+          <S ID="S-9062">where &#8407;&#181; m is the mean of each D m over its columns, and a noise covariance matrix,</S>
+        </P>
+        <P>
+          <S ID="S-9063">N = &#8721; (D m &#8722; D) T (D m &#8722; D)/n + &#947;I, (10)</S>
+        </P>
+        <P>
+          <S ID="S-9064">m</S>
+        </P>
+        <P>
+          <S ID="S-9065">where D is the mean across all languages of the document-term matrix,</S>
+        </P>
+        <P>
+          <S ID="S-9066">D = 1 &#8721; D m , (11) M</S>
+        </P>
+        <P>
+          <S ID="S-9067">m</S>
+        </P>
+        <P>
+          <S ID="S-9068">and M is the number of languages.</S>
+          <S ID="S-9069">Applying equation (7) to these matrices and taking the top generalized eigenvectors yields the projection matrix for OPCA.</S>
+          <S ID="S-9070">Note the regularization term of &#947;I in equation (10).</S>
+          <S ID="S-9071">The empirical sample of comparable documents may not cover the entire space of translation noise the system will encounter in the test set.</S>
+          <S ID="S-9072">For safety, we add a regularizer that prevents the variance of a term from getting too small.</S>
+          <S ID="S-9073">We tuned &#947; on the development sets in section 3.2: for log(tf)- idf weighted vectors, C = 0.1 works well for the data sets and dimensionalities that we tried.</S>
+          <S ID="S-9074">We use C = 0.1 for all final tests.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Canonical Correlation Analysis</HEADER>
+        <P>
+          <S ID="S-9075">Canonical Correlation Analysis (CCA) is a technique that is related to OPCA.</S>
+          <S ID="S-9076">CCA was kernelized and applied to creating cross-language document models by (<REF ID="R-25" RPTR="42">Vinokourov et al., 2003</REF>).</S>
+          <S ID="S-9077">In CCA, a linear projection is found for each language, such that the projections of the corpus from each language are maximally correlated with each other.</S>
+          <S ID="S-9078">Similar to OPCA, this linear projection can be found by finding the top generalized eigenvectors of the system Figure 1: OPCA finds a projection that maximizes the variance of all documents, while minimizing distance between comparable documents</S>
+        </P>
+        <P>
+          <S ID="S-9079">(7), where S is now a matrix of cross-correlations that the projection maximizes,</S>
+        </P>
+        <P>
+          <S ID="S-9080">S =</S>
+        </P>
+        <P>
+          <S ID="S-9081">, (12)</S>
+        </P>
+        <P>
+          <S ID="S-9082">and N is a matrix of autocorrelations that the projection minimizes, [ ]</S>
+        </P>
+        <P>
+          <S ID="S-9083">C11 + &#947;I 0</S>
+        </P>
+        <P>
+          <S ID="S-9084">N = .</S>
+          <S ID="S-9085">(13) 0 C 22 + &#947;I</S>
+        </P>
+        <P>
+          <S ID="S-9086">Here, C ij is the (cross-)covariance matrix, with dimension equal to the vocabulary size, that is computed between the document vectors for languages i and j.</S>
+          <S ID="S-9087">Analogous to OPCA, &#947; is a regularization term, set by optimizing performance on a validation set.</S>
+          <S ID="S-9088">Like OPCA, these matrices can be generalized to more than two languages.</S>
+          <S ID="S-9089">Unlike OPCA, CCA finds projections that maximize the cross-covariance between the projected vectors, instead of minimizing Euclidean distance.</S>
+          <S ID="S-9090">1</S>
+        </P>
+        <P>
+          <S ID="S-9091">By definition, CCA cannot take advantage of the information that same term occurs simultaneously in comparable documents.</S>
+          <S ID="S-9092">As shown in section 3, this</S>
+        </P>
+        <P>
+          <S ID="S-9093">1 Note that the eigenvectors have length equal to the sum of</S>
+        </P>
+        <P>
+          <S ID="S-9094">the length of the vocabularies of each language.</S>
+          <S ID="S-9095">The projections for each language are created by splitting the eigenvectors into sections, each with length equal to the vocabulary size for each language.</S>
+        </P>
+        <P>
+          <S ID="S-9096">information is useful and helps OPCA perform better then CCA.</S>
+          <S ID="S-9097">In addition, CCA encourages comparable documents to be projected to vectors that are mutually linearly predictable.</S>
+          <S ID="S-9098">This is not the same OPCA&#8217;s projected vectors that have low Euclidean distance: the latter may be preferred by algorithms that consume the projections.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.4 Cross-language Topic Models</HEADER>
+        <P>
+          <S ID="S-9099">We now turn to a baseline generative model that is analogous to CL-LSI.</S>
+          <S ID="S-9100">Our baseline joint PLSA model (JPLSA) is closely related to the poly-lingual LDA model of (<REF ID="R-18" RPTR="27">Mimno et al., 2009</REF>).</S>
+          <S ID="S-9101">The graphical model for JPLSA is shown at the top in Figure 2.</S>
+          <S ID="S-9102">We describe the model for two languages, but it is straightforward to generalize to more than two languages, as in (<REF ID="R-18" RPTR="28">Mimno et al., 2009</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-9103">&#945;</S>
+        </P>
+        <P>
+          <S ID="S-9104">&#945;</S>
+        </P>
+        <P>
+          <S ID="S-9105">&#952;</S>
+        </P>
+        <P>
+          <S ID="S-9106">&#952; 1</S>
+        </P>
+        <P>
+          <S ID="S-9107">&#952; 2</S>
+        </P>
+        <P>
+          <S ID="S-9108">z</S>
+        </P>
+        <P>
+          <S ID="S-9109">z</S>
+        </P>
+        <P>
+          <S ID="S-9110">z</S>
+        </P>
+        <P>
+          <S ID="S-9111">z</S>
+        </P>
+        <P>
+          <S ID="S-9112">w</S>
+        </P>
+        <P>
+          <S ID="S-9113">w</S>
+        </P>
+        <P>
+          <S ID="S-9114">w</S>
+        </P>
+        <P>
+          <S ID="S-9115">w</S>
+        </P>
+        <P>
+          <S ID="S-9116">The model sees documents d i as sequences of words w 1 , w 2 , .</S>
+          <S ID="S-9117">.</S>
+          <S ID="S-9118">.</S>
+          <S ID="S-9119">, w ni from a vocabulary V .</S>
+          <S ID="S-9120">There are T cross-language topics, each of which has a distribution &#966; t over words in V .</S>
+          <S ID="S-9121">In the case of models for two languages, we define the vocabulary V to contain word types from both languages.</S>
+          <S ID="S-9122">In this way, each topic is shared across languages.</S>
+        </P>
+        <P>
+          <S ID="S-9123">Each topic-specific distribution &#966; t , for t = 1 .</S>
+          <S ID="S-9124">.</S>
+          <S ID="S-9125">.</S>
+          <S ID="S-9126">T , is drawn from a symmetric Dirichlet prior with concentration parameter &#946;.</S>
+          <S ID="S-9127">Given the topicspecific word distributions, the generative process for a corpus of paired documents [d 1 i , d2 i ] in two languages L 1 and L 2 is described in the next paragraph.</S>
+          <S ID="S-9128">For each pair of documents, pick a distribution over topics &#952; i , from a symmetric Dirichlet prior with</S>
+        </P>
+        <P>
+          <S ID="S-9129">N 1</S>
+        </P>
+        <P>
+          <S ID="S-9130">N 2</S>
+        </P>
+        <P>
+          <S ID="S-9131">N 1</S>
+        </P>
+        <P>
+          <S ID="S-9132">N 2</S>
+        </P>
+        <P>
+          <S ID="S-9133">D</S>
+        </P>
+        <P>
+          <S ID="S-9134">D</S>
+        </P>
+        <P>
+          <S ID="S-9135">&#966;</S>
+        </P>
+        <P>
+          <S ID="S-9136">&#966;</S>
+        </P>
+        <P>
+          <S ID="S-9137">T</S>
+        </P>
+        <P>
+          <S ID="S-9138">T</S>
+        </P>
+        <P>
+          <S ID="S-9139">&#946;</S>
+        </P>
+        <P>
+          <S ID="S-9140">&#946;</S>
+        </P>
+        <P>
+          <S ID="S-9141">concentration parameter &#945;.</S>
+          <S ID="S-9142">Then generate the documents d 1 i and d2 i in turn.</S>
+          <S ID="S-9143">Each word token in each document is generated independently by first picking a topic z from a multinomial distribution with parameter &#952; i (MULTI(&#952; i )), and then generating the word token from the topic-specific word distribution for the chosen topic MULTI(&#966; z ).</S>
+        </P>
+        <P>
+          <S ID="S-9144">The probability of a document pair [d 1 , d 2 ] with words [w1 1, w1 2 , .</S>
+          <S ID="S-9145">.</S>
+          <S ID="S-9146">.</S>
+          <S ID="S-9147">, w1 n 1 ], [w1 2, w2 2 , .</S>
+          <S ID="S-9148">.</S>
+          <S ID="S-9149">.</S>
+          <S ID="S-9150">, w2 n 2 ], topic assignments [z1 1, .</S>
+          <S ID="S-9151">.</S>
+          <S ID="S-9152">.</S>
+          <S ID="S-9153">, z1 n 1 ], [z1 2, .</S>
+          <S ID="S-9154">.</S>
+          <S ID="S-9155">.</S>
+          <S ID="S-9156">, z2 n 2 ], and a common topic vector &#952; is given by:</S>
+        </P>
+        <P>
+          <S ID="S-9157">P (&#952;|&#945;)</S>
+        </P>
+        <P>
+          <S ID="S-9158">n 1 &#8719;</S>
+        </P>
+        <P>
+          <S ID="S-9159">j=1</S>
+        </P>
+        <P>
+          <S ID="S-9160">P (z 1 j |&#952;)P (w 1 j |&#966; z 1</S>
+        </P>
+        <P>
+          <S ID="S-9161">j</S>
+        </P>
+        <P>
+          <S ID="S-9162">)</S>
+        </P>
+        <P>
+          <S ID="S-9163">n 2 &#8719;</S>
+        </P>
+        <P>
+          <S ID="S-9164">j=1</S>
+        </P>
+        <P>
+          <S ID="S-9165">P (z 2 j |&#952;)P (w 2 j |&#966; z 2</S>
+        </P>
+        <P>
+          <S ID="S-9166">j</S>
+        </P>
+        <P>
+          <S ID="S-9167">)</S>
+        </P>
+        <P>
+          <S ID="S-9168">The difference between the JPLSA model and the poly-lingual topic model of (<REF ID="R-18" RPTR="29">Mimno et al., 2009</REF>) is that we merge the vocabularies in the two languages and learn topic-specific word distributions over these merged vocabularies, instead of having pairs of topic-specific word distributions, one for each language, like in (<REF ID="R-18" RPTR="30">Mimno et al., 2009</REF>).</S>
+          <S ID="S-9169">Thus our model is more similar to the CL-LSI model, because it can be seen as viewing a pair of documents in two languages as one bigger document containing the words in both documents.</S>
+          <S ID="S-9170">Another difference between our model and the poly-lingual LDA model of (<REF ID="R-18" RPTR="31">Mimno et al., 2009</REF>) is that we use maximum aposteriori (MAP) instead of Bayesian inference.</S>
+          <S ID="S-9171">Recently, MAP inference was shown to perform comparably to the best inference method for LDA (<REF ID="R-02" RPTR="3">Asuncion et al., 2009</REF>), if the hyper-parameters are chosen optimally for the inference method.</S>
+          <S ID="S-9172">Our initial experiments with Bayesian versus MAP inference for parallel document retrieval using JPLSA confirmed this result.</S>
+          <S ID="S-9173">In practice our baseline model outperforms polylingual LDA as mentioned in our experiments.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.5 Coupled Probabilistic Latent Semantic Analysis</HEADER>
+        <P>
+          <S ID="S-9174">The JPLSA model assumes that a pair of translated or comparable documents have a common topic distribution &#952;. JPLSA fits its parameters to optimize the probability of the data, given this assumption.</S>
+        </P>
+        <P>
+          <S ID="S-9175">For the task of comparable document retrieval, we want our topic model to assign similar topic distributions &#952; to a pair of corresponding documents.</S>
+          <S ID="S-9176">But</S>
+        </P>
+        <P>
+          <S ID="S-9177">this is not exactly what the JPLSA model is doing.</S>
+          <S ID="S-9178">Instead, it derives a common topic vector &#952; which explains the union of all tokens in the English and foreign documents, instead of making sure that the best topic assignment for the English document is close to the best topic assignment of the foreign document.</S>
+          <S ID="S-9179">This difference becomes especially apparent when corresponding documents have different lengths.</S>
+          <S ID="S-9180">In this case, the model will tend to derive a topic vector &#952; which explains the longer document best, making the sum of the two documents&#8217; loglikelihoods higher.</S>
+          <S ID="S-9181">Modeling the shorter document&#8217;s best topic carries little weight.</S>
+          <S ID="S-9182">Modeling both documents equally is what Coupled PLSA (CPLSA) is designed to do.</S>
+          <S ID="S-9183">The graphical model for CPLSA is shown at the bottom of Figure 2.</S>
+          <S ID="S-9184">In this figure, the topic vectors of a pair of documents in two languages are shown completely independent.</S>
+          <S ID="S-9185">We use the log-likelihood according to this model, but also add a regularization term, which tries to make the topic assignments of corresponding documents close.</S>
+          <S ID="S-9186">In particular, we use posterior regularization (<REF ID="R-13" RPTR="20">Graca et al., 2008</REF>; <REF ID="R-12" RPTR="17">Ganchev et al., 2009</REF>) to place linear constraints on the expectations of topic assignments to two corresponding documents.</S>
+        </P>
+        <P>
+          <S ID="S-9187">For two linked documents d 1 and d 2 , we would like our model to be such that the expected fraction of tokens in d 1 that get assigned topic t is approximately the same as the expected fraction of tokens in d 2 that get assigned the same topic t, for each topic t = 1 .</S>
+          <S ID="S-9188">.</S>
+          <S ID="S-9189">.</S>
+          <S ID="S-9190">T .</S>
+          <S ID="S-9191">This is exactly what we need to make each pair of corresponding documents close.</S>
+        </P>
+        <P>
+          <S ID="S-9192">Let z 1 and z 2 denote vectors of topic assignments to the tokens in document d 1 and d 2 , respectively.</S>
+          <S ID="S-9193">Their dimensionality is equal to the lengths of the two documents, n 1 and n 2 .</S>
+          <S ID="S-9194">We define a space of posterior distributions Q over hidden topic assignments to the tokens in d 1 and d 2 , that has the desired property: the expected fraction of each topic is approximately equal in d 1 and d 2 .</S>
+          <S ID="S-9195">We can formulate this constrained space Q as follows:</S>
+        </P>
+        <P>
+          <S ID="S-9196">Q = {q 1 (z 1 ), q 2 (z 2 )}</S>
+        </P>
+        <P>
+          <S ID="S-9197">such that &#8721; n1</S>
+        </P>
+        <P>
+          <S ID="S-9198">j=1</S>
+        </P>
+        <P>
+          <S ID="S-9199">E q1 [ 1(z1 j = t) ] &#8722; E q2 [ n 1</S>
+        </P>
+        <P>
+          <S ID="S-9200">&#8721; n2</S>
+        </P>
+        <P>
+          <S ID="S-9201">j=1 1(z2 j = t) ] &#8804; &#603; t</S>
+        </P>
+        <P>
+          <S ID="S-9202">n 2</S>
+        </P>
+        <P>
+          <S ID="S-9203">E q2 [ &#8721; n2</S>
+        </P>
+        <P>
+          <S ID="S-9204">j=1 1(z2 j = t) &#8721; n1 j=1</S>
+        </P>
+        <P>
+          <S ID="S-9205">] &#8722; E q1 [ 1(z1 j = t) ] &#8804; &#603; t n 2 n 1</S>
+        </P>
+        <P>
+          <S ID="S-9206">We then formulate an objective function that maximizes the log-likelihood of the data while simultaneously minimizing the KL-divergence between the desired distribution set Q and the posterior distribution according to the model: P (z 1 |d 1 , &#952; 1 , &#966;) and P (z 2 |d 2 , &#952; 2 , &#966;).</S>
+        </P>
+        <P>
+          <S ID="S-9207">The objective function for a single document pair is as follows:</S>
+        </P>
+        <P>
+          <S ID="S-9208">log P (d 1 |&#952; 1 , &#966;) + log P (d 2 |&#952; 2 , &#966;) &#8722;KL(Q||P (z 1 |d 1 , &#952; 1 , &#966;), P (z 2 |d 2 , &#952; 2 , &#966;)) &#8722;||&#603;||</S>
+        </P>
+        <P>
+          <S ID="S-9209">The final corpus-wide objective is summed over document-pairs, and also contains terms for the probabilities of the parameters &#952; and &#966; given the Dirichlet priors.</S>
+          <S ID="S-9210">The norm of &#603; is minimized, which makes the expected proportions of topics in two documents as close as possible.</S>
+        </P>
+        <P>
+          <S ID="S-9211">Following (<REF ID="R-12" RPTR="18">Ganchev et al., 2009</REF>), we fit the parameters by an EM-like algorithm, where for each document pair, after finding the posterior distribution of the hidden variables, we find the KLprojection of this posterior onto the constraint set, and take expected counts with respect to this projection; these expected counts are used in the M-step.</S>
+          <S ID="S-9212">The projection is found using a simple projected gradient algorithm.</S>
+          <S ID="S-9213">2</S>
+        </P>
+        <P>
+          <S ID="S-9214">For both the baseline JPLSA and the CPLSA models, we performed learning through MAP inference using EM (with a projection step for CPLSA).</S>
+          <S ID="S-9215">We did up to 500 iterations for each model, and did early stopping based on task performance on the development set.</S>
+          <S ID="S-9216">The JPLSA model required more iterations before reaching its peak accuracy, tending to require around 300 to 450 iterations for convergence.</S>
+          <S ID="S-9217">CPLSA required fewer iterations, but each iteration was slower due to the projection step.</S>
+        </P>
+        <P>
+          <S ID="S-9218">2 We initialized the models deterministically by assigning</S>
+        </P>
+        <P>
+          <S ID="S-9219">each word to exactly one topic to begin with, such that all topics have roughly the same number of words.</S>
+          <S ID="S-9220">Words were sorted by frequency and thus words of similar frequency are more likely to be assigned to the same topic.This initialization method outperformed random initialization and we use it for all models.</S>
+        </P>
+        <P>
+          <S ID="S-9221">All models use &#945; = 1.1 and &#946; = 1.01 for the values of the concentration parameters.</S>
+          <S ID="S-9222">We found that the performance of the models was not very sensitive to these values, in the region that we tested (&#945;, &#946; &#8712; [1.001, 1.1]).</S>
+          <S ID="S-9223">Higher hyper-parameter values resulted in faster convergence, but the final performance was similar across these different values.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Experimental validation</HEADER>
+      <P>
+        <S ID="S-9320">We test the proposed discriminative projections versus more established cross-language models on the two tasks described in the introduction: retrieving comparable documents from a corpus, and training a classifier in one language and using it in another.</S>
+        <S ID="S-9321">We measure accuracy on a test set, and also examine the sensitivity to dimensionality of the projection on development sets.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Speed of training and evaluation</HEADER>
+        <P>
+          <S ID="S-9225">We first test the speed of the various algorithms discussed in this paper, compared to a full machine translation system.</S>
+          <S ID="S-9226">When finding document projections, CL-LSI, OPCA, CCA, JPLSA, and CPLSA are equally fast: they perform a matrix multiplication and require O(nk) operations, where n is the number of distinct words in the documents and k is the dimensionality of the projection.</S>
+          <S ID="S-9227">3 A single CPU core can read the indexed documents into memory and take logarithms at 216K words per second.</S>
+          <S ID="S-9228">Projecting into a 2000-dimensional space operates at 41K words per second.</S>
+          <S ID="S-9229">Translating word-by-word operates at 274K words per second.</S>
+          <S ID="S-9230">In contrast, machine translation processes 50 words per second, approximately 3 orders of magnitude slower.</S>
+        </P>
+        <P>
+          <S ID="S-9231">Total training time for OPCA on 43,380 pairs of comparable documents was 90 minutes, running on an 8-core CPU for 2000 dimensions.</S>
+          <S ID="S-9232">On the same corpus, JPLSA requires 31 minutes per iteration and CPLSA requires 377 minutes per iteration.</S>
+          <S ID="S-9233">CPLSA requires a factor of five times fewer iterations: overall, it is twice as slow as JPLSA.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Retrieval of comparable documents</HEADER>
+        <P>
+          <S ID="S-9234">In comparable document retrieval, a query is a document in one language, which is compared to a cor-</S>
+        </P>
+        <P>
+          <S ID="S-9235">3 For JPLSA and CPLSA this is the case only when performing a single EM iteration at test time, which we found to perform best.</S>
+        </P>
+        <P>
+          <S ID="S-9236">pus of documents in another language.</S>
+          <S ID="S-9237">By mapping all documents into the same vector space, the comparison is a vector comparison.</S>
+          <S ID="S-9238">For our experiments with CL-LSI, OPCA, and CCA, we use cosine similarity between vectors to rank the documents.</S>
+        </P>
+        <P>
+          <S ID="S-9239">For the JPLSA and CPLSA models, we map the documents to corresponding topic vectors &#952;, and compute distance between these probability vectors.</S>
+          <S ID="S-9240">The mapping to topic vectors requires EM iterations, or folding-in (<REF ID="R-16" RPTR="24">Hofmann, 1999</REF>).</S>
+          <S ID="S-9241">We found that performing a single EM iteration resulted in best performance so we used this for all models.</S>
+          <S ID="S-9242">For computing distance we used the L1-norm of the difference, which worked a bit better than the Jensen- Shannon divergence between the topic vectors used in (<REF ID="R-18" RPTR="32">Mimno et al., 2009</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-9243">We test all algorithms on the Europarl data set of documents in English and Spanish, and a set of Wikipedia articles in English and Spanish that contain interlanguage links between them (i.e., articles that the Wikipedia community have identified as comparable across languages).</S>
+        </P>
+        <P>
+          <S ID="S-9244">For the Europarl data set, we use 52,685 documents as training, 11,933 documents as a development set, and 18,415 documents as a final test set.</S>
+          <S ID="S-9245">Documents are defined as speeches by a single speaker, as in (<REF ID="R-18" RPTR="33">Mimno et al., 2009</REF>).</S>
+          <S ID="S-9246">4 For the Wikipedia set, we use 43,380 training documents, 8,675 development documents, and 8,675 final test set documents.</S>
+        </P>
+        <P>
+          <S ID="S-9247">For both corpora, the terms are extracted by wordbreaking all documents, removing the top 50 most frequent terms and keeping the next 20,000 most frequent terms.</S>
+          <S ID="S-9248">No stemming or folding is applied.</S>
+        </P>
+        <P>
+          <S ID="S-9249">We assess performance by testing each document in English against all possible documents in Spanish, and vice versa.</S>
+          <S ID="S-9250">We measure the Top-1 accuracy (i.e., whether the true comparable is the closest in the test set), and the Mean Reciprocal Rank of the true comparable, and report the average performance over the two retrieval directions.</S>
+          <S ID="S-9251">Ties are counted as errors.</S>
+        </P>
+        <P>
+          <S ID="S-9252">We tuned the dimensionality of the projections on the development set, as shown in Figures 3 and 4.</S>
+        </P>
+        <P>
+          <S ID="S-9253">4 The training section contains documents from the years 96</S>
+        </P>
+        <P>
+          <S ID="S-9254">through 99 and the year 02; the dev section contains documents from 01, and the test section contains documents from 00 plus the first 9 months of 03.</S>
+        </P>
+        <P>
+          <S ID="S-9255">We chose the best dimension on the development set for each algorithm, and used it on the final test set.</S>
+          <S ID="S-9256">The regularization &#947; was tuned for CCA: &#947; = 10 for Europarl, and &#947; = 3 for Wikipedia.</S>
+        </P>
+        <P>
+          <S ID="S-9257">In the two figures, we evaluate the five projection methods, as well as a word-by-word translation method (denoted by WbW in the graphs).</S>
+          <S ID="S-9258">Here &#8220;word-by-word&#8221; refers to using cosine distance after applying a word-by-word translation model to the Spanish documents.</S>
+        </P>
+        <P>
+          <S ID="S-9259">The word-by-word translation model was trained on the Europarl training set, using the WDHMM model (<REF ID="R-15" RPTR="22">He, 2007</REF>), which performs similarly to IBM Model 4.</S>
+          <S ID="S-9260">The probability matrix of generating English words from Spanish words was multiplied by each document&#8217;s log(tf)-idf vector to produce a translated document vector.</S>
+          <S ID="S-9261">We found that multiplying the probability matrix to the log(tf)-idf vector was more accurate on the development set than multiplying the tf vector directly.</S>
+          <S ID="S-9262">This vector was either tested as-is, or mapped through LSA learned from the English training set of the corpus.</S>
+          <S ID="S-9263">In the figures, the dimensionality of WbW translation refers to the dimensionality of monolingual LSA.</S>
+        </P>
+        <P>
+          <S ID="S-9264">The overall ordering of the six models is different for the Europarl and Wikipedia development datasets.</S>
+          <S ID="S-9265">The discriminative models outperform the corresponding generative ones (OPCA vs CL- LSI) and (CPLSA vs JPLSA) for both datasets, and OPCA performs best overall, dominating the best fast-translation based model, as well as the other projection methods, including CCA.</S>
+        </P>
+        <P>
+          <S ID="S-9266">On Europarl, JPLSA and CPLSA outperform CL- LSI, with the best dimension or JPLSA also slightly outperforming the best setting for the word-by-word translation model, whereas on Wikipedia the PLSAbased models are significantly worse than the other models.</S>
+          <S ID="S-9267">The results on the final test set, evaluating each model using its best dimensionality setting, confirm the trends observed on the development set.</S>
+          <S ID="S-9268">The final results are shown in Tables 1 and 2.</S>
+          <S ID="S-9269">For these experiments, we use the unpaired t-test with Bonferroni correction to determine the smallest set of algorithms that have statistically significantly better accuracy than the rest.</S>
+          <S ID="S-9270">The p-value threshold for significance is chosen to be 0.05.</S>
+          <S ID="S-9271">The accuracies for these significantly superior algorithms are shown in boldface.</S>
+          <S ID="S-9272">For Wikipedia and Europarl, we include an additional baseline model,&#8220;Untranslated&#8221;: this refers to applying cosine distance to both the Spanish and English documents directly (since they share some vocabulary terms).</S>
+          <S ID="S-9273">For Wikipedia, comparable documents seem to share many common terms, so cosine distance between untranslated documents is a reasonable benchmark.</S>
+        </P>
+        <P>
+          <S ID="S-9274">From the final Europarl results we can see that the best models can learn to retrieve parallel documents from the narrow Europarl domain very well.</S>
+          <S ID="S-9275">All dimensionality reduction methods can learn from</S>
+        </P>
+        <P>
+          <S ID="S-9276">cleanly parallel data, but discriminative training can bring additional error reduction.</S>
+        </P>
+        <P>
+          <S ID="S-9277">In previously reported work, (<REF ID="R-18" RPTR="34">Mimno et al., 2009</REF>) evaluate parallel document retrieval using PLTM on Europarl speeches in English and Spanish, using training and test sets of size similar to ours.</S>
+          <S ID="S-9278">They report an accuracy of 81.2% when restricting to test documents of length at least 100 and using 50 topics.</S>
+          <S ID="S-9279">JPLSA with 50 topics obtains accuracy of 98.9% for documents of that length.</S>
+        </P>
+        <P>
+          <S ID="S-9280">The final Wikipedia results are also similar to the the development set results.</S>
+          <S ID="S-9281">The problem setting for Wikipedia is different, because corresponding documents linked in Wikipedia may have widely varying degrees of parallelism.</S>
+          <S ID="S-9282">While most linked documents share some main topics, they could cover different numbers of sub-topics at varying depths.</S>
+          <S ID="S-9283">Thus the training data of linked documents is noisy, which makes it hard for projection methods to learn.</S>
+          <S ID="S-9284">The word-by-word translation model in this setting is trained on clean, but out-of-domain parallel data (Europarl), so it has the disadvantage that it may not have a good coverage of the vocabulary; however, it is not able to make use of the Wikipedia training data since it requires sentence-aligned translations.</S>
+          <S ID="S-9285">We find it encouraging that the best projection method OPCA outperformed word-by-word translation.</S>
+          <S ID="S-9286">This means that OPCA is able to uncover topic correspondence given only comparable document pairs, and to learn well in this noisy setting.</S>
+        </P>
+        <P>
+          <S ID="S-9287">The PLSA-based models fare worse on Wikipedia document retrieval.</S>
+          <S ID="S-9288">CPLSA outperforms JPLSA more strongly, but both are worse than CL-LSI and even the Untranslated baseline.</S>
+          <S ID="S-9289">We think this is partly explained by the diverse vocabulary in the heterogenous Wikipedia collection.</S>
+          <S ID="S-9290">All other models use log(tf)-idf weighting, which automatically assigns importance weights to terms, whereas the topic models use word counts.</S>
+          <S ID="S-9291">This weighting is very useful for Wikipedia.</S>
+          <S ID="S-9292">For example, if we apply the untranslated matching using raw word counts, the MRR is 0.1024 on the test set, compared to 0.5383 for log(tf)-idf.</S>
+          <S ID="S-9293">We hypothesize that using a hierarchical topic model that automatically learns about more general and more topic-specific words would be helpful in this case.</S>
+          <S ID="S-9294">It is also possible that PLSAbased models require cleaner data to learn well.</S>
+        </P>
+        <P>
+          <S ID="S-9295">The overall conclusion is that OPCA outper-</S>
+        </P>
+        <P>
+          <S ID="S-9296">formed all other document retrieval methods we tested, including fast machine translation of documents.</S>
+          <S ID="S-9297">Additionally, both discriminative projection methods outperformed their generative counterparts.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Cross-language text classification</HEADER>
+        <P>
+          <S ID="S-9298">The second task is to train a text categorization system in one language, and test it with documents in another.</S>
+          <S ID="S-9299">To evaluate on this task, we use the Multilingual Reuters Collection, defined and provided by (<REF ID="R-00" RPTR="0">Amini et al., 2009</REF>).</S>
+          <S ID="S-9300">We test the English/Spanish language pair.</S>
+          <S ID="S-9301">The collection has news articles in English and Spanish, each of which has been translated to the other by the Portage translation system (<REF ID="R-24" RPTR="40">Ueffing et al., 2007</REF>).</S>
+          <S ID="S-9302">From the English news corpus, we take 13,131 documents as training, 1,875 documents as development, and 1,875 documents as test.</S>
+          <S ID="S-9303">We take the English training documents translated into Spanish as our comparable training data.</S>
+          <S ID="S-9304">For testing, we use the entire Spanish news corpus of 12,342 documents, ei-</S>
+        </P>
+        <P>
+          <S ID="S-9305">ther mapped with cross-lingual projection, or translated by Portage.</S>
+        </P>
+        <P>
+          <S ID="S-9306">The data set was provided by (<REF ID="R-00" RPTR="1">Amini et al., 2009</REF>) as already-processed document vectors, using BM25 weighting.</S>
+          <S ID="S-9307">Thus, we only test OPCA, CL- LSI, and related methods: JPLSA and CPLSA require modeling the term counts directly.</S>
+        </P>
+        <P>
+          <S ID="S-9308">The performance on the task is measured by classification accuracy on the six disjoint category labels defined by (<REF ID="R-00" RPTR="2">Amini et al., 2009</REF>).</S>
+          <S ID="S-9309">To introduce minimal bias due to the classifier model, we use 1- nearest neighbor on top of the cosine distance between vectors as a classifier.</S>
+          <S ID="S-9310">For all of the techniques, we treated the vocabulary in each language as completely separate, using the top 10,000 terms from each language.</S>
+          <S ID="S-9311">Note that no Spanish labeled data is provided for training any of these algorithms: only English and translated English news is labeled.</S>
+          <S ID="S-9312">The optimal dimension (and &#947; for CCA) on the development set was chosen to maximize the accuracy of English classification and translated English-to- Spanish classification.</S>
+        </P>
+        <P>
+          <S ID="S-9313">The test classification accuracy is shown in Table 3.</S>
+          <S ID="S-9314">As above, the smallest set of superior algorithms as determined by Bonferroni-corrected t- tests are shown in boldface.</S>
+          <S ID="S-9315">The results for MT and word-by-word translation use the log(tf)-idf vector directly for documents that were written in English, and use a Spanish-to-English translated vector if the document was written in Spanish.</S>
+          <S ID="S-9316">As in section 3.2, word-by-word translation multiplied each log(tf)-idf vector by the translation probability matrix trained on Europarl.</S>
+        </P>
+        <P>
+          <S ID="S-9317">The tests show that OPCA is better than CCA, CL-LSI, plain word-by-word translation, and even full translation for Spanish documents.</S>
+          <S ID="S-9318">However, if we post-process full translation by an LSI model trained on the English training set, full translation is the most accurate.</S>
+          <S ID="S-9319">If full translation is timeprohibitive, then OPCA is the best method: it is significantly better than word-by-word translation followed by LSI.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Discussion and Extensions</HEADER>
+      <P>
+        <S ID="S-9322">OPCA extends naturally to multiple languages.</S>
+        <S ID="S-9323">However, it requires memory and computation time that scales quadratically with the size of the vocabulary.</S>
+        <S ID="S-9324">As the number of languages goes up, it may become impractical to perform OPCA directly on a large vocabulary.</S>
+        <S ID="S-9325">Researchers have solved the problem of scaling OPCA by using Distortion Discriminant Analysis (DDA) (<REF ID="R-06" RPTR="7">Burges et al., 2003</REF>).</S>
+        <S ID="S-9326">DDA performs OPCA in two stages which avoids the need for solving a very large generalized eigensystem.</S>
+        <S ID="S-9327">As future work, DDA could be applied to mapping documents in many languages simultaneously.</S>
+      </P>
+      <P>
+        <S ID="S-9328">Spherical Admixture Models (<REF ID="R-23" RPTR="39">Reisinger et al., 2010</REF>) have recently been proposed that combine an LDA-like hierarchical generative model with the use of tf-idf representations.</S>
+        <S ID="S-9329">A similar model could be used for CPLSA: future work will show whether such a model can outperform OPCA.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusions</HEADER>
+      <P>
+        <S ID="S-9330">This paper presents two different methods for creating discriminative projections: OPCA and CPLSA.</S>
+        <S ID="S-9331">Both of these methods avoid the use of artificial concatenated documents.</S>
+        <S ID="S-9332">Instead, they model documents in multiple languages, with the constraint that comparable documents should map to similar locations in the projected space.</S>
+        <S ID="S-9333">When compared to other techniques, OPCA had the highest accuracy while still having a run-time that allowed scaling to large data sets.</S>
+        <S ID="S-9334">We therefore recommend the use of OPCA as a pre-processing step for large-scale comparable document retrieval or cross-language text categorization.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Massih-Reza Amini</RAUTHOR>
+      <REFTITLE>Learning from multiple partially observed views - an application to multilingual text categorization.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Arthur Asuncion</RAUTHOR>
+      <REFTITLE>On smoothing and inference for topic models.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Lisa Ballesteros</RAUTHOR>
+      <REFTITLE>Dictionary methods for cross-lingual information retrieval.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>David M Blei</RAUTHOR>
+      <REFTITLE>Latent Dirichlet allocation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Christopher J C Burges</RAUTHOR>
+      <REFTITLE>Distortion discriminant analysis for audio fingerprinting.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Scott Deerwester</RAUTHOR>
+      <REFTITLE>Indexing by latent semantic analysis.</REFTITLE>
+      <DATE>1990</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Konstantinos I Diamantaras</RAUTHOR>
+      <REFTITLE>Principal Component Neural Networks: Theory and Applications.</REFTITLE>
+      <DATE>1996</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Susan T Dumais</RAUTHOR>
+      <REFTITLE>Automatic crosslanguage retrieval using latent semantic indexing.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Susan T Dumais</RAUTHOR>
+      <REFTITLE>Enhancing performance in latent semantic indexing (LSI) retrieval.</REFTITLE>
+      <DATE>1990</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Pascale Fung</RAUTHOR>
+      <REFTITLE>An IR approach for translating new words from nonparallel, comparable texts.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Kuzman Ganchev</RAUTHOR>
+      <REFTITLE>Posterior regularization for structured latent variable models.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Joao Graca</RAUTHOR>
+      <REFTITLE>Expectation maximization and posterior constraints.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Aria Haghighi</RAUTHOR>
+      <REFTITLE>Learning bilingual lexicons from monolingual corpora.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Xiaodong He</RAUTHOR>
+      <REFTITLE>Using word-dependent transition models in HMM based word alignment for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Thomas Hofmann</RAUTHOR>
+      <REFTITLE>Probabilistic latent semantic analysis.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Jagadeesh Jagarlamudi</RAUTHOR>
+      <REFTITLE>Extracting multilingual topics from unaligned comparable corpora.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>David Mimno</RAUTHOR>
+      <REFTITLE>Polylingual topic models.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Dragos Stefan Munteanu</RAUTHOR>
+      <REFTITLE>Improving machine translation performance by exploiting non-parallel corpora.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Douglas W Oard</RAUTHOR>
+      <REFTITLE>Crosslanguage information retrieval.</REFTITLE>
+      <DATE>1998</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Bo Pang</RAUTHOR>
+      <REFTITLE>Thumbs up?: sentiment classification using machine learning techniques.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Reinhard Rapp</RAUTHOR>
+      <REFTITLE>Automatic identification of word translations from unrelated English and German corpora.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Joseph Reisinger</RAUTHOR>
+      <REFTITLE>Spherical topic models.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Nicola Ueffing</RAUTHOR>
+      <REFTITLE>NRC&#8217;s PORTAGE system for WMT</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Alexei Vinokourov</RAUTHOR>
+      <REFTITLE>Inferring a semantic representation of text via cross-language correlation analysis.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Fridolin Wild</RAUTHOR>
+      <REFTITLE>Parameters driving effectiveness of automated essay scoring with LSA.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Duo Zhang</RAUTHOR>
+      <REFTITLE>Cross-lingual latent topic extraction.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

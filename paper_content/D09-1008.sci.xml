@@ -1,0 +1,597 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Effective Use of Linguistic and Contextual Information for Statistical Machine Translation</TITLE>
+  <AUTHORS>
+    <AUTHOR>Libin Shen</AUTHOR>
+    <AUTHOR>Jinxi Xu</AUTHOR>
+    <AUTHOR>Bing Zhang</AUTHOR>
+    <AUTHOR>Spyros Matsoukas</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-4253">Current methods of using lexical features in machine translation have difficulty in scaling up to realistic MT tasks due to a prohibitively large number of parameters involved.</A-S>
+    <A-S ID="S-4254">In this paper, we propose methods of using new linguistic and contextual features that do not suffer from this problem and apply them in a state-ofthe-art hierarchical MT system.</A-S>
+    <A-S ID="S-4255">The features used in this work are non-terminal labels, non-terminal length distribution, source string context and source dependency LM scores.</A-S>
+    <A-S ID="S-4256">The effectiveness of our techniques is demonstrated by significant improvements over a strong baseline.</A-S>
+    <A-S ID="S-4257">On Arabic-to-English translation, improvements in lower-cased BLEU are 2.0 on NIST MT06 and 1.7 on MT08 newswire data on decoding output.</A-S>
+    <A-S ID="S-4258">On Chinese-to-English translation, the improvements are 1.0 on MT06 and 0.8 on MT08 newswire data.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-4317">Linguistic and context features, especially sparse lexical features, have been widely used in recent machine translation (MT) research.</S>
+        <S ID="S-4318">Unfortunately, existing methods of using such features are not ideal for large-scale, practical translation tasks.</S>
+        <S ID="S-4319">In this paper, we will propose several probabilistic models to effectively exploit linguistic and contextual information for MT decoding, and these new features do not suffer from the scalability problem.</S>
+        <S ID="S-4320">Our new models are tested on NIST MT06 and MT08 data, and they provide significant improvement over a strong baseline system.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>1.1 Previous Work</HEADER>
+        <P>
+          <S ID="S-4259">The ideas of using labels, length preference and source side context in MT decoding were explored previously.</S>
+          <S ID="S-4260">Broadly speaking, two approaches were commonly used in existing work.</S>
+        </P>
+        <P>
+          <S ID="S-4261">One is to use a stochastic gradient descent (SGD) or Perceptron like online learning algorithm to optimize the weights of these features directly for MT (<REF ID="R-20" RPTR="32">Shen et al., 2004</REF>; <REF ID="R-14" RPTR="26">Liang et al., 2006</REF>; <REF ID="R-23" RPTR="39">Tillmann and Zhang, 2006</REF>).</S>
+          <S ID="S-4262">This method is very attractive, since it opens the door to rich lexical features.</S>
+          <S ID="S-4263">However, in order to robustly optimize the feature weights, one has to use a substantially large development set, which results in significantly slower tuning.</S>
+          <S ID="S-4264">Alternatively, one needs to carefully select a development set that simulates the test set to reduce the risk of over-fitting, which however is not always realistic for practical use.</S>
+          <S ID="S-4265">A remedy is to aggressively limit the feature space, e.g. to syntactic labels or a small fraction of the bi-lingual features available, as in (Chiang et al., 2008; <REF ID="R-04" RPTR="5">Chiang et al., 2009</REF>), but that reduces the benefit of lexical features.</S>
+          <S ID="S-4266">A possible generic solution is to cluster the lexical features in some way.</S>
+          <S ID="S-4267">However, how to make it work on such a large space of bi-lingual features is still an open question.</S>
+        </P>
+        <P>
+          <S ID="S-4268">The other approach is to estimate a single score or likelihood of a translation with rich features, for example, with the maximum entropy (Max- Ent) method as in (<REF ID="R-02" RPTR="1">Carpuat and Wu, 2007</REF>; <REF ID="R-12" RPTR="19">Ittycheriah and Roukos, 2007</REF>; <REF ID="R-11" RPTR="12">He et al., 2008</REF>).</S>
+          <S ID="S-4269">This method avoids the over-fitting problem, at the expense of losing the benefit of discriminative training of rich features directly for MT.</S>
+          <S ID="S-4270">However, the feature space problem still exists in these published models.</S>
+          <S ID="S-4271">He et al. (2008) extended the WSD-like approached proposed in (<REF ID="R-02" RPTR="2">Carpuat and Wu, 2007</REF>) to hierarchical decoders.</S>
+          <S ID="S-4272">In (<REF ID="R-11" RPTR="13">He et al., 2008</REF>), lexical</S>
+        </P>
+        <P>
+          <S ID="S-4273">features were limited on each single side due to the feature space problem.</S>
+          <S ID="S-4274">In order to further reduce the complexity of MaxEnt training, they &#8220;trained a MaxEnt model for each ambiguous hierarchical LHS&#8221; (left-hand side or source side) of translation rules.</S>
+          <S ID="S-4275">Different target sides were treated as possible labels.</S>
+          <S ID="S-4276">Therefore, the sample sets of each individual MaxEnt model were very small, while the number of features could easily exceed the number of samples.</S>
+          <S ID="S-4277">Furthermore, optimizing individual MaxEnt models in this way does not lead to global maximum.</S>
+          <S ID="S-4278">In addition, MaxEnt models trained on small sets are unstable.</S>
+        </P>
+        <P>
+          <S ID="S-4279">The MaxEnt model in (<REF ID="R-12" RPTR="20">Ittycheriah and Roukos, 2007</REF>) was optimized globally, so that it could better employ the distribution of the training data.</S>
+          <S ID="S-4280">However, one has to filter the training data according to the test data to get competitive performance with this model 1 .</S>
+          <S ID="S-4281">In addition, the filtering method causes some practical issues.</S>
+          <S ID="S-4282">First, such methods are not suitable for real MT tasks, especially for applications with streamed input, since the model has to be retrained with each new input sentence or document and training is slow.</S>
+          <S ID="S-4283">Furthermore, the model is ill-posed.</S>
+          <S ID="S-4284">The translation of a source sentence depends on other source sentences in the same batch with which the MaxEnt model is trained.</S>
+          <S ID="S-4285">If we add one more sentence to the batch, translations of other sentences may become different due to the change of the MaxEnt model.</S>
+          <S ID="S-4286">To sum up, the existing models of employing rich bi-lingual lexical information in MT are imperfect.</S>
+          <S ID="S-4287">Many of them are not ideal for practical translation tasks.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>1.2 Our Approach</HEADER>
+        <P>
+          <S ID="S-4288">As for our approach, we mainly use simple probabilistic models, i.e. Gaussian and n-gram models, which are more robust and suitable for large-scale training of real data, as manifested in state-of-theart systems of speech recognition.</S>
+          <S ID="S-4289">The unique contribution of our work is to design effective and efficient statistical models to capture useful linguistic and context information for MT decoding.</S>
+          <S ID="S-4290">Feature functions defined in this way are robust and ideal for practical translation tasks.</S>
+          <S ID="S-4291">1 According to footnote 2 of (<REF ID="R-12" RPTR="21">Ittycheriah and Roukos, 2007</REF>), test set adaptation by test set sampling of the training corpus showed an advantage of more than 2 BLEU points over a general system trained on all data.</S>
+        </P>
+        <P>
+          <S ID="S-4292">In this paper, we will introduce four new linguistic and contextual feature functions.</S>
+          <S ID="S-4293">Here, we first provide a high-level description of these features.</S>
+          <S ID="S-4294">Details of the features are discussed in Section 2.</S>
+          <S ID="S-4295">The first feature is based on non-terminal labels, i.e. POS tags of the head words of target nonterminals in transfer rules.</S>
+          <S ID="S-4296">This feature reduces the ambiguity of translation rules.</S>
+          <S ID="S-4297">The other benefit is that POS tags help to weed out bad target side tree structures, as an enhancement to the target dependency language model.</S>
+          <S ID="S-4298">The second feature is based on the length distribution of non-terminals.</S>
+          <S ID="S-4299">In English as well as in other languages, the same deep structure can be represented in different syntactic structures depending on the complexity of its constituents.</S>
+          <S ID="S-4300">We model such preferences by associating each nonterminal of a transfer rule with a probability distribution over its length.</S>
+          <S ID="S-4301">Similar ideas were explored in (<REF ID="R-11" RPTR="14">He et al., 2008</REF>).</S>
+          <S ID="S-4302">However their length features only provided insignificant improvement of 0.1 BLEU point.</S>
+          <S ID="S-4303">A crucial difference of our approach is how the length preference is modeled.</S>
+          <S ID="S-4304">We approximate the length distribution of non-terminals with a smoothed Gaussian, which is more robust and gives rise to much larger improvement consistently.</S>
+          <S ID="S-4305">The third feature utilizes source side context information, i.e. the neighboring words of an input span, to influence the selection of the target translation for a span.</S>
+          <S ID="S-4306">While the use of context information has been explored in MT, e.g. (<REF ID="R-02" RPTR="3">Carpuat and Wu, 2007</REF>) and (<REF ID="R-11" RPTR="15">He et al., 2008</REF>), the specific technique we used by means of a context language model is rather different.</S>
+          <S ID="S-4307">Our model is trained on the whole training data, and it is not limited by the constraint of MaxEnt training.</S>
+          <S ID="S-4308">The fourth feature exploits structural information on the source side.</S>
+          <S ID="S-4309">Specifically, the decoder simultaneously generates both the source and target side dependency trees, and employs two dependency LMs, one for the source and the other for the target, for scoring translation hypotheses.</S>
+          <S ID="S-4310">Our intuition is that the likelihood of source structures provides another piece of evidence about the plausibility of a translation hypothesis and as such would help weed out bad ones.</S>
+        </P>
+        <P>
+          <S ID="S-4311">We take BBN&#8217;s HierDec, a string-to-dependency decoder as described in (<REF ID="R-21" RPTR="33">Shen et al., 2008</REF>), as our baseline for the following two reasons:</S>
+        </P>
+        <P>
+          <S ID="S-4312">to incorporate the features proposed in this paper.</S>
+          <S ID="S-4313">The use of source dependency structures is a natural extension of the stringto-tree model to a tree-to-tree model.</S>
+          <S ID="S-4314">To ensure the generality of our results, we tested the features on two rather different language pairs, Arabic-to-English and Chinese-to-English, using two metrics, IBM BLEU (<REF ID="R-17" RPTR="29">Papineni et al., 2001</REF>) and TER (<REF ID="R-22" RPTR="38">Snover et al., 2006</REF>).</S>
+          <S ID="S-4315">Our experiments show that each of the first three features: nonterminal labels, length distribution and source side context, improves MT performance.</S>
+          <S ID="S-4316">Surprisingly, the source dependency feature does not produce an improvement.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Linguistic and Context Features 2.1 Non-terminal Labels</HEADER>
+      <P>
+        <S ID="S-4440"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Non-terminal Labels</HEADER>
+        <P>
+          <S ID="S-4321">In the original string-to-dependency model (<REF ID="R-21" RPTR="34">Shen et al., 2008</REF>), a translation rule is composed of a string of words and non-terminals on the source side and a well-formed dependency structure on the target side.</S>
+          <S ID="S-4322">A well-formed dependency structure could be either a single-rooted dependency tree or a set of sibling trees.</S>
+          <S ID="S-4323">As in the Hiero system (<REF ID="R-06" RPTR="7">Chiang, 2007</REF>), there is only one non-terminal X in the string-to-dependency model.</S>
+          <S ID="S-4324">Any sub dependency structure can be used to replace a nonterminal in a rule.</S>
+        </P>
+        <P>
+          <S ID="S-4325">For example, we have a source sentence in Chinese as follows.</S>
+        </P>
+        <P>
+          <S ID="S-4326">&#8226; jiantao zhuyao baohan liang fangmian</S>
+        </P>
+        <P>
+          <S ID="S-4327">The literal translation for individual words is</S>
+        </P>
+        <P>
+          <S ID="S-4328">&#8226; &#8217;review&#8217; &#8217;mainly&#8217; &#8217;to consist of&#8217; &#8217;two&#8217; &#8217;part&#8217;</S>
+        </P>
+        <P>
+          <S ID="S-4329">The reference translation is</S>
+        </P>
+        <P>
+          <S ID="S-4330">&#8226; the review mainly consists of two parts</S>
+        </P>
+        <P>
+          <S ID="S-4331">A single source word can be translated into many English words.</S>
+          <S ID="S-4332">For example, jiantao can be translated into a review, the review, reviews, the reviews, reviewing, reviewed, etc. Suppose we have source-string-to-target-dependency translation rules as shown in Figure 1.</S>
+          <S ID="S-4333">Since there is no constraint on substitution, any translation for jiantao could replace the X-1 slot.</S>
+        </P>
+        <P>
+          <S ID="S-4334">One way to alleviate this problem is to limit the search space by using a label system.</S>
+          <S ID="S-4335">We could assign a label to each non-terminal on the target side of the rules.</S>
+          <S ID="S-4336">Furthermore, we could assign a label to the whole target dependency structure, as shown in Figure 2.</S>
+          <S ID="S-4337">In decoding, each target dependency sub-structure would be associated with a label.</S>
+          <S ID="S-4338">Whenever substitution happens, we would check whether the label of the sub-structure and the label of the slot are the same.</S>
+          <S ID="S-4339">Substitutions with unmatched labels would be prohibited.</S>
+        </P>
+        <P>
+          <S ID="S-4340">In practice, we use a soft constraint by penalizing substitutions with unmatched labels.</S>
+          <S ID="S-4341">We introduce a new feature: the number of times substitutions with unmatched labels appear in the derivation of a translation hypothesis.</S>
+        </P>
+        <P>
+          <S ID="S-4342">Obviously, to implement this feature we need to associate a label with each non-terminal in the target side of a translation rule.</S>
+          <S ID="S-4343">The labels are generated during rule extraction.</S>
+          <S ID="S-4344">When we create a rule from a training example, we replace a subtree or dependency structure with a non-terminal and associate it with the POS tag of the head word if the non-terminal corresponds to a single-rooted tree on the target side.</S>
+          <S ID="S-4345">Otherwise, it is assigned the generic label X.</S>
+          <S ID="S-4346">(In decoding, all substitutions of X are considered unmatched ones and incur a penalty.</S>
+          <S ID="S-4347">)</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Length Distribution</HEADER>
+        <P>
+          <S ID="S-4348">In English, the length of a phrase may determine the syntactic structure of a sentence.</S>
+          <S ID="S-4349">For example, possessive relations can be represented either as &#8220;A&#8217;s B&#8221; or &#8220;B of A&#8221;.</S>
+          <S ID="S-4350">The former is preferred if A is a short phrase (e.g. &#8220;the boy&#8217;s mother&#8221;) while the latter is preferred if A is a complex structure (e.g. &#8220;the mother of the boy who is sick&#8221;).</S>
+        </P>
+        <P>
+          <S ID="S-4351">Our solution is to build a model of length preference for each non-terminal in each translation rule.</S>
+          <S ID="S-4352">To address data sparseness, we assume the length distribution of each non-terminal in a transfer rule is a Gaussian, whose mean and variance can be estimated from the training data.</S>
+          <S ID="S-4353">In rule extrac-</S>
+        </P>
+        <P>
+          <S ID="S-4354">tion, each time a translation rule is generated from a training example, we can record the length of the source span corresponding to a non-terminal.</S>
+          <S ID="S-4355">In the end, we have a frequency histogram for each non-terminal in each translation rule.</S>
+          <S ID="S-4356">From the histogram, a Gaussian distribution can be easily computed.</S>
+        </P>
+        <P>
+          <S ID="S-4357">In practice, we do not need to collect the frequency histogram.</S>
+          <S ID="S-4358">Since all we need to know are the mean and the variance, it is sufficient to collect the sum of the length and the sum of squared length.</S>
+        </P>
+        <P>
+          <S ID="S-4359">Let r be a translation rule that occurs N r times in training.</S>
+          <S ID="S-4360">Let x be a specific non-terminal in that rule.</S>
+          <S ID="S-4361">Let l(r, x, i) denote the length of the source span corresponding to non-terminal x in the i-th occurrence of rule r in training.</S>
+          <S ID="S-4362">Then, we can compute the following quantities.</S>
+        </P>
+        <P>
+          <S ID="S-4363">m r,x = 1 &#8721;N r l(r, x, i) (1) N r</S>
+        </P>
+        <P>
+          <S ID="S-4364">i=1</S>
+        </P>
+        <P>
+          <S ID="S-4365">s r,x = 1 &#8721;N r l(r, x, i) 2 , (2) N r</S>
+        </P>
+        <P>
+          <S ID="S-4366">i=1</S>
+        </P>
+        <P>
+          <S ID="S-4367">which can be subsequently used to estimate the mean &#181; r,x and variance &#963;r,x 2 of x&#8217;s length distribution in rule r as follows.</S>
+        </P>
+        <P>
+          <S ID="S-4368">&#181; r,x = m r,x (3)</S>
+        </P>
+        <P>
+          <S ID="S-4369">&#963; 2 r,x = s r,x &#8722; m 2 r,x (4)</S>
+        </P>
+        <P>
+          <S ID="S-4370">Since many of the translation rules have few occurrences in training, smoothing of the above estimates is necessary.</S>
+          <S ID="S-4371">A common smoothing method is based on maximum a posteriori (MAP) estimation as in (<REF ID="R-09" RPTR="10">Gauvain and Lee, 1994</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-4372">&#710;m r,x =</S>
+        </P>
+        <P>
+          <S ID="S-4373">&#349; r,x =</S>
+        </P>
+        <P>
+          <S ID="S-4374">N r N r + &#964; m r,x + &#964; N r + &#964; &#732;m r,x</S>
+        </P>
+        <P>
+          <S ID="S-4375">N r N r + &#964; s r,x + &#964; N r + &#964; &#732;s r,x,</S>
+        </P>
+        <P>
+          <S ID="S-4376">where &#710; stands for an MAP distribution and &#732; represents a prior distribution.</S>
+          <S ID="S-4377">&#732;m r,x and &#732;s r,x can be obtained from a prior Gaussian distribution N (&#732;&#181; r,x , &#732;&#963; r,x ) via equations (3) and (4), and &#964; is a weight of smoothing.</S>
+        </P>
+        <P>
+          <S ID="S-4378">There are many ways to approximate the prior distribution.</S>
+          <S ID="S-4379">For example, we can have one prior for all the non-terminals or one for individual nonterminal type.</S>
+          <S ID="S-4380">In practice, we assume &#732;&#181; r,x = &#181; r,x , and approximate &#732;&#963; r,x as (&#963;r,x 2 + s r,x) 1 2 .</S>
+        </P>
+        <P>
+          <S ID="S-4381">In this way, we do not change the mean, but relax the variance with s r,x .</S>
+          <S ID="S-4382">We tried different smoothing methods, but the performance did not change much, therefore we kept this simplest setup.</S>
+          <S ID="S-4383">We also tried the Poisson distribution, and the performance is similar to Gaussian distribution, which is about 0.1 point lower in BLEU.</S>
+        </P>
+        <P>
+          <S ID="S-4384">When a rule r is applied during decoding, we compute a penalty for each non-terminal x in r according to</S>
+        </P>
+        <P>
+          <S ID="S-4385">P (l | r, x) =</S>
+        </P>
+        <P>
+          <S ID="S-4386">1 &#8730; e &#8722; (l&#8722;&#181;r,x) 2</S>
+        </P>
+        <P>
+          <S ID="S-4387">2&#963;r,x 2 ,</S>
+        </P>
+        <P>
+          <S ID="S-4388">&#963; r,x 2&#960;</S>
+        </P>
+        <P>
+          <S ID="S-4389">where l is length of source span corresponding to x.</S>
+          <S ID="S-4390">Our method to address the problem of length bias in rule selection is very different from the maximum entropy method used in existing studies, e.g. (<REF ID="R-11" RPTR="16">He et al., 2008</REF>).</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.3 Context Language Model</HEADER>
+        <P>
+          <S ID="S-4391">In the baseline string-to-dependency system, the probability a translation rule is selected in decoding does not depend on the sentence context.</S>
+          <S ID="S-4392">In reality, translation is highly context dependent.</S>
+          <S ID="S-4393">To address this defect, we introduce a new feature, called context language model.</S>
+          <S ID="S-4394">The motivation of this feature is to exploit surrounding words to influence the selection of the desired transfer rule for a given input span.</S>
+        </P>
+        <P>
+          <S ID="S-4395">To illustrate the problem, we use the same example mentioned in Section 2.1.</S>
+          <S ID="S-4396">Suppose the source span for rule selection is zhuyao baohan, whose literal translation is mainly and to consist of.</S>
+          <S ID="S-4397">There are many candidate translations for this phrase, for example, mainly consist of, mainly consists of, mainly including, mainly includes, etc.</S>
+          <S ID="S-4398">The surrounding words can help to decide which translation is more appropriate for zhuyao baohan.</S>
+          <S ID="S-4399">We compare the following two context-based probabilities:</S>
+        </P>
+        <P>
+          <S ID="S-4400">&#8226; P ( jiantao | mainly consist )</S>
+        </P>
+        <P>
+          <S ID="S-4401">&#8226; P ( jiantao | mainly consists )</S>
+        </P>
+        <P>
+          <S ID="S-4402">Here, jiantao is the source word preceding the source span zhuyao baohan.</S>
+          <S ID="S-4403">In the training data, jiantao is usually translated into the review, third-person singular, then the probability P ( jiantao | mainly consists ) will be higher than P ( jiantao | mainly consist ), since we have seen more context events like the former in the training data.</S>
+        </P>
+        <P>
+          <S ID="S-4404">Now we introduce context LM formally.</S>
+          <S ID="S-4405">Let the source words be f 1 f 2 ..f i ..f j ..f n .</S>
+          <S ID="S-4406">Suppose source sub-string f i ..f j is translated into e p ..e q .</S>
+          <S ID="S-4407">We can define tri-gram probabilities on the left and right sides of the source span:</S>
+        </P>
+        <P>
+          <S ID="S-4408">&#8226; left : P L (f i&#8722;1 |e p , e p+1 )</S>
+        </P>
+        <P>
+          <S ID="S-4409">&#8226; right : P R (f j+1 |e q , e q&#8722;1 )</S>
+        </P>
+        <P>
+          <S ID="S-4410">In our implementation, the left and right context LMs are estimated from the training data as part of the rule extraction procedure.</S>
+          <S ID="S-4411">When we exact a rule, we collect two 3-gram events, one for the left side and the other for the right side.</S>
+          <S ID="S-4412">In decoding, whenever a partial hypothesis is generated, we calculate the context LM scores based on the leftmost two words and the rightmost two words of the hypothesis as well as the source context.</S>
+          <S ID="S-4413">The product of the left and right context LM scores is used as a new feature in the scoring function.</S>
+          <S ID="S-4414">Please note that our approach is very different from other approaches to context dependent rule selection such as (<REF ID="R-12" RPTR="22">Ittycheriah and Roukos, 2007</REF>) and (<REF ID="R-11" RPTR="17">He et al., 2008</REF>).</S>
+          <S ID="S-4415">Instead of using a large number of fine grained features with weights optimized using the maximum entropy method, we treat context dependency as an ngram LM problem, and it is smoothed with Witten-Bell discounting.</S>
+          <S ID="S-4416">The estimation of the context LMs is very efficient and robust.</S>
+          <S ID="S-4417">The benefit is two fold.</S>
+          <S ID="S-4418">The estimation of the context LMs is very efficient.</S>
+          <S ID="S-4419">It adds only one new weight to the scoring function.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.4 Source Dependency Language Model</HEADER>
+        <P>
+          <S ID="S-4420">The context LM proposed in the previous section only employs source words immediately before and after the current source span in decoding.</S>
+          <S ID="S-4421">To exploit more source context, we use a source side dependency language model as another feature.</S>
+          <S ID="S-4422">The motivation is to take advantage of the long distance dependency relations between source words in scoring a translation theory.</S>
+        </P>
+        <P>
+          <S ID="S-4423">We extended string-to-dependency rules in the baseline system to dependency-to-dependency rules.</S>
+          <S ID="S-4424">In each dependency-to-dependency rule, we keep record of the source string as well as the source dependency structure.</S>
+          <S ID="S-4425">Figure 3 shows examples of dependency-to-dependency rules.</S>
+          <S ID="S-4426">We extended the string-to-dependency decoding algorithm in the baseline to accommodate dependency-to-dependency theories.</S>
+          <S ID="S-4427">In decoding, we build both the source and the target dependency structures simultaneously in chart parsing over the source string.</S>
+          <S ID="S-4428">Thus, we can compute the source dependency LM score in the same way we compute the target side score, using a procedure described in (<REF ID="R-21" RPTR="35">Shen et al., 2008</REF>).</S>
+          <S ID="S-4429">We introduce two new features for the source side dependency LM as follows, in a way similar to the target side.</S>
+        </P>
+        <P>
+          <S ID="S-4430">&#8226; Source dependency LM score</S>
+        </P>
+        <P>
+          <S ID="S-4431">&#8226; Discount on ill-formed source dependency structures</S>
+        </P>
+        <P>
+          <S ID="S-4432">The source dependency LM is trained on the source side of the bi-lingual training data with Witten-Bell smoothing.</S>
+          <S ID="S-4433">The source dependency LM score represents the likelihood of the source</S>
+        </P>
+        <P>
+          <S ID="S-4434">dependency tree generated by the decoder.</S>
+          <S ID="S-4435">The source dependency tree with the highest score is the one that is most likely to be generated by the dependency model that created the source side of the training data.</S>
+        </P>
+        <P>
+          <S ID="S-4436">Source dependency trees are composed of fragments embedded in the translation rules.</S>
+          <S ID="S-4437">Therefore, a source dependency LM score can be viewed as a measure whether the translation rules are put together in a way similar to the training data.</S>
+          <S ID="S-4438">Therefore, a source dependency LM score serves as a feature to represent structural context information that is capable of modeling longdistance relations.</S>
+        </P>
+        <P>
+          <S ID="S-4439">However, unlike source context LMs, the structural context information is used only when two partial dependency structures are combined, while source context LMs work as a look-ahead feature.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Experiments</HEADER>
+      <P>
+        <S ID="S-4441">We designed our experiments to show the impact of each feature separately as well as their cumulative impact:</S>
+      </P>
+      <P>
+        <S ID="S-4442">&#8226; BASE: baseline string-to-dependency system</S>
+      </P>
+      <P>
+        <S ID="S-4443">&#8226; SLM: baseline + source dependency LM</S>
+      </P>
+      <P>
+        <S ID="S-4444">&#8226; CLM: baseline + context LM</S>
+      </P>
+      <P>
+        <S ID="S-4445">&#8226; LEN: baseline + length distribution</S>
+      </P>
+      <P>
+        <S ID="S-4446">&#8226; LBL: baseline + syntactic labels</S>
+      </P>
+      <P>
+        <S ID="S-4447">&#8226; LBL+LEN: baseline + syntactic labels + length distribution</S>
+      </P>
+      <P>
+        <S ID="S-4448">&#8226; LBL+LEN+CLM: baseline + syntactic labels + length distribution + context LM</S>
+      </P>
+      <P>
+        <S ID="S-4449">All the models were optimized on lower-cased IBM BLEU with Powell&#8217;s method (<REF ID="R-19" RPTR="31">Powell, 1964</REF>; <REF ID="R-00" RPTR="0">Brent, 1973</REF>) on n-best translations (<REF ID="R-16" RPTR="28">Ostendorf et al., 1991</REF>), but evaluated on both IBM BLEU and</S>
+      </P>
+      <P>
+        <S ID="S-4450">To compute the source dependency LM for Chinese-to-English MT, we parsed the Chinese side of the Chinese-to-English parallel data.</S>
+        <S ID="S-4451">Due to the lack of a good Arabic parser compatible with the Sakhr tokenization that we used on the source side, we did not test the source dependency LM for Arabic-to-English MT.</S>
+      </P>
+      <P>
+        <S ID="S-4452">When extracting rules with source dependency structures, we applied the same well-formedness constraint on the source side as we did on the target side, using a procedure described by (<REF ID="R-21" RPTR="36">Shen et al., 2008</REF>).</S>
+        <S ID="S-4453">Some candidate rules were thrown away due to the source side constraint.</S>
+        <S ID="S-4454">On the</S>
+      </P>
+      <P>
+        <S ID="S-4455">other hand, one string-to-dependency rule may split into several dependency-to-dependency rules due to different source dependency structures.</S>
+        <S ID="S-4456">The size of the dependency-to-dependency rule set is slightly smaller than the size of the string-todependency rule set.</S>
+      </P>
+      <P>
+        <S ID="S-4457">Tables 1 and 2 show the BLEU and TER percentage scores on MT06 and MT08 for Arabicto-English and Chinese-to-English translation respectively.</S>
+        <S ID="S-4458">The context LM feature, the length feature and the syntax label feature all produce a small improvement for most of the conditions.</S>
+        <S ID="S-4459">When we combined the three features, we observed significant improvements over the baseline.</S>
+        <S ID="S-4460">For Arabic-to-English MT, the LBL+LEN+CLM system improved lower-cased BLEU by 2.0 on MT06 and 1.7 on MT08 on decoding output.</S>
+        <S ID="S-4461">For Chinese-to-English MT, the improvements in lower-cased BLEU were 1.0 on MT06 and 0.8 on MT08.</S>
+        <S ID="S-4462">After re-scoring, the improvements became smaller, but still noticeable, ranging from 0.7 to 1.4.</S>
+        <S ID="S-4463">TER scores were also improved noticeably for all conditions, suggesting there was no metric specific over-tuning.</S>
+      </P>
+      <P>
+        <S ID="S-4464">Surprisingly, source dependency LM did not provide any improvement over the baseline.</S>
+        <S ID="S-4465">There are two possible reasons for this.</S>
+        <S ID="S-4466">One is that the source and target parse trees were generated by two stand-alone parsers, which may cause incompatible structures on the source and target sides.</S>
+        <S ID="S-4467">By applying the well-formed constraints on both sides, a lot of useful transfer rules are discarded.</S>
+        <S ID="S-4468">A bi-lingual parser, trained on parallel treebanks recently made available to the NLP community, may overcome this problem.</S>
+        <S ID="S-4469">The other is that the search space of dependency-todependency decoding is much larger, since we need to add source dependency information into the chart parsing states.</S>
+        <S ID="S-4470">We will explore techniques to address these problems in the future.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Discussion</HEADER>
+      <P>
+        <S ID="S-4471">Linguistic information has been widely used in SMT.</S>
+        <S ID="S-4472">For example, in (<REF ID="R-26" RPTR="41">Wang et al., 2007</REF>), syntactic structures were employed to reorder the source language as a pre-processing step for phrase-based decoding.</S>
+        <S ID="S-4473">In (<REF ID="R-13" RPTR="25">Koehn and Hoang, 2007</REF>), shallow syntactic analysis such as POS tagging and morphological analysis were incorporated in a phrasal decoder.</S>
+      </P>
+      <P>
+        <S ID="S-4474">In ISI&#8217;s syntax-based system (<REF ID="R-08" RPTR="9">Galley et al., 2006</REF>) and CMU&#8217;s Hiero extension (<REF ID="R-24" RPTR="40">Venugopal et al., 2007</REF>), non-terminals in translation rules have labels, which must be respected by substitutions during decoding.</S>
+        <S ID="S-4475">In (<REF ID="R-18" RPTR="30">Post and Gildea, 2008</REF>; <REF ID="R-21" RPTR="37">Shen et al., 2008</REF>), target trees were employed to improve the scoring of translation theories.</S>
+        <S ID="S-4476"><REF ID="R-15" RPTR="27">Marton and Resnik (2008)</REF> introduced features defined on constituent labels to improve the Hiero system (<REF ID="R-05" RPTR="6">Chiang, 2005</REF>).</S>
+        <S ID="S-4477">However, due to the limitation of MER training, only part of the feature space could used in the system.</S>
+        <S ID="S-4478">This problem was fixed by</S>
+      </P>
+      <P>
+        <S ID="S-4479">Chiang et al. (2008), which used an online learning method (<REF ID="R-07" RPTR="8">Crammer and Singer, 2003</REF>) to handle a large set of features.</S>
+      </P>
+      <P>
+        <S ID="S-4480">Most SMT systems assume that translation rules can be applied without paying attention to the sentence context.</S>
+        <S ID="S-4481">A few studies (<REF ID="R-02" RPTR="4">Carpuat and Wu, 2007</REF>; <REF ID="R-12" RPTR="23">Ittycheriah and Roukos, 2007</REF>; <REF ID="R-11" RPTR="18">He et al., 2008</REF>; <REF ID="R-10" RPTR="11">Hasan et al., 2008</REF>) addressed this defect by selecting the appropriate translation rules for an input span based on its context in the input sentence.</S>
+        <S ID="S-4482">The direct translation model in (<REF ID="R-12" RPTR="24">Ittycheriah and Roukos, 2007</REF>) employed syntactic (POS tags) and context information (neighboring words) within a maximum entropy model to predict the correct transfer rules.</S>
+        <S ID="S-4483">A similar technique was applied by He et al. (2008) to improve the Hiero system.</S>
+        <S ID="S-4484">Our model differs from previous work on the way in which linguistic and contextual information is used.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusions and Future Work</HEADER>
+      <P>
+        <S ID="S-4485">In this paper, we proposed four new linguistic and contextual features for hierarchical decoding.</S>
+        <S ID="S-4486">The use of non-terminal labels, length distribution and context LM features gave rise to significant improvement on Arabic-to-English and Chineseto-English translation on NIST MT06 and MT08 newswire data over a state-of-the-art string-todependency baseline.</S>
+        <S ID="S-4487">Unlike previous work, we employed robust probabilistic models to capture useful linguistic and contextual information.</S>
+        <S ID="S-4488">Our methods are more suitable for practical translation tasks.</S>
+        <S ID="S-4489">In future, we will continue this work in two directions.</S>
+        <S ID="S-4490">We will employ a Gaussian model to unify various linguistic and contextual features.</S>
+        <S ID="S-4491">We will also improve the dependency-todependency method with a better bi-lingual parser.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS>
+    <P>
+      <S ID="S-4492">This work was supported by DARPA/IPTO Contract No.</S>
+      <S ID="S-4493">HR0011-06-C-0022 under the GALE program.</S>
+    </P>
+  </ACKNOWLEDGMENTS>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>R P Brent</RAUTHOR>
+      <REFTITLE>Algorithms for Minimization Without Derivatives.</REFTITLE>
+      <DATE>1973</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>I Bulyko</RAUTHOR>
+      <REFTITLE>Language model adaptation in machine translation from speech.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>M Carpuat</RAUTHOR>
+      <REFTITLE>Context-dependent phrasal translation lexicons for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Y Marton Chiang</RAUTHOR>
+      <REFTITLE>Online large-margin training of syntactic and structural translation features.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>D Chiang</RAUTHOR>
+      <REFTITLE>11,001 new features for statistical machine translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>D Chiang</RAUTHOR>
+      <REFTITLE>A hierarchical phrase-based model for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>D Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>K Crammer</RAUTHOR>
+      <REFTITLE>Ultraconservative online algorithms for multiclass problems.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>M Galley</RAUTHOR>
+      <REFTITLE>Scalable inference and training of context-rich syntactic models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>J-L Gauvain</RAUTHOR>
+      <REFTITLE>Maximum a posteriori estimation for multivariate gaussian mixtureobservations of markov chains.</REFTITLE>
+      <DATE>1994</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>S Hasan</RAUTHOR>
+      <REFTITLE>Triplet lexicon models for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Z He</RAUTHOR>
+      <REFTITLE>Improving statistical machine translation using lexicalized rule selection.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>A Ittycheriah</RAUTHOR>
+      <REFTITLE>Direct translation model 2.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>P Koehn</RAUTHOR>
+      <REFTITLE>Factored translation models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>P Liang</RAUTHOR>
+      <REFTITLE>An end-to-end discriminative approach to machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Y Marton</RAUTHOR>
+      <REFTITLE>Soft syntactic constraints for hierarchical phrased-based translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>M Ostendorf</RAUTHOR>
+      <REFTITLE>Integration of diverse recognition methodologies through reevaluation of nbest sentence hypotheses.</REFTITLE>
+      <DATE>1991</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>K Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>M Post</RAUTHOR>
+      <REFTITLE>Parsers as language models for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>M J D Powell</RAUTHOR>
+      <REFTITLE>An efficient method for finding the minimum of a function of several variables without calculating derivatives.</REFTITLE>
+      <DATE>1964</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>L Shen</RAUTHOR>
+      <REFTITLE>Discriminative reranking for machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>L Shen</RAUTHOR>
+      <REFTITLE>A New String-to-Dependency Machine Translation Algorithm with a Target Dependency Language Model.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>M Snover</RAUTHOR>
+      <REFTITLE>A study of translation edit rate with targeted human annotation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>C Tillmann</RAUTHOR>
+      <REFTITLE>A discriminative global training algorithm for statistical mt.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>A Venugopal</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR></RAUTHOR>
+      <REFTITLE>An efficient two-pass approach to synchronous-cfg driven statistical mt.</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>C Wang</RAUTHOR>
+      <REFTITLE>Chinese syntactic reordering for statistical machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

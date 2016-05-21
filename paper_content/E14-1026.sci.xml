@@ -1,0 +1,696 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Source-side Preordering for Translation using Logistic Regression and Depth-first Branch-and-Bound Search &#8727;</TITLE>
+  <AUTHORS>
+    <AUTHOR>of Computational Linguistics</AUTHOR>
+    <AUTHOR>Heidelberg University Heidelberg</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-2683">We present a simple preordering approach for machine translation based on a featurerich logistic regression model to predict whether two children of the same node in the source-side parse tree should be swapped or not.</A-S>
+    <A-S ID="S-2684">Given the pair-wise children regression scores we conduct an efficient depth-first branch-and-bound search through the space of possible children permutations, avoiding using a cascade of classifiers or limiting the list of possible ordering outcomes.</A-S>
+    <A-S ID="S-2685">We report experiments in translating English to Japanese and Korean, demonstrating superior performance as (a) the number of crossing links drops by more than 10% absolute with respect to other state-of-the-art preordering approaches, (b) BLEU scores improve on 2.2 points over the baseline with lexicalised reordering model, and (c) decoding can be carried out 80 times faster.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-2686">Source-side preordering for translation is the task of rearranging the order of a given source sentence so that it best resembles the order of the target sentence.</S>
+        <S ID="S-2687">It is a divide-and-conquer strategy aiming to decouple long-range word movement from the core translation task.</S>
+        <S ID="S-2688">The main advantage is that translation becomes computationally cheaper as less word movement needs to be considered, which results in faster and better translations, if preordering is done well and efficiently.</S>
+        <S ID="S-2689">Preordering also can facilitate better estimation of alignment and translation models as the parallel data becomes more monotonically-aligned, and</S>
+      </P>
+      <P>
+        <S ID="S-2690">&#8727; This work was done during an internship of the first author at SDL Research, Cambridge.</S>
+      </P>
+      <P>
+        <S ID="S-2691">translation gains can be obtained for various system architectures, e.g. phrase-based, hierarchical phrase-based, etc. For these reasons, preordering has a clear research and commercial interest, as reflected by the extensive previous work on the subject (see Section 2).</S>
+        <S ID="S-2692">From these approaches, we are particularly interested in those that (i) involve little or no human intervention, (ii) require limited computational resources at runtime, and (iii) make use of available linguistic analysis tools.</S>
+        <S ID="S-2693">In this paper we propose a novel preordering approach based on a logistic regression model trained to predict whether to swap nodes in the source-side dependency tree.</S>
+        <S ID="S-2694">For each pair of sibling nodes in the tree, the model uses a feature-rich representation that includes lexical cues to make relative reordering predictions between them.</S>
+        <S ID="S-2695">Given these predictions, we conduct a depth-first branch-and-bound search through the space of possible permutations of all sibling nodes, using the regression scores to guide the search.</S>
+        <S ID="S-2696">This approach has multiple advantages.</S>
+        <S ID="S-2697">First, the search for permutations is efficient and does not require specific heuristics or hard limits for nodes with many children.</S>
+        <S ID="S-2698">Second, the inclusion of the regression prediction directly into the search allows for finer-grained global decisions as the predictions that the model is more confident about are preferred.</S>
+        <S ID="S-2699">Finally, the use of a single regression model to handle any number of child nodes avoids incurring sparsity issues, while allowing the integration of a vast number of features into the preordering model.</S>
+        <S ID="S-2700">We empirically contrast our proposed method against another preordering approach based on automatically-extracted rules when translating English into Japanese and Korean.</S>
+        <S ID="S-2701">We demonstrate a significant reduction in number of crossing links of more than 10% absolute, as well as translation gains of over 2.2 BLEU points over the baseline.</S>
+      </P>
+      <P>
+        <S ID="S-2702">We also show it outperforms a multi-class classification approach and analyse why this is the case.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Related work</HEADER>
+      <P>
+        <S ID="S-2703">One useful way to organize previous preordering techniques is by how they incorporate linguistic knowledge.</S>
+      </P>
+      <P>
+        <S ID="S-2704">On one end of the spectrum we find those approaches that rely on syntactic parsers and human knowledge, typically encoded via a set of hand-crafted rules for parse tree rewriting or transformation.</S>
+        <S ID="S-2705">Examples of these can be found for French-English (<REF ID="R-28" RPTR="44">Xia and McCord, 2004</REF>), German-English (<REF ID="R-02" RPTR="2">Collins et al., 2005</REF>), Chinese- English (<REF ID="R-26" RPTR="42">Wang et al., 2007</REF>), English-Arabic (<REF ID="R-00" RPTR="0">Badr et al., 2009</REF>), English-Hindi (<REF ID="R-20" RPTR="33">Ramanathan et al., 2009</REF>), English-Korean (<REF ID="R-11" RPTR="20">Hong et al., 2009</REF>), and English-Japanese (<REF ID="R-13" RPTR="22">Lee et al., 2010</REF>; <REF ID="R-12" RPTR="21">Isozaki et al., 2010</REF>).</S>
+        <S ID="S-2706">A generic set of rules for transforming SVO to SOV languages has also been described (<REF ID="R-29" RPTR="45">Xu et al., 2009</REF>).</S>
+        <S ID="S-2707">The main advantage of these approaches is that a relatively small set of good rules can yield significant improvements in translation.</S>
+        <S ID="S-2708">The common criticism they receive is that they are language-specific.</S>
+      </P>
+      <P>
+        <S ID="S-2709">On the other end of the spectrum, there are preordering models that rely neither on human knowledge nor on syntactic analysis, but only on word alignments.</S>
+        <S ID="S-2710">One such approach is to form a cascade of two translation systems, where the first one translates the source to its preordered version (<REF ID="R-03" RPTR="3">Costa-juss&#224; and Fonollosa, 2006</REF>).</S>
+        <S ID="S-2711">Alternatively, one can define models that assign a cost to the relative position of each pair of words in the sentence, and search for the sequence that optimizes the global score as a linear ordering problem (<REF ID="R-22" RPTR="36">Tromble and Eisner, 2009</REF>) or as a traveling salesman problem (<REF ID="R-24" RPTR="39">Visweswariah et al., 2011</REF>).</S>
+        <S ID="S-2712">Yet another line of work attempts to automatically induce a parse tree and a preordering model from word alignments (<REF ID="R-05" RPTR="5">DeNero and Uszkoreit, 2011</REF>; <REF ID="R-16" RPTR="28">Neubig et al., 2012</REF>).</S>
+        <S ID="S-2713">These approaches are attractive due to their minimal reliance on linguistic knowledge.</S>
+        <S ID="S-2714">However, their findings reveal that the best performance is obtained when using humanaligned data which is expensive to create.</S>
+        <S ID="S-2715">Somewhere in the middle of the spectrum are</S>
+      </P>
+      <P>
+        <S ID="S-2716">works that rely on automatic source-language syntactic parses, but no direct human intervention.</S>
+        <S ID="S-2717">Preordering rules can be automatically extracted from word alignments and constituent trees (<REF ID="R-15" RPTR="26">Li et al., 2007</REF>; <REF ID="R-10" RPTR="19">Habash, 2007</REF>; <REF ID="R-23" RPTR="37">Visweswariah et al., 2010</REF>), dependency trees (<REF ID="R-08" RPTR="12">Genzel, 2010</REF>) or predicate-argument structures (<REF ID="R-27" RPTR="43">Wu et al., 2011</REF>), or simply part-of-speech sequences (<REF ID="R-04" RPTR="4">Crego and Mari&#241;o, 2006</REF>; <REF ID="R-21" RPTR="34">Rottmann and Vogel, 2007</REF>).</S>
+        <S ID="S-2718">Rules are assigned a cost based on Maximum Entropy (<REF ID="R-15" RPTR="27">Li et al., 2007</REF>) or Maximum Likelihood estimation (<REF ID="R-23" RPTR="38">Visweswariah et al., 2010</REF>), or directly on their ability to make the training corpus more monotonic (<REF ID="R-08" RPTR="13">Genzel, 2010</REF>).</S>
+        <S ID="S-2719">The latter performs very well in practice but comes at the cost of a brute-force extraction heuristic that cannot incorporate lexical information.</S>
+        <S ID="S-2720">Recently, other approaches treat ordering the children of a node as a learning to rank (Yang et al., 2012) or discriminative multi-classification task (<REF ID="R-14" RPTR="23">Lerner and Petrov, 2013</REF>).</S>
+        <S ID="S-2721">These are appealing for their use of finergrained lexical information, but they struggle to adequately handle nodes with multiple children.</S>
+      </P>
+      <P>
+        <S ID="S-2722">Our approach is closely related to this latter work, as we are interested in feature-rich discriminative approaches that automatically learn preordering rules from source-side dependency trees.</S>
+        <S ID="S-2723">Similarly to Yang et al. (2012) we train a large discriminative linear model, but rather than model each child&#8217;s position in an ordered list of children, we model a more natural pair-wise swap / no-swap preference (like <REF ID="R-22" RPTR="35">Tromble and Eisner (2009)</REF> did at the word level).</S>
+        <S ID="S-2724">We then incorporate this model into a global, efficient branch-and-bound search through the space of permutations.</S>
+        <S ID="S-2725">In this way, we avoid an error-prone cascade of classifiers or any limit on the possible ordering outcomes (<REF ID="R-14" RPTR="24">Lerner and Petrov, 2013</REF>).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Preordering using logistic regression and branch-and-bound search</HEADER>
+      <P>
+        <S ID="S-2810">Like <REF ID="R-08" RPTR="9">Genzel (2010)</REF>, our method starts with dependency parses of source sentences (which we convert to shallow constituent trees; see Figure 1 for an example), and reorders the source text by permuting sibling nodes in the parse tree.</S>
+        <S ID="S-2811">For each non-terminal node, we first apply a logistic regression model which predicts, for each pair of child nodes, the probability that they should be swapped or kept in their original order.</S>
+        <S ID="S-2812">We then apply a depth-first branch-and-bound search to find the global optimal reordering of children.</S>
+      </P>
+      <P>
+        <S ID="S-2813">he NN 1 could MD 2</S>
+      </P>
+      <P>
+        <S ID="S-2814">VB</S>
+      </P>
+      <P>
+        <S ID="S-2815">nsubj aux HEAD dobj</S>
+      </P>
+      <P>
+        <S ID="S-2816">stand VB 3 det</S>
+      </P>
+      <P>
+        <S ID="S-2817">the DT</S>
+      </P>
+      <P>
+        <S ID="S-2818">NN 4</S>
+      </P>
+      <P>
+        <S ID="S-2819">HEAD</S>
+      </P>
+      <P>
+        <S ID="S-2820">smell NN</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Logistic regression</HEADER>
+        <P>
+          <S ID="S-2726">We build a regression model that assigns a probability of swapping any two sibling nodes, a and b, in the source-side dependency tree.</S>
+          <S ID="S-2727">The probability of swapping them is denoted p(a, b) and the probability of keeping them in their original order is 1 &#8722; p(a, b).</S>
+          <S ID="S-2728">We use LIBLINEAR (<REF ID="R-06" RPTR="7">Fan et al., 2008</REF>) for training an L1-regularised logistic regression model based on positively and negatively labelled samples.</S>
+        </P>
+        <P>
+          <S ID="S-2729">3.1.1 Training data</S>
+        </P>
+        <P>
+          <S ID="S-2730">We generate training examples for the logistic regression from word-aligned parallel data which is annotated with source-side dependency trees.</S>
+          <S ID="S-2731">For each non-terminal node, we extract all possible pairs of child nodes.</S>
+          <S ID="S-2732">For each pair, we obtain a binary label y &#8712; {&#8722;1, 1} by calculating whether swapping the two nodes would reduce the number of crossing alignment links.</S>
+          <S ID="S-2733">The crossing score of having two nodes a and b in the given order is</S>
+        </P>
+        <P>
+          <S ID="S-2734">cs(a, b) := |{(i, j) &#8712; A a &#215; A b : i &gt; j}|</S>
+        </P>
+        <P>
+          <S ID="S-2735">where A a and A b are the target-side positions to which the words spanned by a and b are aligned.</S>
+          <S ID="S-2736">The label is then given as</S>
+        </P>
+        <P>
+          <S ID="S-2737">y(a, b) =</S>
+        </P>
+        <P>
+          <S ID="S-2738">Instances for which cs(a, b) = cs(b, a) are not included in the training data.</S>
+          <S ID="S-2739">This usually happens if either A a or A b is empty, and in this case the alignments provide no indication of which order is better.</S>
+          <S ID="S-2740">We also discard any samples from nodes that have more than 16 children, as these are rare cases that often result from parsing errors.</S>
+        </P>
+        <P>
+          <S ID="S-2741">2 3 4</S>
+        </P>
+        <P>
+          <S ID="S-2742">2 3</S>
+        </P>
+        <P>
+          <S ID="S-2743">&#603;</S>
+        </P>
+        <P>
+          <S ID="S-2744">1 .</S>
+          <S ID="S-2745">.</S>
+          <S ID="S-2746">.</S>
+        </P>
+        <P>
+          <S ID="S-2747">.</S>
+          <S ID="S-2748">.</S>
+          <S ID="S-2749">.</S>
+        </P>
+        <P>
+          <S ID="S-2750">3.1.2 Features</S>
+        </P>
+        <P>
+          <S ID="S-2751">Using a machine learning setup allows us to incorporate fine-grained information in the form of features.</S>
+          <S ID="S-2752">We use the following features to characterise pairs of nodes:</S>
+        </P>
+        <P>
+          <S ID="S-2753">l The dependency labels of each node t The part-of-speech tags of each node.</S>
+          <S ID="S-2754">hw The head words and classes of each node.</S>
+          <S ID="S-2755">lm, rm The left-most and right-most words and classes of a node.</S>
+        </P>
+        <P>
+          <S ID="S-2756">dst The distances between each node and the head.</S>
+          <S ID="S-2757">gap If there is a gap between nodes, the left-most and right-most words and classes in the gap.</S>
+        </P>
+        <P>
+          <S ID="S-2758">In order to keep the size of our feature space manageable, we only consider features which occur at least 5 times 1 .</S>
+          <S ID="S-2759">For the lexical features, we use the top 100 vocabulary items from our training data, and 51 clusters generated by mkcls (<REF ID="R-18" RPTR="31">Och, 1999</REF>).</S>
+          <S ID="S-2760">Similarly to previous work (<REF ID="R-08" RPTR="14">Genzel, 2010</REF>; Yang et al., 2012), we also explore feature conjunctions.</S>
+          <S ID="S-2761">For the tag and label classes, we generate all possible combinations up to a given size.</S>
+          <S ID="S-2762">For the lexical and distance features, we explicitly specify conjunctions with the tag and label features.</S>
+          <S ID="S-2763">Results for various feature configurations are discussed in Section 4.3.1.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Search</HEADER>
+        <P>
+          <S ID="S-2764">For each non-terminal node in the source-side dependency tree, we search for the best possible</S>
+        </P>
+        <P>
+          <S ID="S-2765">1 Additional feature selection is achieved through L1-</S>
+        </P>
+        <P>
+          <S ID="S-2766">regularisation.</S>
+        </P>
+        <P>
+          <S ID="S-2767">permutation of its children.</S>
+          <S ID="S-2768">We define the score of a permutation &#960; as the product of the probabilities of its node pair orientations (swapped or unswapped): &#8719;</S>
+        </P>
+        <P>
+          <S ID="S-2769">score(&#960;) = p(i, j)</S>
+        </P>
+        <P>
+          <S ID="S-2770">&#183;</S>
+        </P>
+        <P>
+          <S ID="S-2771">1&#8804;i&lt;j&#8804;k|&#960;[i]&gt;&#960;[j]</S>
+        </P>
+        <P>
+          <S ID="S-2772">&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-2773">1&#8804;i&lt;j&#8804;k|&#960;[i]&lt;&#960;[j]</S>
+        </P>
+        <P>
+          <S ID="S-2774">1 &#8722; p(i, j)</S>
+        </P>
+        <P>
+          <S ID="S-2775">Here, we represent a permutation &#960; of k nodes as a k-length sequence containing each integer in {1, ..., k} exactly once.</S>
+          <S ID="S-2776">Define a partial permutation of k nodes as a k &#8242; &lt; k length sequence containing each integer in {1, ..., k} at most once.</S>
+          <S ID="S-2777">We can construct a search space over partial permutations in the natural way (see Figure 2).</S>
+          <S ID="S-2778">The root node represents the empty sequence &#603; and has score 1.</S>
+          <S ID="S-2779">Then, given a search node representing a k &#8242; -length partial permutation &#960; &#8242; , its successor nodes are obtained by extending it by one element:</S>
+        </P>
+        <P>
+          <S ID="S-2780">score(&#960; &#8242; &#183; &#12296;i&#12297;) = score(&#960; &#8242; )</S>
+        </P>
+        <P>
+          <S ID="S-2781">&#8719; &#183; p(i, j)</S>
+        </P>
+        <P>
+          <S ID="S-2782">&#183;</S>
+        </P>
+        <P>
+          <S ID="S-2783">j&#8712;V |i&gt;j</S>
+        </P>
+        <P>
+          <S ID="S-2784">&#8719;</S>
+        </P>
+        <P>
+          <S ID="S-2785">j&#8712;V |i&lt;j</S>
+        </P>
+        <P>
+          <S ID="S-2786">1 &#8722; p(i, j)</S>
+        </P>
+        <P>
+          <S ID="S-2787">where V = {1, ..., k}\(&#960; &#8242; &#183; &#12296;i&#12297;) is the set of source child positions that have not yet been visited.</S>
+          <S ID="S-2788">Observe that the nodes at search depth k correspond exactly to the set of complete permutations.</S>
+          <S ID="S-2789">To search this space, we employ depth-first branchand-bound (<REF ID="R-01" RPTR="1">Balas and Toth, 1983</REF>) as our search algorithm.</S>
+          <S ID="S-2790">The idea of branch-and-bound is to remember the best scoring goal node found thus far, abandoning any partial paths that cannot lead to a better scoring goal node.</S>
+          <S ID="S-2791">Algorithm 1 gives pseudocode for the algorithm 2 .</S>
+          <S ID="S-2792">If the initial bound (bound 0 ) is set to 0, the search is guaranteed to find the optimal solution.</S>
+          <S ID="S-2793">By raising the bound, which acts as an under-estimate of the best scoring permutation, search can be faster but possibly fail to find any solution.</S>
+          <S ID="S-2794">All our experiments were done with bound 0 = 0, i.e. exact search, but we discuss search time in detail and pruning alternatives in Section 4.3.2.</S>
+        </P>
+        <P>
+          <S ID="S-2795">Since we use a logistic regression model and incorporate its predictions directly as swap probabilities, our search prefers those permutations with swaps which the model is more confident about.</S>
+        </P>
+        <P>
+          <S ID="S-2796">2 See (<REF ID="R-19" RPTR="32">Poole and Mackworth, 2010</REF>) for more details and a</S>
+        </P>
+        <P>
+          <S ID="S-2797">worked example.</S>
+        </P>
+        <P>
+          <S ID="S-2798">Algorithm 1 Depth-first branch-and-bound</S>
+        </P>
+        <P>
+          <S ID="S-2799">Require: k: maximum sequence length, &#603;: empty sequence, bound 0: initial bound</S>
+        </P>
+        <P>
+          <S ID="S-2800">procedure BNBSEARCH(&#603;, bound 0, k) best path &#8592; &#8869; bound &#8592; bound 0</S>
+        </P>
+        <P>
+          <S ID="S-2801">SEARCH(&#12296;&#603;&#12297;)</S>
+        </P>
+        <P>
+          <S ID="S-2802">return best path end procedure</S>
+        </P>
+        <P>
+          <S ID="S-2803">procedure SEARCH(&#960; &#8242; ) if score(&#960; &#8242; ) &gt; bound then</S>
+        </P>
+        <P>
+          <S ID="S-2804">if |&#960; &#8242; | = k then best path &#8592; &#12296;&#960; &#8242; &#12297; bound &#8592; score(&#960; &#8242; ) return else</S>
+        </P>
+        <P>
+          <S ID="S-2805">for each i &#8712; {1, ..., k}\&#960; &#8242; do</S>
+        </P>
+        <P>
+          <S ID="S-2806">SEARCH(&#960; &#8242; &#183; &#12296;i&#12297;)</S>
+        </P>
+        <P>
+          <S ID="S-2807">end for</S>
+        </P>
+        <P>
+          <S ID="S-2808">end if</S>
+        </P>
+        <P>
+          <S ID="S-2809">end if end procedure</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Experiments</HEADER>
+      <P>
+        <S ID="S-2941"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Setup</HEADER>
+        <P>
+          <S ID="S-2821">We report translation results in English-to- Japanese/Korean.</S>
+          <S ID="S-2822">Our corpora are comprised of generic parallel data extracted from the web, with some documents extracted manually and some automatically crawled.</S>
+          <S ID="S-2823">Both have about 6M sentence pairs and roughly 100M words per language.</S>
+        </P>
+        <P>
+          <S ID="S-2824">The dev and test sets are also generic.</S>
+          <S ID="S-2825">Source sentences were extracted from the web and one target reference was produced by a bilingual speaker.</S>
+          <S ID="S-2826">These sentences were chosen to evenly represent 10 domains, including world news, chat/SMS, health, sport, science, business, and others.</S>
+          <S ID="S-2827">The dev/test sets contain 602/903 sentences and 14K/20K words each.</S>
+          <S ID="S-2828">We do English part-of-speech tagging using SVMTool (<REF ID="R-09" RPTR="18">Gim&#233;nez and M&#224;rquez, 2004</REF>) and dependency parsing using MaltParser (<REF ID="R-17" RPTR="30">Nivre et al., 2007</REF>).</S>
+          <S ID="S-2829">For translation experiments, we use a phrasebased decoder that incorporates a set of standard features and a hierarchical reordering model (<REF ID="R-07" RPTR="8">Galley and Manning, 2008</REF>) with weights tuned using MERT to optimize the character-based BLEU score on the dev set.</S>
+          <S ID="S-2830">The Japanese and Korean language models are 5-grams estimated on &gt; 350M words of generic web text.</S>
+          <S ID="S-2831">For training the logistic regression model, we automatically align the parallel training data and intersect the source-to-target and target-to-source alignments.</S>
+          <S ID="S-2832">We reserve a random 5K-sentence</S>
+        </P>
+        <P>
+          <S ID="S-2833">approach EJ cs (%) EK cs (%)</S>
+        </P>
+        <P>
+          <S ID="S-2834">rule-based (<REF ID="R-08" RPTR="15">Genzel, 2010</REF>) 61.9 64.2 multi-class 65.2 - df-bnb 51.4 51.8</S>
+        </P>
+        <P>
+          <S ID="S-2835">subset for intrinsic evaluation of preordering, and use the remainder for model parameter estimation.</S>
+        </P>
+        <P>
+          <S ID="S-2836">We evaluate our preordering approach with logistic regression and depth-first branch-and-bound search (in short, &#8216;df-bnb&#8217;) both in terms of reordering via crossing score reduction on the heldout set, and in terms of translation quality as measured by character-based BLEU on the test set.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Preordering baselines</HEADER>
+        <P>
+          <S ID="S-2837">We contrast our work against two data-driven preordering approaches.</S>
+          <S ID="S-2838">First, we implemented the rule-based approach of <REF ID="R-08" RPTR="10">Genzel (2010)</REF> and optimised its multiple parameters for our task.</S>
+          <S ID="S-2839">We report only the best results achieved, which correspond to using &#8764;100K training sentences for rule extraction, applying a sliding window width of 3 children, and creating rule sequences of &#8764;60 rules.</S>
+          <S ID="S-2840">This approach cannot incorporate lexical features as that would make the brute-force rule extraction algorithm unmanageable.</S>
+          <S ID="S-2841">We also implemented a multi-class classification setup where we directly predict complete permutations of children nodes using multi-class classification (<REF ID="R-14" RPTR="25">Lerner and Petrov, 2013</REF>).</S>
+          <S ID="S-2842">While this is straightforward for small numbers of children, it leads to a very large number of possible permutations for larger sets of children nodes, making classification too difficult.</S>
+          <S ID="S-2843">While Lerner and Petrov (2013) use a cascade of classifiers and impose a hard limit on the possible reordering outcomes to solve this, we follow Genzel&#8217;s heuristic: rather than looking at the complete set of children, we apply a sliding window of size 3 starting from the left, and make classification/reordering decisions for each window separately.</S>
+          <S ID="S-2844">Since the windows overlap, decisions made for the first window affect the order of nodes in the second window, etc.</S>
+          <S ID="S-2845">We address this by soliciting decisions from the classifier on the fly as we preorder.</S>
+          <S ID="S-2846">One lim- Figure 3: Crossing scores and classification accuracy improve with training data size.</S>
+        </P>
+        <P>
+          <S ID="S-2847">itation of this approach is that it is able to move children only within the window.</S>
+          <S ID="S-2848">We try to remedy this by applying the method iteratively, each time re-training the classifier on the preordered data from the previous run.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.3 Crossing score</HEADER>
+        <P>
+          <S ID="S-2849">We now report contrastive results in the intrinsic preordering task, as measured by the number of crossing links (<REF ID="R-08" RPTR="16">Genzel, 2010</REF>; Yang et al., 2012) on the 5K held-out set.</S>
+          <S ID="S-2850">Without preordering, there is an average of 22.2 crossing links in English-Japanese and 20.2 in English-Korean.</S>
+          <S ID="S-2851">Table 1 shows what percentage of these links remain after applying each preordering approach to the data.</S>
+          <S ID="S-2852">We find that the &#8216;df-bnb&#8217; method outperforms the other approaches in both language pairs, achieving more than 10 additional percentage points reduction over the rule-based approach.</S>
+          <S ID="S-2853">Interestingly, the multi-class approach is not able to match the rule-based approach despite using additional lexical cues.</S>
+          <S ID="S-2854">We hypothesise that this is due to the sliding window heuristic, which causes a mismatch in train-test conditions: while samples are not independent of each other at test time due to window overlaps, they are considered to be so when training the classifier.</S>
+        </P>
+        <P>
+          <S ID="S-2855">4.3.1 Impact of training size and feature configuration</S>
+        </P>
+        <P>
+          <S ID="S-2856">We now report the effects of feature configuration and training data size for the English-Japanese case.</S>
+          <S ID="S-2857">We assess our &#8216;df-bnb&#8217; approach in terms of the classification accuracy of the trained logistic</S>
+        </P>
+        <P>
+          <S ID="S-2858">features used acc (%) cs (%)</S>
+        </P>
+        <P>
+          <S ID="S-2859">l,t,hw,lm,rm,dst,gap 82.43 51.3 l,t,hw,lm,rm,dst 82.44 51.4 l,t,hw,lm,rm 82.32 53.1 l,t,hw 82.02 55 l,t 81.07 58.4</S>
+        </P>
+        <P>
+          <S ID="S-2860">regression model (using it to predict &#177;1 labels in the held-out set) and by the percentage of crossing alignment links reduced by preordering.</S>
+        </P>
+        <P>
+          <S ID="S-2861">Figure 3 shows the performance of the logistic regression model over different training set sizes, extracted from the training corpus as described in Section 3.</S>
+          <S ID="S-2862">We observe a constant increase in prediction accuracy, mirrored by a steady decrease in crossing score.</S>
+          <S ID="S-2863">However, gains are less for more than 8M training examples.</S>
+          <S ID="S-2864">Note that a small variation in accuracy can produce a large variation in crossing score if two nodes are swapped which have a large number of crossing alignments.</S>
+        </P>
+        <P>
+          <S ID="S-2865">Table 2 shows an ablation test for various feature configurations.</S>
+          <S ID="S-2866">We start with all features, including head word and class (hw), left-most and right-most word in each node&#8217;s span (lm, rm), each node&#8217;s distance to the head (dst), and left-most and right-most word of the gap between nodes (gap).</S>
+          <S ID="S-2867">We then proceed by removing features to end with only label and tag features (l,t), as in <REF ID="R-08" RPTR="11">Genzel (2010)</REF>.</S>
+          <S ID="S-2868">For each configuration, we generated all tag- and label- combinations of size 2.</S>
+          <S ID="S-2869">We then specified combinations between tag and label and all other features.</S>
+          <S ID="S-2870">For the lexical features we always used conjunctions of the word itself, and its class.</S>
+          <S ID="S-2871">Class information is included for all words, not just those in the top 100 vocabulary.</S>
+          <S ID="S-2872">Table 2 shows that lexical and distance feature groups contribute to prediction accuracy and crossing score, except for the gap features, which we omit from further experiments.</S>
+        </P>
+        <P>
+          <S ID="S-2873">4.3.2 Run time</S>
+        </P>
+        <P>
+          <S ID="S-2874">We now demonstrate the efficiency of branch-andbound search for the problem of finding the optimum permutation of n children at runtime.</S>
+          <S ID="S-2875">Even though in the worst case the search could explore all n!</S>
+          <S ID="S-2876">permutations, making it prohibitive for Figure 4: Average number of nodes explored in branch-and-bound search by number of children.</S>
+        </P>
+        <P>
+          <S ID="S-2877">nodes with many children, in practice this does not happen.</S>
+          <S ID="S-2878">Many low-scoring paths are discarded early by branch-and-bound search so that the optimal solution can be found quickly.</S>
+          <S ID="S-2879">The top curve in Figure 4 shows the average number of nodes explored in searches run on our validation set (5K sentences) as a function of the number of children.</S>
+          <S ID="S-2880">All instances are far from the worst case 3 .</S>
+        </P>
+        <P>
+          <S ID="S-2881">In our experiments, the time needed to conduct exact search (bound 0 = 0) was not a problem except for a few bad cases (nodes with more than 16 children), which we simply chose not to preorder; in our data, 90% of the nodes have less than 6 children, while only 0.9% have 10 children or more, so this omission does not affect performance noticeably.</S>
+          <S ID="S-2882">We verified this on our held-out set, by carrying out exhaustive searches.</S>
+          <S ID="S-2883">We found that not preordering nodes with 16 children did not worsen the crossing score.</S>
+          <S ID="S-2884">In fact, setting a harsher limit of 10 nodes would still produce a crossing score of 51.9%, compared to the best score of 51.4%.</S>
+        </P>
+        <P>
+          <S ID="S-2885">There are various ways to speed up the search, if needed.</S>
+          <S ID="S-2886">First, one could impose a hard limit on the number of explored nodes 4 .</S>
+          <S ID="S-2887">As shown in Figure 4, a limit of 4K would still allow exact search on average for permutations of up to 11 children, while stopping search early for more children.</S>
+          <S ID="S-2888">We tested this for limits of 1K/4K nodes and obtained crossing scores of 51.9/51.5%.</S>
+          <S ID="S-2889">Alternatively, one could define a higher initial bound; since the score of a path is a product of probabilities, one would select a threshold probability</S>
+        </P>
+        <P>
+          <S ID="S-2890">3 Note that 12!&#8776;479M nodes, whereas our search finds the</S>
+        </P>
+        <P>
+          <S ID="S-2891">optimal permutation path after exploring &lt;10K nodes.</S>
+          <S ID="S-2892">4 As long as the limit exceeds the permutation length, a</S>
+        </P>
+        <P>
+          <S ID="S-2893">solution will always be found as search is depth-first.</S>
+        </P>
+        <P>
+          <S ID="S-2894">d approach &#8722;LRM &#8710; +LRM &#8710;</S>
+        </P>
+        <P>
+          <S ID="S-2895">baseline 25.39 - 26.62 - rule-based 25.93 +0.54 27.65 +1.03 multi-class 25.60 +0.21 26.10 &#8722;0.52 df-bnb 26.73 +1.34 28.09 +1.47</S>
+        </P>
+        <P>
+          <S ID="S-2896">baseline 25.07 - 25.92 - rule-based 26.35 +1.28 27.54 +1.62 multi-class 25.37 +0.30 26.31 +0.39 df-bnb 26.98 +1.91 28.13 +2.21</S>
+        </P>
+        <P>
+          <S ID="S-2897">p and calculate a bound depending on the size n of the permutation as bound 0 = p n&#183;(n&#8722;1) 2 .</S>
+          <S ID="S-2898">Examples of this would be the lower curves of Figure 4.</S>
+          <S ID="S-2899">The curve labels show the crossing score produced with each threshold, and in parenthesis the percentage of searches that fail to find a solution with a better score than bound 0 , in which case children are left in their original order.</S>
+          <S ID="S-2900">As shown, this strategy proves less effective than simply limiting the number of explored nodes, because the more frequent cases with less children remain unaffected.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.4 Translation performance</HEADER>
+        <P>
+          <S ID="S-2901">Table 3 reports English-Japanese translation results for two different values of the distortion limit d, i.e. the maximum number of source words that the decoder is allowed to jump during search.</S>
+          <S ID="S-2902">We draw the following conclusions.</S>
+          <S ID="S-2903">Firstly, all the preordering approaches outperform the baseline and the BLEU score gain they provide increases as the distortion limit decreases.</S>
+          <S ID="S-2904">This is further analysed in Figure 5, where we report BLEU as a function of the distortion limit in decoding for both English-Japanese and English-Korean.</S>
+          <S ID="S-2905">This reveals the power of preordering as a targeted strategy to obtain high performance at fast decoding times, since d can be drastically reduced without performance degradation which leads to huge decoding speed-ups; this is consistent with the observations in (<REF ID="R-29" RPTR="46">Xu et al., 2009</REF>; <REF ID="R-08" RPTR="17">Genzel, 2010</REF>; <REF ID="R-24" RPTR="40">Visweswariah et al., 2011</REF>).</S>
+          <S ID="S-2906">We also find that with preordering it is possible to apply harsher pruning conditions in decoding while still maintaining the Figure 5: BLEU scores as a function of distortion limit in decoder (+LRM case).</S>
+          <S ID="S-2907">Top: English- Japanese.</S>
+          <S ID="S-2908">Bottom: English-Korean.</S>
+        </P>
+        <P>
+          <S ID="S-2909">exact same performance, achieving further speedups.</S>
+          <S ID="S-2910">With preordering, our system is able to decode 80 times faster while producing translation output of the same quality.</S>
+        </P>
+        <P>
+          <S ID="S-2911">Secondly, we observe that the preordering gains, which are correlated with the crossing score reductions of Table 1, are largely orthogonal to the gains obtained when incorporating a lexicalised reordering model (LRM).</S>
+          <S ID="S-2912">In fact, preordering gains are slightly larger with LRM, suggesting that this reordering model can be better estimated with preordered text.</S>
+          <S ID="S-2913">This echoes the notion that reordering models are particularly sensitive to alignment noise (<REF ID="R-05" RPTR="6">DeNero and Uszkoreit, 2011</REF>; <REF ID="R-16" RPTR="29">Neubig et al., 2012</REF>; <REF ID="R-25" RPTR="41">Visweswariah et al., 2013</REF>), and that a &#8216;more monotonic&#8217; training corpus leads to better translation models.</S>
+        </P>
+        <P>
+          <S ID="S-2914">Finally, &#8216;df-bnb&#8217; outperforms all other preordering approaches, and achieves an extra 0.5&#8211;0.8 BLEU over the rule-based one even at zero distortion limit.</S>
+          <S ID="S-2915">This is consistent with the substantial crossing score reductions reported in Section 4.3.</S>
+          <S ID="S-2916">We argue that these improvements are due to the usage of lexical features to facilitate finergrained ordering decisions, and to our better search through the children permutation space which is not restricted by sliding windows, does</S>
+        </P>
+        <P>
+          <S ID="S-2917">Example 1 Example 2 Example 3</S>
+        </P>
+        <P>
+          <S ID="S-2918">reference</S>
+        </P>
+        <P>
+          <S ID="S-2919">source</S>
+        </P>
+        <P>
+          <S ID="S-2920">rule-based</S>
+        </P>
+        <P>
+          <S ID="S-2921">df-bnb</S>
+        </P>
+        <P>
+          <S ID="S-2922">[ 1 &#31169; &#33258; &#36523; &#12398;] my own [ 2 &#32076; &#39443; ] experience [ 3&#12395;&#12362;&#12356;&#12390;] in , [ 4&#12525;&#12540;&#12470;&#12497;&#12523;&#12463;&#12473;] Rosa Parks [ 5&#12392;&#12356;&#12358;] called [ 6 &#40658; &#20154; &#12398;] black [ 7 &#22899; &#24615; &#12399;] woman, [ 8&#12354;&#12427; &#26085; ] one day [ 9&#12392;&#12395;&#12363;&#12367;&#12392;&#12395;&#12363;&#12367;] somehow [ 10&#12496;&#12473;&#12398;] bus of [ 11 &#24460; &#37096; &#24231; &#24109; &#12395;] back seat in [ 12 &#22352; &#12427;] sit &#12424;&#12358;&#12395; [ 13 &#35328; &#12431;&#12428;&#12427;] told being [ 14&#12371;&#12392;&#12395;] of [ 15&#12358;&#12435;&#12374;&#12426;&#12377;] was fed up with &#12290;</S>
+        </P>
+        <P>
+          <S ID="S-2923">[ 3In] [ 1my own] [ 2experience] , a [ 6black] [ 7woman] [ 5named] [ 4Rosa Parks] [ 14was just tired] [ 8one day] [ 14of] [ 13being told] [ 12to sit] [ 11in the back] [ 10of the bus] .</S>
+        </P>
+        <P>
+          <S ID="S-2924">[ 1my own] [ 2experience] [ 3In] [ 14was just tired] [ 13being told] [ 10the bus of] [ 11the back in] [ 12sit to] [ 14of] [ 8one day] , [ 6a black] [ 7woman] [ 4Rosa Parks] [ 5named] .</S>
+        </P>
+        <P>
+          <S ID="S-2925">[ 1my own] [ 2experience] [ 3In] , [ 5named] [ 6a black] [ 7woman] [ 4Rosa Parks] [ 10the bus of] [ 11the back in] [ 12sit to] [ 13told being] [ 14of] [ 8one day] [ 14was just tired] .</S>
+        </P>
+        <P>
+          <S ID="S-2926">reference [ 1 &#31169; &#12383;&#12385;&#12399;] we&#12289;[ 2&#12377;&#12387;&#12363;&#12426;] quite [ 3 &#35199; &#23433; &#12364;] Xi&#8217;an [ 4 &#22909; &#12365;] like [ 5&#12395;] to [ 6&#12394;&#12426;&#12414;&#12375;&#12383;] come have &#12290;</S>
+        </P>
+        <P>
+          <S ID="S-2927">not depend heavily on getting the right decision in a multi-class scenario, and which incorporates regression to carry out a score-driven search.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.5 Analysis</HEADER>
+        <P>
+          <S ID="S-2928">Table 4 gives three English-Japanese examples to illustrate the different preordering approaches.</S>
+          <S ID="S-2929">The first, very short, example is preordered correctly by the rule-based and the df-bnb approach, as the order of the brackets matches the order of the Japanese reference.</S>
+          <S ID="S-2930">For longer sentences we see more differences between approaches, as illustrated by Example 2.</S>
+          <S ID="S-2931">In this case, both approaches succeed at moving prepositions to the back of the phrase (&#8220;my experience in&#8221;, &#8220;the bus of&#8221;).</S>
+          <S ID="S-2932">However, while the dfbnb approach correctly moves the predicate of the second clause (&#8220;was just tired&#8221;) to the back, the rule-based approach incorrectly moves the subject (&#8220;a black woman named Rosa Parks&#8221;) to this position - possibly because of the verb &#8220;named&#8221; which occurs in the phrase.</S>
+          <S ID="S-2933">This could be an indication that the df-bnb is better suited for more complicated constructions.</S>
+          <S ID="S-2934">With the exception of phrases 4 and 8, all other phrases are in the correct order in the df-bnb reordering.</S>
+          <S ID="S-2935">None of the approaches manage to reorder &#8220;a black woman named Rosa Parks&#8221; to the correct order.</S>
+        </P>
+        <P>
+          <S ID="S-2936">Example 3 shows that the translations into Japanese also reflect preordering quality.</S>
+          <S ID="S-2937">The original source results in &#8220;like&#8221; being translated as the main verb (which is incorrectly interpreted as &#8220;to be like, to be equal to&#8221;).</S>
+          <S ID="S-2938">The rule-based version correctly moves &#8220;have come&#8221; to the end, but fails to swap &#8220;xi&#8217;an&#8221; and &#8220;like&#8221;, resulting in &#8220;come&#8221; being interpreted as a full verb, rather than an auxiliary.</S>
+          <S ID="S-2939">Only the df-bnb version achieves almost perfect reordering, resulting in the correct word choice of &#12394;&#12427; (to get to, to become) for &#8220;have come to&#8221;.</S>
+          <S ID="S-2940">5</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Conclusion</HEADER>
+      <P>
+        <S ID="S-2942">We have presented a novel preordering approach that estimates a preference for swapping or not swapping pairs of children nodes in the sourceside dependency tree by training a feature-rich logistic regression model.</S>
+        <S ID="S-2943">Given the pair-wise scores, we efficiently search through the space of possible children permutations using depth-first branch-and-bound search.</S>
+        <S ID="S-2944">The approach is able to incorporate large numbers of features including lexical cues, is efficient at runtime even with a large number of children, and proves superior to other state-of-the-art preordering approaches both in terms of crossing score and translation performance.</S>
+        <S ID="S-2945">5 This translation is still not perfect, since it uses the wrong level of politeness, an important distinction in Japanese.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Ibrahim Badr</RAUTHOR>
+      <REFTITLE>Syntactic Phrase Reordering for English-to-Arabic Statistical Machine Translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Egon Balas</RAUTHOR>
+      <REFTITLE>Branch and Bound Methods for the Traveling Salesman Problem. Carnegie-Mellon Univ.</REFTITLE>
+      <DATE>1983</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Michael Collins</RAUTHOR>
+      <REFTITLE>Clause Restructuring for Statistical Machine Translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Marta R Costa-juss&#224;</RAUTHOR>
+      <REFTITLE>Statistical Machine Reordering.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Josep M Crego</RAUTHOR>
+      <REFTITLE>Integration of POStag-based Source Reordering into SMT Decoding by an Extended Search Graph.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>John DeNero</RAUTHOR>
+      <REFTITLE>Inducing Sentence Structure from Parallel Corpora for Reordering.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Rong-En Fan</RAUTHOR>
+      <REFTITLE>LIBLINEAR: A Library for Large Linear Classification.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>A Simple and Effective Hierarchical Phrase Reordering Model.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Dmitriy Genzel</RAUTHOR>
+      <REFTITLE>Automatically learning sourceside reordering rules for large scale machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Jes&#250;s Gim&#233;nez</RAUTHOR>
+      <REFTITLE>SVMTool: A general POS tagger generator based on Support Vector Machines.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Nizar Habash</RAUTHOR>
+      <REFTITLE>Syntactic Preprocessing for Statistical Machine Translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Gumwon Hong</RAUTHOR>
+      <REFTITLE>Bridging Morpho-Syntactic Gap between Source and Target Sentences for EnglishKorean Statistical Machine Translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Hideki Isozaki</RAUTHOR>
+      <REFTITLE>Head Finalization: A Simple Reordering Rule for SOV Languages.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Young-Suk Lee</RAUTHOR>
+      <REFTITLE>Constituent Reordering and Syntax Models for English-to-Japanese Statistical Machine Translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Uri Lerner</RAUTHOR>
+      <REFTITLE>Source-Side Classifier Preordering for Machine Translation.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Chi-Ho Li</RAUTHOR>
+      <REFTITLE>A Probabilistic Approach to Syntax-based Reordering for Statistical Machine Translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Graham Neubig</RAUTHOR>
+      <REFTITLE>Inducing a Discriminative Parser to Optimize Machine Translation Reordering.</REFTITLE>
+      <DATE>2012</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Joakim Nivre</RAUTHOR>
+      <REFTITLE>Atanas Chanev, G&#252;lsen Eryigit, Sandra K&#252;bler, Svetoslav Marinov, and Erwin Marsi.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>An efficient method for determining bilingual word classes.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>David L Poole</RAUTHOR>
+      <REFTITLE>Artificial Intelligence: Foundations of Computational Agents.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Ananthakrishnan Ramanathan</RAUTHOR>
+      <REFTITLE>Case markers and Morphology: Addressing the crux of the fluency problem in English-Hindi SMT.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Kay Rottmann</RAUTHOR>
+      <REFTITLE>Word Reordering in Statistical Machine Translation with a POS-Based Distortion Model.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Roy Tromble</RAUTHOR>
+      <REFTITLE>Learning linear ordering problems for better translation.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Karthik Visweswariah</RAUTHOR>
+      <REFTITLE>Syntax based reordering with automatically derived rules for improved statistical machine translation.</REFTITLE>
+      <DATE>2010</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Rajakrishnan Rajkumar Visweswariah</RAUTHOR>
+      <REFTITLE>A word reordering model for improved machine translation.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Karthik Visweswariah</RAUTHOR>
+      <REFTITLE>Cut the noise: Mutually reinforcing reordering and alignments for improved machine translation.</REFTITLE>
+      <DATE>2013</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Chao Wang</RAUTHOR>
+      <REFTITLE>Chinese Syntactic Reordering for Statistical Machine Translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Xianchao Wu</RAUTHOR>
+      <REFTITLE>Extracting Pre-ordering Rules from Predicate-Argument Structures.</REFTITLE>
+      <DATE>2011</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Fei Xia</RAUTHOR>
+      <REFTITLE>Improving a statistical MT system with automatically learned rewrite patterns.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="29">
+      <RAUTHOR>Peng Xu</RAUTHOR>
+      <REFTITLE>Using a Dependency Parser to Improve SMT for Subject-Object-Verb Languages.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

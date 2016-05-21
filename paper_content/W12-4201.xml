@@ -1,0 +1,1917 @@
+<document>
+  <filename>W12-4201</filename>
+  <authors>
+    <author>Artem Sokolov</author>
+  </authors>
+  <title>WSD for n-best reranking and local language modeling in SMT</title>
+  <content>
+    <sections>
+      <section>
+        <index>0</index>
+        <title>Abstract</title>
+        <text>We integrate semantic information at two stages of the translation process of a state-ofthe-art SMT system. A Word Sense Disambiguation (WSD) classifier produces a probability distribution over the translation candidates of source words which is exploited in two ways. First, the probabilities serve to rerank a list of n-best translations produced by the system. Second, the WSD predictions are used to build a supplementary language model for each sentence, aimed to favor translations that seem more adequate in this specific sentential context. Both approaches lead to significant improvements in translation performance, highlighting the usefulness of source side disambiguation for SMT.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>We integrate semantic information at two stages of the translation process of a state-ofthe-art SMT system.</text>
+              <doc_id>0</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>A Word Sense Disambiguation (WSD) classifier produces a probability distribution over the translation candidates of source words which is exploited in two ways.</text>
+              <doc_id>1</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>First, the probabilities serve to rerank a list of n-best translations produced by the system.</text>
+              <doc_id>2</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Second, the WSD predictions are used to build a supplementary language model for each sentence, aimed to favor translations that seem more adequate in this specific sentential context.</text>
+              <doc_id>3</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Both approaches lead to significant improvements in translation performance, highlighting the usefulness of source side disambiguation for SMT.</text>
+              <doc_id>4</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>1</index>
+        <title>1 Introduction</title>
+        <text>Word Sense Disambiguation (WSD) is the task of identifying the sense of words in texts by reference to some pre-existing sense inventory. The selection of the appropriate inventory and WSD method strongly depends on the goal WSD intends to serve: recent methods are increasingly oriented towards the disambiguation needs of specific end applications, and explicitly aim at improving the overall performance of complex Natural Language Processing systems (Ide and Wilks, 2007; Carpuat and Wu, 2007). This task-oriented conception of WSD is manifested in the area of multilingual semantic processing: supervised methods, which were previously shown to give the best results, are being abandoned in favor of unsupervised ones that do not rely on preannotated training data. Accordingly, pre-defined semantic inventories, that usually served to provide the lists of candidate word senses, are being replaced by senses relevant to the considered applications and directly identified from corpora by means of word sense induction methods.
+In a multilingual setting, the sense inventories needed for disambiguation are generally built from all possible translations of words or phrases in a parallel corpus (Carpuat and Wu, 2007; Chan et al., 2007), or by using more complex representations of the semantics of translations (Apidianaki, 2009; Mihalcea et al., 2010; Lefever and Hoste, 2010). However, integrating this semantic knowledge into Statistical Machine Translation (SMT) raises several challenges: the way in which the predictions of the WSD classifier have to be taken into account; the type of context exploited for disambiguation; the target words to be disambiguated (&#8220;all-words&#8221; WSD vs. WSD restricted to target words satisfying specific criteria); the use of a single classifier versus building separate classifiers for each source word; the quantity and type of data used for training the classifier (e.g., use of raw data or of more abstract representations, such as lemmatization, allowing to deal with sparseness issues), and many others. Seemingly, the optimal way to take advantage of WSD predictions remains an open issue.
+In this work, we carry out a set of experiments to investigate the impact of integrating the predictions of a cross-lingual WSD classifier into an SMT system, at two different stages of the translation process. The first approach exploits the probability distribution built by the WSD classifier over the set of translations of words found in the parallel corpus,
+for reranking the translations in the n-best list generated by the SMT system. Words in the list that match one of the proposed translations are boosted and are thus more likely to appear in the final translation. Our results on the English-French IWSLT&#8217;11 task show substantial improvements in translation quality. The second approach provides a tighter integration of the WSD classifier with the rest of the system: using the WSD predictions, an additional sentence specific language model is estimated and used during decoding. These additional local models can be used as an external knowledge source to reinforce translation hypotheses matching the prediction of the WSD system.
+In the rest of the paper, we present related work on integrating semantic information into SMT (Section 2). The WSD classifier used in the current study is described in Section 3. We then present the two approaches adopted for integrating the WSD output into SMT (Section 4). Evaluation results are presented in Section 5, before concluding and discussing some avenues for future work.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Word Sense Disambiguation (WSD) is the task of identifying the sense of words in texts by reference to some pre-existing sense inventory.</text>
+              <doc_id>5</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The selection of the appropriate inventory and WSD method strongly depends on the goal WSD intends to serve: recent methods are increasingly oriented towards the disambiguation needs of specific end applications, and explicitly aim at improving the overall performance of complex Natural Language Processing systems (Ide and Wilks, 2007; Carpuat and Wu, 2007).</text>
+              <doc_id>6</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This task-oriented conception of WSD is manifested in the area of multilingual semantic processing: supervised methods, which were previously shown to give the best results, are being abandoned in favor of unsupervised ones that do not rely on preannotated training data.</text>
+              <doc_id>7</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Accordingly, pre-defined semantic inventories, that usually served to provide the lists of candidate word senses, are being replaced by senses relevant to the considered applications and directly identified from corpora by means of word sense induction methods.</text>
+              <doc_id>8</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In a multilingual setting, the sense inventories needed for disambiguation are generally built from all possible translations of words or phrases in a parallel corpus (Carpuat and Wu, 2007; Chan et al., 2007), or by using more complex representations of the semantics of translations (Apidianaki, 2009; Mihalcea et al., 2010; Lefever and Hoste, 2010).</text>
+              <doc_id>9</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, integrating this semantic knowledge into Statistical Machine Translation (SMT) raises several challenges: the way in which the predictions of the WSD classifier have to be taken into account; the type of context exploited for disambiguation; the target words to be disambiguated (&#8220;all-words&#8221; WSD vs. WSD restricted to target words satisfying specific criteria); the use of a single classifier versus building separate classifiers for each source word; the quantity and type of data used for training the classifier (e.g., use of raw data or of more abstract representations, such as lemmatization, allowing to deal with sparseness issues), and many others.</text>
+              <doc_id>10</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Seemingly, the optimal way to take advantage of WSD predictions remains an open issue.</text>
+              <doc_id>11</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In this work, we carry out a set of experiments to investigate the impact of integrating the predictions of a cross-lingual WSD classifier into an SMT system, at two different stages of the translation process.</text>
+              <doc_id>12</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The first approach exploits the probability distribution built by the WSD classifier over the set of translations of words found in the parallel corpus,</text>
+              <doc_id>13</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>for reranking the translations in the n-best list generated by the SMT system.</text>
+              <doc_id>14</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Words in the list that match one of the proposed translations are boosted and are thus more likely to appear in the final translation.</text>
+              <doc_id>15</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Our results on the English-French IWSLT&#8217;11 task show substantial improvements in translation quality.</text>
+              <doc_id>16</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The second approach provides a tighter integration of the WSD classifier with the rest of the system: using the WSD predictions, an additional sentence specific language model is estimated and used during decoding.</text>
+              <doc_id>17</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>These additional local models can be used as an external knowledge source to reinforce translation hypotheses matching the prediction of the WSD system.</text>
+              <doc_id>18</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>In the rest of the paper, we present related work on integrating semantic information into SMT (Section 2).</text>
+              <doc_id>19</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The WSD classifier used in the current study is described in Section 3.</text>
+              <doc_id>20</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>We then present the two approaches adopted for integrating the WSD output into SMT (Section 4).</text>
+              <doc_id>21</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>Evaluation results are presented in Section 5, before concluding and discussing some avenues for future work.</text>
+              <doc_id>22</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>2</index>
+        <title>2 Related work</title>
+        <text>Word sense disambiguation systems generally work at the word level: given an input word and its context, they predict its (most likely) meaning. At the same time, state-of-the-art translation systems all consider groups of words (phrases, tuples, etc.) rather than single words in the translation process. This discrepancy between the units used in MT and those used in WSD is one of the major difficulties in integrating word predictions into the decoder. This was, for instance, one of the reasons for the somewhat disappointing results obtained by Carpuat and Wu (2005) when the output of a WSD system was directly incorporated into a Chinese-English SMT system. Because of this difficulty, other crosslingual semantics works have considered only simplified tasks, like blank-filling, without addressing the integration of the WSD models in full-scale MT systems (Vickrey et al., 2005; Specia, 2006). Since the pioneering work of Carpuat and Wu (2005), several more successful ways to take WSD predictions into account have been proposed. For instance, Carpuat and Wu (2007) proposed to generalize the WSD system so that it performs a fully phrasal multiword disambiguation. However, given that the number of phrases is far larger than the number of words, this approach suffers from sparsity and computational problems, as it requires training a classifier for each entry of the phrase table.
+Chan et al. (2007) introduced a way to modify the rule weights of a hierarchical translation system to reflect the predictions of their WSD system. While their approach and ours are built on the same intuition (an adaptation of a model to incorporate word predictions) their work is specific to hierarchical systems, while ours can be applied to any decoder that uses a language model. Haque et al. (2009) et Haque et al. (2010) introduce lexico-syntactic descriptions in the form of supertags as source language context-informed features in a phrase-based SMT and a state-of-the-art hierarchical model, respectively, and report significant gains in translation quality.
+Closer to our work, Mauser et al. (2009) and Patry and Langlais (2011) train a global lexicon model that predicts the bag of output words from the bag of input words. As no explicit alignment between input and output words is used, words are chosen based on the (global) input context. For each input sentence, the decoder considers these word predictions as an additional feature that it uses to define a new model score which favors translation hypotheses containing words predicted by the global lexicon model. A difference between this approach and our work is that instead of using a global lexicon model, we disambiguate a subset of the words in the input sentence by employing a WSD classifier that creates a probability distribution over the translations of each word in its context. The unsupervised cross-lingual WSD classifier used in this work is similar to the one proposed in Apidianaki (2009). The original classifier disambiguates new instances of words in context by selecting the most appropriate cluster of translations among a set of candidate clusters found in an automatically built bilingual sense inventory. The sense inventory exploited by the classifier is created by a cross-lingual word sense induction (WSI) method that reveals the senses of source words by grouping their translations into clusters according to their semantic proximity, revealed by a distributional similarity calculation. The resulting clusters represent
+the source words&#8217; candidate senses. This WSD method gave good results in a word prediction task but, similarly to the work of Vickrey et al. (2005) and of Specia (2006), the predictions are not integrated into a complete MT system.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Word sense disambiguation systems generally work at the word level: given an input word and its context, they predict its (most likely) meaning.</text>
+              <doc_id>23</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>At the same time, state-of-the-art translation systems all consider groups of words (phrases, tuples, etc.) rather than single words in the translation process.</text>
+              <doc_id>24</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This discrepancy between the units used in MT and those used in WSD is one of the major difficulties in integrating word predictions into the decoder.</text>
+              <doc_id>25</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>This was, for instance, one of the reasons for the somewhat disappointing results obtained by Carpuat and Wu (2005) when the output of a WSD system was directly incorporated into a Chinese-English SMT system.</text>
+              <doc_id>26</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>Because of this difficulty, other crosslingual semantics works have considered only simplified tasks, like blank-filling, without addressing the integration of the WSD models in full-scale MT systems (Vickrey et al., 2005; Specia, 2006).</text>
+              <doc_id>27</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>Since the pioneering work of Carpuat and Wu (2005), several more successful ways to take WSD predictions into account have been proposed.</text>
+              <doc_id>28</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>For instance, Carpuat and Wu (2007) proposed to generalize the WSD system so that it performs a fully phrasal multiword disambiguation.</text>
+              <doc_id>29</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>However, given that the number of phrases is far larger than the number of words, this approach suffers from sparsity and computational problems, as it requires training a classifier for each entry of the phrase table.</text>
+              <doc_id>30</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Chan et al. (2007) introduced a way to modify the rule weights of a hierarchical translation system to reflect the predictions of their WSD system.</text>
+              <doc_id>31</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>While their approach and ours are built on the same intuition (an adaptation of a model to incorporate word predictions) their work is specific to hierarchical systems, while ours can be applied to any decoder that uses a language model.</text>
+              <doc_id>32</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Haque et al. (2009) et Haque et al. (2010) introduce lexico-syntactic descriptions in the form of supertags as source language context-informed features in a phrase-based SMT and a state-of-the-art hierarchical model, respectively, and report significant gains in translation quality.</text>
+              <doc_id>33</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>Closer to our work, Mauser et al. (2009) and Patry and Langlais (2011) train a global lexicon model that predicts the bag of output words from the bag of input words.</text>
+              <doc_id>34</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>As no explicit alignment between input and output words is used, words are chosen based on the (global) input context.</text>
+              <doc_id>35</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>For each input sentence, the decoder considers these word predictions as an additional feature that it uses to define a new model score which favors translation hypotheses containing words predicted by the global lexicon model.</text>
+              <doc_id>36</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>A difference between this approach and our work is that instead of using a global lexicon model, we disambiguate a subset of the words in the input sentence by employing a WSD classifier that creates a probability distribution over the translations of each word in its context.</text>
+              <doc_id>37</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>The unsupervised cross-lingual WSD classifier used in this work is similar to the one proposed in Apidianaki (2009).</text>
+              <doc_id>38</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>The original classifier disambiguates new instances of words in context by selecting the most appropriate cluster of translations among a set of candidate clusters found in an automatically built bilingual sense inventory.</text>
+              <doc_id>39</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>The sense inventory exploited by the classifier is created by a cross-lingual word sense induction (WSI) method that reveals the senses of source words by grouping their translations into clusters according to their semantic proximity, revealed by a distributional similarity calculation.</text>
+              <doc_id>40</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+            <sentence>
+              <text>The resulting clusters represent</text>
+              <doc_id>41</doc_id>
+              <sec_id>7</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>the source words&#8217; candidate senses.</text>
+              <doc_id>42</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>This WSD method gave good results in a word prediction task but, similarly to the work of Vickrey et al. (2005) and of Specia (2006), the predictions are not integrated into a complete MT system.</text>
+              <doc_id>43</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>3</index>
+        <title>3 The WSD classifier</title>
+        <text>Our WSD classifier is a variation of the one introduced in Apidianaki (2009). The main difference is that here the classifier serves to discriminate between unclustered translations of a word and to assign a probability to each translation for new instances of the word in context. Each translation is represented by a source language feature vector that the classifier uses for disambiguation. All experiments carried out in this study are for the English (EN) - French (FR) language pair.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>Our WSD classifier is a variation of the one introduced in Apidianaki (2009).</text>
+              <doc_id>44</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The main difference is that here the classifier serves to discriminate between unclustered translations of a word and to assign a probability to each translation for new instances of the word in context.</text>
+              <doc_id>45</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>Each translation is represented by a source language feature vector that the classifier uses for disambiguation.</text>
+              <doc_id>46</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>All experiments carried out in this study are for the English (EN) - French (FR) language pair.</text>
+              <doc_id>47</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>3.1 Source Language Feature Vectors</title>
+            <text>Preprocessing The information needed by the classifier is gathered from the EN-FR training data provided for the IWSLT&#8217;11 evaluation task. 1 The dataset consists of 107,268 parallel sentences, wordaligned in both translation directions using GIZA++ (Och and Ney, 2003). We disambiguate EN words found in the parallel corpus that satisfy the set of criteria described below. Two bilingual lexicons are built from the alignment results and filtered to eliminate spurious alignments. First, translation correspondences with a probability lower than a threshold are discarded; 2 then translations are filtered by part-of-speech (PoS), keeping for each word only translations pertaining to the same grammatical category; 3 finally, only intersecting alignments (i.e., correspondences found in the lexicons of both directions) are retained. Given that the lexicons contain word forms, the intersection is calculated based on lemmatization information in order to perform a generalization over the contents of the lexicons. For instance, if the EN adjective regular is translated by habituelle (femi-
+1 http://www.iwslt2011.org/ 2 The translation probabilities between word tokens are
+found in the translation table produced by GIZA++; the threshold is set to 0.01. 3 For this filtering, we employ a PoS and lemmatization lexicon built after tagging both parts of the training corpus with TreeTagger (Schmid, 1994).
+nine singular form of the adjective habituel) in the EN-FR lexicon, but is found to translate habituel (masculine singular form) in the other direction, the EN-FR correspondence regular/habituelle is retained (because the two variants of the adjective are reduced to the same lemma).
+All lexicon entries satisfying the above criteria are retained and used for disambiguation. In these initial experiments, we disambiguate English words having less than 20 French translations in the lexicon. Each French translation of an English word that appears more than once in the training corpus 4 is characterized by a weighted English feature vector built from the training data.
+Vector building The feature vectors corresponding to the translations are built by exploiting information from the source contexts (Apidianaki, 2008; Grefenstette, 1994). For each translation of an EN word w, we extract the content words that co-occur with w in the corresponding source sentences of the parallel corpus (i.e. the content words that occur in the same sentence as w whenever it is translated by this translation). The extracted source language words constitute the features of the vector built for the translation.
+For each translation T i of w, let N be the number of features retained from the corresponding source context. Each feature F j (1 &#8804; j &#8804; N) receives a total weight tw(F j ,T i ) defined as the product of the feature&#8217;s global weight, gw(F j ), and its local weight with that translation, lw(F j ,T i ):
+tw(F j ,T i )=gw(F j )&#183;lw(F j ,T i ) (1)
+The global weight of a feature F j is a function of the number N i of translations (T i &#8217;s) to which F j is related, and of the probabilities (p i j ) that F j co-occurs with instances of w translated by each of the T i &#8217;s:
+gw(F j )=1&#8722; &#8721; T i p i j log(p i j )
+N i (2)
+Each of the p i j &#8217;s is computed as the ratio between the co-occurrence frequency of F j with w when translated as T i , denoted as cooc frequency(F j ,T i ),
+4 We do not consider hapax translations because they often
+correspond to alignment errors.
+and the total number of features (N) seen with T i :
+p i j = cooc frequency(F j,T i ) N (3)
+Finally, the local weight lw(F j ,T i ) between F j and T i directly depends on their co-occurrence frequency:
+lw(F j ,T i )=log(cooc frequency(F j ,T i )) (4)</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Preprocessing The information needed by the classifier is gathered from the EN-FR training data provided for the IWSLT&#8217;11 evaluation task.</text>
+                  <doc_id>48</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>1 The dataset consists of 107,268 parallel sentences, wordaligned in both translation directions using GIZA++ (Och and Ney, 2003).</text>
+                  <doc_id>49</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We disambiguate EN words found in the parallel corpus that satisfy the set of criteria described below.</text>
+                  <doc_id>50</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Two bilingual lexicons are built from the alignment results and filtered to eliminate spurious alignments.</text>
+                  <doc_id>51</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>First, translation correspondences with a probability lower than a threshold are discarded; 2 then translations are filtered by part-of-speech (PoS), keeping for each word only translations pertaining to the same grammatical category; 3 finally, only intersecting alignments (i.e., correspondences found in the lexicons of both directions) are retained.</text>
+                  <doc_id>52</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given that the lexicons contain word forms, the intersection is calculated based on lemmatization information in order to perform a generalization over the contents of the lexicons.</text>
+                  <doc_id>53</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For instance, if the EN adjective regular is translated by habituelle (femi-</text>
+                  <doc_id>54</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>1 http://www.iwslt2011.org/ 2 The translation probabilities between word tokens are</text>
+                  <doc_id>55</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>found in the translation table produced by GIZA++; the threshold is set to 0.01.</text>
+                  <doc_id>56</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>3 For this filtering, we employ a PoS and lemmatization lexicon built after tagging both parts of the training corpus with TreeTagger (Schmid, 1994).</text>
+                  <doc_id>57</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>nine singular form of the adjective habituel) in the EN-FR lexicon, but is found to translate habituel (masculine singular form) in the other direction, the EN-FR correspondence regular/habituelle is retained (because the two variants of the adjective are reduced to the same lemma).</text>
+                  <doc_id>58</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>All lexicon entries satisfying the above criteria are retained and used for disambiguation.</text>
+                  <doc_id>59</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In these initial experiments, we disambiguate English words having less than 20 French translations in the lexicon.</text>
+                  <doc_id>60</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Each French translation of an English word that appears more than once in the training corpus 4 is characterized by a weighted English feature vector built from the training data.</text>
+                  <doc_id>61</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Vector building The feature vectors corresponding to the translations are built by exploiting information from the source contexts (Apidianaki, 2008; Grefenstette, 1994).</text>
+                  <doc_id>62</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For each translation of an EN word w, we extract the content words that co-occur with w in the corresponding source sentences of the parallel corpus (i.e. the content words that occur in the same sentence as w whenever it is translated by this translation).</text>
+                  <doc_id>63</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The extracted source language words constitute the features of the vector built for the translation.</text>
+                  <doc_id>64</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>For each translation T i of w, let N be the number of features retained from the corresponding source context.</text>
+                  <doc_id>65</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Each feature F j (1 &#8804; j &#8804; N) receives a total weight tw(F j ,T i ) defined as the product of the feature&#8217;s global weight, gw(F j ), and its local weight with that translation, lw(F j ,T i ):</text>
+                  <doc_id>66</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>tw(F j ,T i )=gw(F j )&#183;lw(F j ,T i ) (1)</text>
+                  <doc_id>67</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The global weight of a feature F j is a function of the number N i of translations (T i &#8217;s) to which F j is related, and of the probabilities (p i j ) that F j co-occurs with instances of w translated by each of the T i &#8217;s:</text>
+                  <doc_id>68</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>gw(F j )=1&#8722; &#8721; T i p i j log(p i j )</text>
+                  <doc_id>69</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>N i (2)</text>
+                  <doc_id>70</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Each of the p i j &#8217;s is computed as the ratio between the co-occurrence frequency of F j with w when translated as T i , denoted as cooc frequency(F j ,T i ),</text>
+                  <doc_id>71</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>4 We do not consider hapax translations because they often</text>
+                  <doc_id>72</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>correspond to alignment errors.</text>
+                  <doc_id>73</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>and the total number of features (N) seen with T i :</text>
+                  <doc_id>74</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>p i j = cooc frequency(F j,T i ) N (3)</text>
+                  <doc_id>75</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Finally, the local weight lw(F j ,T i ) between F j and T i directly depends on their co-occurrence frequency:</text>
+                  <doc_id>76</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>lw(F j ,T i )=log(cooc frequency(F j ,T i )) (4)</text>
+                  <doc_id>77</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>3.2 Cross-Lingual WSD</title>
+            <text>The weighted feature vectors corresponding to the different translations of an English word are used for disambiguation. 5 As noted in Section 3.1, we disambiguate source words satisfying a set of criteria. Disambiguation is performed by comparing the vector associated with each translation to the new context of the words in the input sentences from the IWSLT&#8217;11 test set.
+More precisely, the information contained in each vector is exploited by the WSD classifier to produce a probability distribution over the translations, for each new instance of a word in context. We disambiguate word forms (not lemmas) in order to directly use the selected translations in the translated texts. However, we should note that in some cases this reduces the role of WSD to distinguishing between different forms of one word and no different senses are involved. Using more abstract representations (corresponding to senses) is one of the perspectives of this work.
+The classifier assigns a score to each translation by comparing information in the corresponding source vector to information found in the new context. Given that the vector features are lemmatized, the new context is lemmatized as well and the lemmas of the content words are gathered in a bag of words. The adequacy of each translation for a new instance of a word is estimated by comparing the translation&#8217;s vector with the bag of words built from the new context. If common features are found between the new context and a translation vector, an association score is calculated corresponding to the mean of the weights of the common features relatively to the translation (i.e. found in its vector). In
+5 The vectors are not used for clustering the translations as
+in Apidianaki (2009) but all translations are considered as candidate senses.
+Equation (5), (CF j ) |CF| j=1 is the set of common features between the translation vector V i and the new context C and tw is the weight of a CF with translation T i (cf. formula (1)).
+assoc score(V i ,C)= &#8721;|CF| j=1 tw(CF j,T i ) |CF| (5)
+The scores assigned to the different translations of a source word are normalized to sum up to one.
+In this way, a subset of the words that occur in the input sentences from the test set are annotated with their translations and the associated scores (contextual probabilities), as shown in the example in Figure 1. 6 The WSD classifier makes predictions only for the subset of the words found in the source part of the parallel test set that were retained from the initial EN-FR lexicon after filtering. Table 1 presents the total coverage of the WSD method as well as its coverage for words of different PoS, with a focus on content words. We report the number of disambiguated words for each content PoS (cf. third column) and the corresponding percentage, calculated on the basis of the total number of words pertaining to this PoS (cf. second column). We observe that the coverage of the method on nouns and adjectives is higher than the one on verbs. Given the rich verbal morphology of French, several verbs have a very high number of translations in the bilingual lexicon (over 20) and are not handled during disambiguation. The same applies to function words (articles, prepositions, conjunctions, etc.) included in the &#8216;all PoS&#8217; category.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>The weighted feature vectors corresponding to the different translations of an English word are used for disambiguation.</text>
+                  <doc_id>78</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>5 As noted in Section 3.1, we disambiguate source words satisfying a set of criteria.</text>
+                  <doc_id>79</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Disambiguation is performed by comparing the vector associated with each translation to the new context of the words in the input sentences from the IWSLT&#8217;11 test set.</text>
+                  <doc_id>80</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>More precisely, the information contained in each vector is exploited by the WSD classifier to produce a probability distribution over the translations, for each new instance of a word in context.</text>
+                  <doc_id>81</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We disambiguate word forms (not lemmas) in order to directly use the selected translations in the translated texts.</text>
+                  <doc_id>82</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>However, we should note that in some cases this reduces the role of WSD to distinguishing between different forms of one word and no different senses are involved.</text>
+                  <doc_id>83</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Using more abstract representations (corresponding to senses) is one of the perspectives of this work.</text>
+                  <doc_id>84</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The classifier assigns a score to each translation by comparing information in the corresponding source vector to information found in the new context.</text>
+                  <doc_id>85</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given that the vector features are lemmatized, the new context is lemmatized as well and the lemmas of the content words are gathered in a bag of words.</text>
+                  <doc_id>86</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The adequacy of each translation for a new instance of a word is estimated by comparing the translation&#8217;s vector with the bag of words built from the new context.</text>
+                  <doc_id>87</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If common features are found between the new context and a translation vector, an association score is calculated corresponding to the mean of the weights of the common features relatively to the translation (i.e. found in its vector).</text>
+                  <doc_id>88</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In</text>
+                  <doc_id>89</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>5 The vectors are not used for clustering the translations as</text>
+                  <doc_id>90</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>in Apidianaki (2009) but all translations are considered as candidate senses.</text>
+                  <doc_id>91</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Equation (5), (CF j ) |CF| j=1 is the set of common features between the translation vector V i and the new context C and tw is the weight of a CF with translation T i (cf. formula (1)).</text>
+                  <doc_id>92</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>assoc score(V i ,C)= &#8721;|CF| j=1 tw(CF j,T i ) |CF| (5)</text>
+                  <doc_id>93</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The scores assigned to the different translations of a source word are normalized to sum up to one.</text>
+                  <doc_id>94</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>In this way, a subset of the words that occur in the input sentences from the test set are annotated with their translations and the associated scores (contextual probabilities), as shown in the example in Figure 1.</text>
+                  <doc_id>95</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>6 The WSD classifier makes predictions only for the subset of the words found in the source part of the parallel test set that were retained from the initial EN-FR lexicon after filtering.</text>
+                  <doc_id>96</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Table 1 presents the total coverage of the WSD method as well as its coverage for words of different PoS, with a focus on content words.</text>
+                  <doc_id>97</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We report the number of disambiguated words for each content PoS (cf. third column) and the corresponding percentage, calculated on the basis of the total number of words pertaining to this PoS (cf. second column).</text>
+                  <doc_id>98</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We observe that the coverage of the method on nouns and adjectives is higher than the one on verbs.</text>
+                  <doc_id>99</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given the rich verbal morphology of French, several verbs have a very high number of translations in the bilingual lexicon (over 20) and are not handled during disambiguation.</text>
+                  <doc_id>100</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The same applies to function words (articles, prepositions, conjunctions, etc.) included in the &#8216;all PoS&#8217; category.</text>
+                  <doc_id>101</doc_id>
+                  <sec_id>6</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>4</index>
+        <title>4 Integrating Semantics into SMT</title>
+        <text>In this section, we present two ways to integrate WSD predictions into an SMT decoder. The first one (Section 4.1) is a simple method based on n- best reranking. This method, already proposed in the literature (Specia et al., 2008), allows us to easily evaluate the impact of WSD predictions on automatic translation quality. The second one (Section 4.2) builds on the idea, introduced in (Crego et al., 2010), of using an additional language model to
+6 Some source words are tagged with only one translation
+(e.g. stones {pierres(1.000)}) because their other translations in the lexicon occurred only once in the training corpus and, consequently, were not considered.
+you know, one of the intense {intenses(0.305), forte(0.306), intense(0.389)} pleasures of travel {transport(0.334), voyage(0.332), voyager(0.334)} and one of the delights of ethnographic research {recherche(0.225), research(0.167), &#233;tudes(0.218), recherches(0.222), &#233;tude(0.167)} is the opportunity {possibilit&#233;(0.187), chance(0.185), opportunit&#233;s(0.199), occasion(0.222), opportunit&#233;(0.207)} to live amongst those who have not forgotten {oubli(0.401), oubli&#233;s(0.279), oubli&#233;e(0.321)} the old {ancien(0.079), &#226;ge(0.089), anciennes(0.072), &#226;g&#233;es(0.100), &#226;g&#233;s(0.063), ancienne(0.072), vieille(0.093), ans(0.088), vieux(0.086), vieil(0.078), anciens(0.081), vieilles(0.099)} ways {fa&#231;ons(0.162), mani&#232;res(0.140), moyens(0.161), aspects(0.113), fa&#231;on(0.139), moyen(0.124), mani&#232;re(0.161)} , who still feel their past {pass&#233;e(0.269), autrefois(0.350), pass&#233;(0.381)} in the wind {&#233;olienne(0.305), vent(0.392), &#233;oliennes(0.304)} , touch {touchent(0.236), touchez(0.235), touche(0.235), toucher(0.293)} it in stones {pierres(1.000)} polished by rain {pluie(1.000)} , taste {go&#251;t(0.500), go&#251;ter(0.500)} it in the bitter {amer(0.360), am&#232;re(0.280), amertume(0.360)} leaves {feuilles(0.500), feuillages(0.500)} of plants {usines(0.239), centrales(0.207), plantes(0.347), v&#233;g&#233;taux(0.207)}.
+directly integrate the prediction of the WSD system into the decoder.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>In this section, we present two ways to integrate WSD predictions into an SMT decoder.</text>
+              <doc_id>102</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>The first one (Section 4.1) is a simple method based on n- best reranking.</text>
+              <doc_id>103</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>This method, already proposed in the literature (Specia et al., 2008), allows us to easily evaluate the impact of WSD predictions on automatic translation quality.</text>
+              <doc_id>104</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>The second one (Section 4.2) builds on the idea, introduced in (Crego et al., 2010), of using an additional language model to</text>
+              <doc_id>105</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>6 Some source words are tagged with only one translation</text>
+              <doc_id>106</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>(e.g. stones {pierres(1.000)}) because their other translations in the lexicon occurred only once in the training corpus and, consequently, were not considered.</text>
+              <doc_id>107</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>you know, one of the intense {intenses(0.305), forte(0.306), intense(0.389)} pleasures of travel {transport(0.334), voyage(0.332), voyager(0.334)} and one of the delights of ethnographic research {recherche(0.225), research(0.167), &#233;tudes(0.218), recherches(0.222), &#233;tude(0.167)} is the opportunity {possibilit&#233;(0.187), chance(0.185), opportunit&#233;s(0.199), occasion(0.222), opportunit&#233;(0.207)} to live amongst those who have not forgotten {oubli(0.401), oubli&#233;s(0.279), oubli&#233;e(0.321)} the old {ancien(0.079), &#226;ge(0.089), anciennes(0.072), &#226;g&#233;es(0.100), &#226;g&#233;s(0.063), ancienne(0.072), vieille(0.093), ans(0.088), vieux(0.086), vieil(0.078), anciens(0.081), vieilles(0.099)} ways {fa&#231;ons(0.162), mani&#232;res(0.140), moyens(0.161), aspects(0.113), fa&#231;on(0.139), moyen(0.124), mani&#232;re(0.161)} , who still feel their past {pass&#233;e(0.269), autrefois(0.350), pass&#233;(0.381)} in the wind {&#233;olienne(0.305), vent(0.392), &#233;oliennes(0.304)} , touch {touchent(0.236), touchez(0.235), touche(0.235), toucher(0.293)} it in stones {pierres(1.000)} polished by rain {pluie(1.000)} , taste {go&#251;t(0.500), go&#251;ter(0.500)} it in the bitter {amer(0.360), am&#232;re(0.280), amertume(0.360)} leaves {feuilles(0.500), feuillages(0.500)} of plants {usines(0.239), centrales(0.207), plantes(0.347), v&#233;g&#233;taux(0.207)}.</text>
+              <doc_id>108</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+          <paragraph>
+            <sentence>
+              <text>directly integrate the prediction of the WSD system into the decoder.</text>
+              <doc_id>109</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>4.1 N-best List Reranking</title>
+            <text>A simple way to influence translation hypotheses selection with WSD information is to use the WSD probabilities of translation variants to produce an additional feature appended to the n-best list after its generation. The feature value should reflect the degree to which a particular hypothesis includes proposed WSD variants for the respective words. Rerunning the standard MERT optimization procedure on the augmented features gives a new set of model weights, that are used to rescore the n-best list.
+We propose the following method of features construction. Given the phrase alignment information between a source sentence and a hypothesis, we verify if one or more of the proposed WSD variants for the source word occur in the corresponding phrase of the translation hypothesis. If this is the case, the corresponding probabilities are additively accumulated for the current hypothesis. At the end, two features are appended to each hypothesis in the n-best list: the total score accumulated for the hypothesis and the same score normalized by the number of words in the hypothesis. Two MERT initialization schemes were considered: (1) all model weights are initialized to zero, and (2) all the weights of &#8220;standard&#8221; features are initialized to the values found by MERT and the new WSD features to zero.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>A simple way to influence translation hypotheses selection with WSD information is to use the WSD probabilities of translation variants to produce an additional feature appended to the n-best list after its generation.</text>
+                  <doc_id>110</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The feature value should reflect the degree to which a particular hypothesis includes proposed WSD variants for the respective words.</text>
+                  <doc_id>111</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Rerunning the standard MERT optimization procedure on the augmented features gives a new set of model weights, that are used to rescore the n-best list.</text>
+                  <doc_id>112</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>We propose the following method of features construction.</text>
+                  <doc_id>113</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Given the phrase alignment information between a source sentence and a hypothesis, we verify if one or more of the proposed WSD variants for the source word occur in the corresponding phrase of the translation hypothesis.</text>
+                  <doc_id>114</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>If this is the case, the corresponding probabilities are additively accumulated for the current hypothesis.</text>
+                  <doc_id>115</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>At the end, two features are appended to each hypothesis in the n-best list: the total score accumulated for the hypothesis and the same score normalized by the number of words in the hypothesis.</text>
+                  <doc_id>116</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Two MERT initialization schemes were considered: (1) all model weights are initialized to zero, and (2) all the weights of &#8220;standard&#8221; features are initialized to the values found by MERT and the new WSD features to zero.</text>
+                  <doc_id>117</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>4.2 Local Language Models</title>
+            <text>We propose to adapt the approach introduced in Crego et al. (2010) as an alternative way to integrate the WSD predictions within the decoder: for each sentence to be translated, an additional language model (LM) is estimated and taken into account during decoding. As this additional &#8220;local&#8221; model depends on the source sentence, it can be used as an external source of knowledge to reinforce translation hypotheses complying with criteria predicted from the whole source sentence. For instance, the unigram probabilities of the additional LM can be derived from the (word) predictions of a WSD system, bigram probabilities from the prediction of phrases and so on and so forth. Although this approach was suggested in (Crego et al., 2010), this
+is, to the best of our knowledge, the first time it is experimentally validated. In practice, the predictions of the WSD system described in Section 3 can be integrated by defining, for each sentence, an additional unigram language model as follows:
+&#8226; each translation predicted by the WSD classifier can be generated by the language model with the probability estimated by the WSD classifier; no information about the source word that has been disambiguated is considered;
+&#8226; the probability of unknown words is set to a small arbitrary constant.
+Even if most of the words composing the translation hypothesis are considered as unknown words, hypotheses that contain the words predicted by the WSD system still have a higher LM score and are therefore preferred. Note that even if we only use unigram language models in our experiments, as senses are predicted at the word level, our approach is able to handle disambiguation of phrases as well.
+This approach has two main advantages over existing ways to integrate WSD predictions in an SMT system. First, no hard decisions are made: errors of the WSD can be &#8220;corrected&#8221; by the translation. Second, sense disambiguation at the word level is naturally and automatically propagated at the phrase level: the additional LM is influencing all phrase pairs using one of the predicted words. Compared to the reranking approach introduced in the previous section, this method results in a tighter integration with the decoder. In particular, the WSD predictions are applied before searchspace pruning and are therefore expected to have a more important role.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>We propose to adapt the approach introduced in Crego et al. (2010) as an alternative way to integrate the WSD predictions within the decoder: for each sentence to be translated, an additional language model (LM) is estimated and taken into account during decoding.</text>
+                  <doc_id>118</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>As this additional &#8220;local&#8221; model depends on the source sentence, it can be used as an external source of knowledge to reinforce translation hypotheses complying with criteria predicted from the whole source sentence.</text>
+                  <doc_id>119</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For instance, the unigram probabilities of the additional LM can be derived from the (word) predictions of a WSD system, bigram probabilities from the prediction of phrases and so on and so forth.</text>
+                  <doc_id>120</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Although this approach was suggested in (Crego et al., 2010), this</text>
+                  <doc_id>121</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>is, to the best of our knowledge, the first time it is experimentally validated.</text>
+                  <doc_id>122</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In practice, the predictions of the WSD system described in Section 3 can be integrated by defining, for each sentence, an additional unigram language model as follows:</text>
+                  <doc_id>123</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; each translation predicted by the WSD classifier can be generated by the language model with the probability estimated by the WSD classifier; no information about the source word that has been disambiguated is considered;</text>
+                  <doc_id>124</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>&#8226; the probability of unknown words is set to a small arbitrary constant.</text>
+                  <doc_id>125</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Even if most of the words composing the translation hypothesis are considered as unknown words, hypotheses that contain the words predicted by the WSD system still have a higher LM score and are therefore preferred.</text>
+                  <doc_id>126</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that even if we only use unigram language models in our experiments, as senses are predicted at the word level, our approach is able to handle disambiguation of phrases as well.</text>
+                  <doc_id>127</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>This approach has two main advantages over existing ways to integrate WSD predictions in an SMT system.</text>
+                  <doc_id>128</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>First, no hard decisions are made: errors of the WSD can be &#8220;corrected&#8221; by the translation.</text>
+                  <doc_id>129</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Second, sense disambiguation at the word level is naturally and automatically propagated at the phrase level: the additional LM is influencing all phrase pairs using one of the predicted words.</text>
+                  <doc_id>130</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Compared to the reranking approach introduced in the previous section, this method results in a tighter integration with the decoder.</text>
+                  <doc_id>131</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In particular, the WSD predictions are applied before searchspace pruning and are therefore expected to have a more important role.</text>
+                  <doc_id>132</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>5</index>
+        <title>5 Evaluation</title>
+        <text></text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text></text>
+              <doc_id>133</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections>
+          <subsection>
+            <index>0</index>
+            <title>5.1 Experimental Setting</title>
+            <text>In all our experiments, we considered the TEDtalk English to French data set provided by the IWSLT&#8217;11 evaluation campaign, a collection of public speeches on a variety of topics. We used the Moses decoder (Koehn et al., 2007).
+The TED-talk corpus is a small data set made of a monolingual corpus (111, 431 sentences) used to estimate a 4-gram language model with KNsmoothing, and a bilingual corpus (107, 268 sentences) used to extract the phrase table. All data are tokenized, cleaned and converted to lowercase letters using the tools provided by the WMT organizers. 7 We then use a standard training pipeline to construct the translation model: the bitext is aligned using GIZA++, symmetrized using the grow-diagfinal-and heuristic; the phrase table is extracted and scored using the tools distributed with Moses. Finally, systems are optimized using MERT on the 934 sentences of the dev-2010 set. All evaluations are performed on the 1,664 sentences of the test-2010 set.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In all our experiments, we considered the TEDtalk English to French data set provided by the IWSLT&#8217;11 evaluation campaign, a collection of public speeches on a variety of topics.</text>
+                  <doc_id>134</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We used the Moses decoder (Koehn et al., 2007).</text>
+                  <doc_id>135</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>The TED-talk corpus is a small data set made of a monolingual corpus (111, 431 sentences) used to estimate a 4-gram language model with KNsmoothing, and a bilingual corpus (107, 268 sentences) used to extract the phrase table.</text>
+                  <doc_id>136</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All data are tokenized, cleaned and converted to lowercase letters using the tools provided by the WMT organizers.</text>
+                  <doc_id>137</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>7 We then use a standard training pipeline to construct the translation model: the bitext is aligned using GIZA++, symmetrized using the grow-diagfinal-and heuristic; the phrase table is extracted and scored using the tools distributed with Moses.</text>
+                  <doc_id>138</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Finally, systems are optimized using MERT on the 934 sentences of the dev-2010 set.</text>
+                  <doc_id>139</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>All evaluations are performed on the 1,664 sentences of the test-2010 set.</text>
+                  <doc_id>140</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>1</index>
+            <title>5.2 Baseline</title>
+            <text>In addition to the models introduced in Section 4, we considered two other supplementary models as baselines. The first one uses the IBM 1 model estimated during the SMT system training as a simple WSD system: for each source sentence, a unigram additional language model is defined by taking, for each source, the 20 best translations according to the IBM 1 model and their probability. Model 1 has been shown to be one of the best performing features to be added to an SMT system in a reranking step (Och et al., 2004) and can be seen as a naive WSD classifier. To test the validity of our approach, we replicate the &#8220;oracle&#8221; experiments of Crego et al. (2010) and estimate the best gain our method can achieve. These experiments consist in using the reference to train a local n-gram language model (with n in the range 1 to 3) which amounts, in the local language model method of Section 4.2, to assuming that the WSD system correctly predicted a single translation for each source word.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>In addition to the models introduced in Section 4, we considered two other supplementary models as baselines.</text>
+                  <doc_id>141</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The first one uses the IBM 1 model estimated during the SMT system training as a simple WSD system: for each source sentence, a unigram additional language model is defined by taking, for each source, the 20 best translations according to the IBM 1 model and their probability.</text>
+                  <doc_id>142</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Model 1 has been shown to be one of the best performing features to be added to an SMT system in a reranking step (Och et al., 2004) and can be seen as a naive WSD classifier.</text>
+                  <doc_id>143</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>To test the validity of our approach, we replicate the &#8220;oracle&#8221; experiments of Crego et al. (2010) and estimate the best gain our method can achieve.</text>
+                  <doc_id>144</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>These experiments consist in using the reference to train a local n-gram language model (with n in the range 1 to 3) which amounts, in the local language model method of Section 4.2, to assuming that the WSD system correctly predicted a single translation for each source word.</text>
+                  <doc_id>145</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>2</index>
+            <title>5.3 Results</title>
+            <text>Table 2 reports the results of our experiments. It appears that, for the considered task, sense disambiguation improves translation performance: n-best rescoring results in a 0.37 BLEU improvement and using an additional language model brings about an improvement of up to a 0.88 BLEU. In both cases, MERT assigns a large weight to the additional fea-
+7 http://statmt.org/wmt08/scripts.tgz
+tures during tuning. When rescoring n-best, an improvement is observed only when the weights are initialized to zero and not to the weights resulting from the previous optimization, maybe because of the difficulty to exit the local minimum MERT had found earlier.
+As expected, integrating the WSD predictions with an additional language model results in a larger improvement than simple rescoring, which shows the importance of applying this new source of information early in the translation pipeline, before search space pruning. Also note that the system using the IBM 1 predictions is outperformed by the system using the WSD classifier introduced in Section 3, showing the quality of its predictions.
+Oracle experiments stress the high potential of the method introduced in (Crego et al., 2010) as a way to integrate external sources of knowledge: all three conditions result in large improvements over the baseline and the proposed methods. It must, however, be noted that contrary to the WSD method introduced in Section 3, these oracle experiments rely on sense predictions for all source words and not only content words. Surprisingly enough, predicting phrases instead of words results only in a small improvement. Additional experiments are required to explain why 2-gram oracle achieved such a low performance.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>Table 2 reports the results of our experiments.</text>
+                  <doc_id>146</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It appears that, for the considered task, sense disambiguation improves translation performance: n-best rescoring results in a 0.37 BLEU improvement and using an additional language model brings about an improvement of up to a 0.88 BLEU.</text>
+                  <doc_id>147</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>In both cases, MERT assigns a large weight to the additional fea-</text>
+                  <doc_id>148</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>7 http://statmt.org/wmt08/scripts.tgz</text>
+                  <doc_id>149</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>tures during tuning.</text>
+                  <doc_id>150</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>When rescoring n-best, an improvement is observed only when the weights are initialized to zero and not to the weights resulting from the previous optimization, maybe because of the difficulty to exit the local minimum MERT had found earlier.</text>
+                  <doc_id>151</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>As expected, integrating the WSD predictions with an additional language model results in a larger improvement than simple rescoring, which shows the importance of applying this new source of information early in the translation pipeline, before search space pruning.</text>
+                  <doc_id>152</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Also note that the system using the IBM 1 predictions is outperformed by the system using the WSD classifier introduced in Section 3, showing the quality of its predictions.</text>
+                  <doc_id>153</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Oracle experiments stress the high potential of the method introduced in (Crego et al., 2010) as a way to integrate external sources of knowledge: all three conditions result in large improvements over the baseline and the proposed methods.</text>
+                  <doc_id>154</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>It must, however, be noted that contrary to the WSD method introduced in Section 3, these oracle experiments rely on sense predictions for all source words and not only content words.</text>
+                  <doc_id>155</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Surprisingly enough, predicting phrases instead of words results only in a small improvement.</text>
+                  <doc_id>156</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Additional experiments are required to explain why 2-gram oracle achieved such a low performance.</text>
+                  <doc_id>157</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+          <subsection>
+            <index>3</index>
+            <title>5.4 Contrastive lexical evaluation</title>
+            <text>All the measures used for evaluating the impact of WSD information on translation show improvements, as discussed in the previous section. We complement these results with another measure of translation performance, proposed by Max et al. (2010), which allows for a more fine-grained contrastive evaluation of the translations produced by different systems. The method permits to compare the results produced by the systems on different word classes and to take into account the source words that were actually translated. We focus this evaluation on the classes of content words (nouns, adjectives, verbs and adverbs) on which WSD had an important coverage. Our aim is, first, to explore how these words are handled by a WSDinformed SMT system (the system using the local language models) compared to the baseline system that does not exploit any semantic information; and, second, to investigate whether their disambiguation influences the translation of surrounding non-disambiguated words.
+Table 3 reports the percentage of words correctly translated by the semantically-informed system within each content word class: consistent gains in translation quality are observed for all parts-ofspeech compared to the baseline, and the best results are obtained for nouns.
+Table 4 shows how the words surrounding a disambiguated word w (noun, verb, adjective or adverb) in the text are handled by the two systems. More precisely, we look at the translation of words in the immediate context of w, i.e. at positions w &#8722;2 , w &#8722;1 , w +1 and w +2 . The left column reports the percentage of correct translations produced by the baseline system (without disambiguation) for words in these positions; the right column shows the positive impact that the disambiguation of a word has on the translation of its neighbors. Note that this time we look at disambiguated words and their context without evaluating the correctness of the WSD predictions. Nevertheless, even in this case, consistent gains are observed when WSD information is exploited. For instance, when a noun is disambiguated, 70.46% and 76.3% of the immediately preceding (w &#8722;1 ) and following (w +1 ) words, respectively, are correctly translated, versus 68.69% and 75.17% of correct translations produced by the baseline system.</text>
+            <paragraphs>
+              <paragraph>
+                <sentence>
+                  <text>All the measures used for evaluating the impact of WSD information on translation show improvements, as discussed in the previous section.</text>
+                  <doc_id>158</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We complement these results with another measure of translation performance, proposed by Max et al. (2010), which allows for a more fine-grained contrastive evaluation of the translations produced by different systems.</text>
+                  <doc_id>159</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The method permits to compare the results produced by the systems on different word classes and to take into account the source words that were actually translated.</text>
+                  <doc_id>160</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>We focus this evaluation on the classes of content words (nouns, adjectives, verbs and adverbs) on which WSD had an important coverage.</text>
+                  <doc_id>161</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Our aim is, first, to explore how these words are handled by a WSDinformed SMT system (the system using the local language models) compared to the baseline system that does not exploit any semantic information; and, second, to investigate whether their disambiguation influences the translation of surrounding non-disambiguated words.</text>
+                  <doc_id>162</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 3 reports the percentage of words correctly translated by the semantically-informed system within each content word class: consistent gains in translation quality are observed for all parts-ofspeech compared to the baseline, and the best results are obtained for nouns.</text>
+                  <doc_id>163</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+              </paragraph>
+              <paragraph>
+                <sentence>
+                  <text>Table 4 shows how the words surrounding a disambiguated word w (noun, verb, adjective or adverb) in the text are handled by the two systems.</text>
+                  <doc_id>164</doc_id>
+                  <sec_id>0</sec_id>
+                </sentence>
+                <sentence>
+                  <text>More precisely, we look at the translation of words in the immediate context of w, i.e. at positions w &#8722;2 , w &#8722;1 , w +1 and w +2 .</text>
+                  <doc_id>165</doc_id>
+                  <sec_id>1</sec_id>
+                </sentence>
+                <sentence>
+                  <text>The left column reports the percentage of correct translations produced by the baseline system (without disambiguation) for words in these positions; the right column shows the positive impact that the disambiguation of a word has on the translation of its neighbors.</text>
+                  <doc_id>166</doc_id>
+                  <sec_id>2</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Note that this time we look at disambiguated words and their context without evaluating the correctness of the WSD predictions.</text>
+                  <doc_id>167</doc_id>
+                  <sec_id>3</sec_id>
+                </sentence>
+                <sentence>
+                  <text>Nevertheless, even in this case, consistent gains are observed when WSD information is exploited.</text>
+                  <doc_id>168</doc_id>
+                  <sec_id>4</sec_id>
+                </sentence>
+                <sentence>
+                  <text>For instance, when a noun is disambiguated, 70.46% and 76.3% of the immediately preceding (w &#8722;1 ) and following (w +1 ) words, respectively, are correctly translated, versus 68.69% and 75.17% of correct translations produced by the baseline system.</text>
+                  <doc_id>169</doc_id>
+                  <sec_id>5</sec_id>
+                </sentence>
+              </paragraph>
+            </paragraphs>
+          </subsection>
+        </subsections>
+      </section>
+      <section>
+        <index>6</index>
+        <title>6 Conclusion and future work</title>
+        <text>The preliminary results presented in this paper on integrating cross-lingual WSD into a state-of-theart SMT system are encouraging. Both adopted approaches (n-best rescoring and local language modeling) benefit from the predictions of the proposed cross-lingual WSD classifier. The contrastive evaluation results further show that WSD improves not only the translation of disambiguated words, but also the translation of neighboring words in the input texts. We consider various ways for extending this work. First, future experiments will involve the use of more abstract representations of senses than individual translations, by applying a cross-lingual word sense induction method to the training corpus prior to disambiguation. We will also experiment with disambiguation at the level of lemmas, to reduce sparseness issues, and with different ways for handling lemmatized predictions by the SMT systems. Furthermore, we intend to extend the coverage of the WSD method by exploring other filtering methods for cleaning the alignment lexicons, and by addressing the disambiguation of words of all PoS.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>The preliminary results presented in this paper on integrating cross-lingual WSD into a state-of-theart SMT system are encouraging.</text>
+              <doc_id>170</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>Both adopted approaches (n-best rescoring and local language modeling) benefit from the predictions of the proposed cross-lingual WSD classifier.</text>
+              <doc_id>171</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+            <sentence>
+              <text>The contrastive evaluation results further show that WSD improves not only the translation of disambiguated words, but also the translation of neighboring words in the input texts.</text>
+              <doc_id>172</doc_id>
+              <sec_id>2</sec_id>
+            </sentence>
+            <sentence>
+              <text>We consider various ways for extending this work.</text>
+              <doc_id>173</doc_id>
+              <sec_id>3</sec_id>
+            </sentence>
+            <sentence>
+              <text>First, future experiments will involve the use of more abstract representations of senses than individual translations, by applying a cross-lingual word sense induction method to the training corpus prior to disambiguation.</text>
+              <doc_id>174</doc_id>
+              <sec_id>4</sec_id>
+            </sentence>
+            <sentence>
+              <text>We will also experiment with disambiguation at the level of lemmas, to reduce sparseness issues, and with different ways for handling lemmatized predictions by the SMT systems.</text>
+              <doc_id>175</doc_id>
+              <sec_id>5</sec_id>
+            </sentence>
+            <sentence>
+              <text>Furthermore, we intend to extend the coverage of the WSD method by exploring other filtering methods for cleaning the alignment lexicons, and by addressing the disambiguation of words of all PoS.</text>
+              <doc_id>176</doc_id>
+              <sec_id>6</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+      <section>
+        <index>7</index>
+        <title>Acknowledgments</title>
+        <text>This work was partly funded by the European Union under the FP7 project META-NET (T4ME), Contract No. 249119, and by OSEO, the French agency for innovation, as part of the Quaero Program.</text>
+        <paragraphs>
+          <paragraph>
+            <sentence>
+              <text>This work was partly funded by the European Union under the FP7 project META-NET (T4ME), Contract No.</text>
+              <doc_id>177</doc_id>
+              <sec_id>0</sec_id>
+            </sentence>
+            <sentence>
+              <text>249119, and by OSEO, the French agency for innovation, as part of the Quaero Program.</text>
+              <doc_id>178</doc_id>
+              <sec_id>1</sec_id>
+            </sentence>
+          </paragraph>
+        </paragraphs>
+        <subsections/>
+      </section>
+    </sections>
+    <tables>
+      <table>
+        <id>1</id>
+        <source>TableSeer</source>
+        <caption>Table 1: Coverage of the WSD method</caption>
+        <reference_text>In PAGE 4: ...6 The WSD classifier makes predictions only for the subset of the words found in the source part of the parallel test set that were retained from the ini- tial EN-FR lexicon after filtering.  Table1  presents the total coverage of the WSD method as well as its coverage for words of different PoS, with a focus on content words. We report the number of disam- biguated words for each content PoS (cf....</reference_text>
+        <page_num>5</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>PoS</cell>
+              <cell># of words</cell>
+              <cell># of WSD predictions</cell>
+              <cell>%</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Nouns</cell>
+              <cell>5535</cell>
+              <cell>3472</cell>
+              <cell>62.72</cell>
+            </row>
+            <row>
+              <cell>Verbs</cell>
+              <cell>5336</cell>
+              <cell>1269</cell>
+              <cell>23.78</cell>
+            </row>
+            <row>
+              <cell>Adjs</cell>
+              <cell>1787</cell>
+              <cell>1249</cell>
+              <cell>69.89</cell>
+            </row>
+            <row>
+              <cell>Advs</cell>
+              <cell>2224</cell>
+              <cell>1098</cell>
+              <cell>49.37</cell>
+            </row>
+            <row>
+              <cell>all content PoS</cell>
+              <cell>14882</cell>
+              <cell>7088</cell>
+              <cell>47.62</cell>
+            </row>
+            <row>
+              <cell>all PoS</cell>
+              <cell>27596</cell>
+              <cell>8463</cell>
+              <cell>30.66</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>2</id>
+        <source>TET</source>
+        <caption>Table 2: Evaluation results on the TED-talk task of our two methods to integrate WSD predictions.</caption>
+        <reference_text></reference_text>
+        <page_num>6</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>method</cell>
+              <cell>BLEU</cell>
+              <cell>METEOR</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>baseline</cell>
+              <cell>&#8212;</cell>
+              <cell>29.63</cell>
+              <cell>53.78</cell>
+            </row>
+            <row>
+              <cell>rescoring</cell>
+              <cell>WSD (zero init) 30.00 54.26
+WSD (reinit) 29.58 53.96</cell>
+            </row>
+            <row>
+              <cell>oracle 3-gram</cell>
+              <cell>43.56</cell>
+              <cell>64.64</cell>
+            </row>
+            <row>
+              <cell>additional LM</cell>
+              <cell>oracle 2-gram 39.36 62.92
+oracle 1-gram 42.92 69.39</cell>
+            </row>
+            <row>
+              <cell>IBM 1</cell>
+              <cell>30.18</cell>
+              <cell>54.36</cell>
+            </row>
+            <row>
+              <cell>WSD</cell>
+              <cell>30.51</cell>
+              <cell>54.38</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>3</id>
+        <source>TableSeer</source>
+        <caption>Table 2: Evaluation results on the TED-talk task of our two methods to integrate WSD predictions.#@#@Table 3: Contrastive lexical evaluation: % of words correctly translated within each PoS class</caption>
+        <reference_text>In PAGE 6: ... 5.3 Results  Table2  reports the results of our experiments. It appears that, for the considered task, sense disam- biguation improves translation performance: n-best rescoring results in a 0....</reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>PoS</cell>
+              <cell>baseline</cell>
+              <cell>WSD</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell>Nouns</cell>
+              <cell>67.57</cell>
+              <cell>69.06</cell>
+            </row>
+            <row>
+              <cell>Verbs</cell>
+              <cell>45.97</cell>
+              <cell>47.76</cell>
+            </row>
+            <row>
+              <cell>Adjectives</cell>
+              <cell>51.79</cell>
+              <cell>53.94</cell>
+            </row>
+            <row>
+              <cell>Adverbs</cell>
+              <cell>52.17</cell>
+              <cell>56.25</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+      <table>
+        <id>4</id>
+        <source>TET</source>
+        <caption>Table 4: Impact of WSD prediction on the surrounding words</caption>
+        <reference_text></reference_text>
+        <page_num>7</page_num>
+        <head>
+          <rows>
+            <row>
+              <cell>baseline</cell>
+              <cell>WSD</cell>
+            </row>
+          </rows>
+        </head>
+        <body>
+          <rows>
+            <row>
+              <cell></cell>
+              <cell>w &#8722;2</cell>
+              <cell>w &#8722;1</cell>
+              <cell>w +1</cell>
+              <cell>w +2</cell>
+              <cell>w &#8722;2</cell>
+              <cell>w &#8722;1</cell>
+              <cell>w +1</cell>
+              <cell>w +2</cell>
+            </row>
+            <row>
+              <cell>Nouns</cell>
+              <cell>64.01</cell>
+              <cell>68.69</cell>
+              <cell>75.17</cell>
+              <cell>64.6</cell>
+              <cell>65.47</cell>
+              <cell>70.46</cell>
+              <cell>76.3</cell>
+              <cell>66.6</cell>
+            </row>
+            <row>
+              <cell>Verbs</cell>
+              <cell>68.67</cell>
+              <cell>67.58</cell>
+              <cell>63</cell>
+              <cell>62.19</cell>
+              <cell>69.98</cell>
+              <cell>68.89</cell>
+              <cell>64.85</cell>
+              <cell>64.25</cell>
+            </row>
+            <row>
+              <cell>Adjectives</cell>
+              <cell>63.1</cell>
+              <cell>64.39</cell>
+              <cell>64.28</cell>
+              <cell>66.55</cell>
+              <cell>64.09</cell>
+              <cell>65.65</cell>
+              <cell>64.76</cell>
+              <cell>69.33</cell>
+            </row>
+            <row>
+              <cell>Adverbs</cell>
+              <cell>70.8</cell>
+              <cell>69.44</cell>
+              <cell>68.67</cell>
+              <cell>66.38</cell>
+              <cell>71</cell>
+              <cell>71.21</cell>
+              <cell>70</cell>
+              <cell>67.22</cell>
+            </row>
+          </rows>
+        </body>
+      </table>
+    </tables>
+    <references>
+      <reference>
+        <id>0</id>
+        <authors>
+          <author>Marianna Apidianaki</author>
+        </authors>
+        <title>Translation-oriented Word Sense Induction Based on Parallel Corpora.</title>
+        <publication>In Proceedings of the Sixth International Conference on Language Resources and Evaluation (LREC&#8217;08),</publication>
+        <pages>None</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>1</id>
+        <authors>
+          <author>Marianna Apidianaki</author>
+        </authors>
+        <title>Data-driven Semantic Analysis for Multilingual WSD and Lexical Selection in Translation.</title>
+        <publication>In Proceedings of the 12th Conference of the European Chapter of the Association for Computational Linguistics (EACL-09),</publication>
+        <pages>77--85</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>2</id>
+        <authors>
+          <author>Marine Carpuat</author>
+          <author>Dekai Wu</author>
+        </authors>
+        <title>Word Sense Disambiguation vs. Statistical Machine Translation.</title>
+        <publication>In Proceedings of the 43rd Annual Meeting of the Association for Computational Linguistics (ACL&#8217;05),</publication>
+        <pages>387--394</pages>
+        <date>2005</date>
+      </reference>
+      <reference>
+        <id>3</id>
+        <authors>
+          <author>Marine Carpuat</author>
+          <author>Dekai Wu</author>
+        </authors>
+        <title>Improving Statistical Machine Translation using Word Sense Disambiguation.</title>
+        <publication>In Proceedings of the Joint EMNLP-CoNLL Conference,</publication>
+        <pages>61--72</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>4</id>
+        <authors>
+          <author>Yee Seng Chan</author>
+          <author>Hwee Tou Ng</author>
+          <author>David Chiang</author>
+        </authors>
+        <title>Word Sense Disambiguation Improves Statistical Machine Translation.</title>
+        <publication>In Proceedings of the 45th Annual Meeting of the Association for Computational Linguistics (ACL-07),</publication>
+        <pages>33--40</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>5</id>
+        <authors>
+          <author>Maria Crego</author>
+          <author>Aur&#233;lien Max</author>
+          <author>Fran&#231;ois Yvon</author>
+        </authors>
+        <title>Local lexical adaptation in Machine Translation through triangulation: SMT helping SMT.</title>
+        <publication>In Proceedings of the 23rd International Conference on Computational Linguistics (Coling</publication>
+        <pages>232--240</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>6</id>
+        <authors>
+          <author>Gregory Grefenstette</author>
+        </authors>
+        <title>Explorations in Automatic Thesaurus Discovery.</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>1994</date>
+      </reference>
+      <reference>
+        <id>7</id>
+        <authors>
+          <author>Rejwanual Haque</author>
+          <author>Sudip Naskar</author>
+          <author>Yanjun Ma</author>
+          <author>Andy Way</author>
+        </authors>
+        <title>Using supertags as source language context in SMT.</title>
+        <publication>In Proceedings of the 13th Annual Meeting of the European Association for Machine Translation (EAMT</publication>
+        <pages>234--241</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>8</id>
+        <authors>
+          <author>Rejwanul Haque</author>
+          <author>Sudip Kumar Naskar</author>
+          <author>Antal Van Den Bosch</author>
+          <author>Andy Way</author>
+        </authors>
+        <title>Supertags as source language context in hierarchical phrase-based SMT.</title>
+        <publication>In Proceedings of AMTA 2010: The Ninth Conference of the Association for Machine Translation in the Americas,</publication>
+        <pages>210--219</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>9</id>
+        <authors>
+          <author>N Ide</author>
+          <author>Y Wilks</author>
+        </authors>
+        <title>Making Sense About Sense.</title>
+        <publication>Word Sense Disambiguation, Algorithms and Applications,</publication>
+        <pages>47--73</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>10</id>
+        <authors>
+          <author>Philipp Koehn</author>
+          <author>Hieu Hoang</author>
+          <author>Alexandra Birch</author>
+          <author>Chris Callison-Burch</author>
+          <author>Marcello Federico</author>
+          <author>Nicola Bertoldi</author>
+          <author>Brooke Cowan</author>
+          <author>Wade Shen</author>
+          <author>Christine Moran</author>
+          <author>Richard Zens</author>
+          <author>Chris Dyer</author>
+          <author>Ondrej Bojar</author>
+          <author>Alexandra Constantin</author>
+          <author>Evan Herbst</author>
+        </authors>
+        <title>Moses: Open source toolkit for statistical machine translation.</title>
+        <publication>In Proceedings of the 45th Annual ACL Meeting, Companion Volume Proceedings of the Demo and Poster Sessions,</publication>
+        <pages>177--180</pages>
+        <date>2007</date>
+      </reference>
+      <reference>
+        <id>11</id>
+        <authors>
+          <author>Els Lefever</author>
+          <author>Veronique Hoste</author>
+        </authors>
+        <title>None</title>
+        <publication>SemEval-2010 Task 3: Cross-lingual Word Sense Disambiguation.</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>12</id>
+        <authors/>
+        <title>None</title>
+        <publication>In Proceedings of the 5th International Workshop on Semantic Evaluations (SemEval-2), ACL 2010,</publication>
+        <pages>15--20</pages>
+        <date>None</date>
+      </reference>
+      <reference>
+        <id>13</id>
+        <authors>
+          <author>Arne Mauser</author>
+          <author>Sa&#353;a Hasan</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>Extending statistical machine translation with discriminative and trigger-based lexicon models.</title>
+        <publication>In Proceedings of the Conference on Empirical Methods in Natural Language Processing (EMNLP),</publication>
+        <pages>210--217</pages>
+        <date>2009</date>
+      </reference>
+      <reference>
+        <id>14</id>
+        <authors>
+          <author>Aur&#233;lien Max</author>
+          <author>Josep Maria Crego</author>
+          <author>Fran&#231;ois Yvon</author>
+        </authors>
+        <title>Contrastive Lexical Evaluation of Machine Translation.</title>
+        <publication>In Proceedings of the Seventh International Conference on Language Resources and Evaluation (LREC&#8217;10),</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>15</id>
+        <authors>
+          <author>Rada Mihalcea</author>
+          <author>Ravi Sinha</author>
+          <author>Diana McCarthy</author>
+        </authors>
+        <title>None</title>
+        <publication>None</publication>
+        <pages>None</pages>
+        <date>2010</date>
+      </reference>
+      <reference>
+        <id>16</id>
+        <authors/>
+        <title>None</title>
+        <publication>SemEval-2010 Task 2: Cross-Lingual Lexical Substitution.</publication>
+        <pages>None</pages>
+        <date>None</date>
+      </reference>
+      <reference>
+        <id>17</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Hermann Ney</author>
+        </authors>
+        <title>A Systematic Comparison of Various Statistical Alignment Models.</title>
+        <publication>In Proceedings of the 5th International Workshop on Semantic Evaluations (SemEval-2), ACL 2010,</publication>
+        <pages>9--14</pages>
+        <date>2003</date>
+      </reference>
+      <reference>
+        <id>18</id>
+        <authors>
+          <author>Franz Josef Och</author>
+          <author>Daniel Gildea</author>
+        </authors>
+        <title>Sanjeev Khudanpur, Anoop Sarkar, Kenji Yamada, Alex Fraser, Shankar Kumar,</title>
+        <publication>In Proceedings of HLT-NAACL 2004,</publication>
+        <pages>161--168</pages>
+        <date>2004</date>
+      </reference>
+      <reference>
+        <id>19</id>
+        <authors>
+          <author>Alexandre Patry</author>
+          <author>Philippe Langlais</author>
+        </authors>
+        <title>Going beyond word cooccurrences in global lexical selection for statistical machine translation using a multilayer perceptron.</title>
+        <publication>In Proceedings of 5th International Joint Conference on Natural Language Processing,</publication>
+        <pages>658--666</pages>
+        <date>2011</date>
+      </reference>
+      <reference>
+        <id>20</id>
+        <authors>
+          <author>Helmut Schmid</author>
+        </authors>
+        <title>Probabilistic Part-of-Speech Tagging Using Decision Trees.</title>
+        <publication>In Proceedings of the International Conference on New Methods in Language Processing,</publication>
+        <pages>44--49</pages>
+        <date>1994</date>
+      </reference>
+      <reference>
+        <id>21</id>
+        <authors>
+          <author>Lucia Specia</author>
+          <author>Baskaran Sankaran</author>
+          <author>Maria Das</author>
+        </authors>
+        <title>Gra&#231;as Volpe Nunes.</title>
+        <publication>In Proceedings of the 9th international conference on Computational linguistics and intelligent text processing, CICLing&#8217;08,</publication>
+        <pages>399--410</pages>
+        <date>2008</date>
+      </reference>
+      <reference>
+        <id>22</id>
+        <authors>
+          <author>Lucia Specia</author>
+        </authors>
+        <title>A Hybrid Relational Approach for WSD - First Results.</title>
+        <publication>In Proceedings of the COLING/ACL 2006 Student Research Workshop,</publication>
+        <pages>55--60</pages>
+        <date>2006</date>
+      </reference>
+    </references>
+    <citations>
+      <citation>
+        <id>0</id>
+        <reference_id>0</reference_id>
+        <string>Apidianaki, 2008</string>
+        <sentence_id>51773</sentence_id>
+        <char_offset>132</char_offset>
+      </citation>
+      <citation>
+        <id>1</id>
+        <reference_id>1</reference_id>
+        <string>Apidianaki, 2009</string>
+        <sentence_id>51724</sentence_id>
+        <char_offset>285</char_offset>
+      </citation>
+      <citation>
+        <id>2</id>
+        <reference_id>1</reference_id>
+        <string>Apidianaki (2009)</string>
+        <sentence_id>51753</sentence_id>
+        <char_offset>98</char_offset>
+      </citation>
+      <citation>
+        <id>3</id>
+        <reference_id>1</reference_id>
+        <string>Apidianaki (2009)</string>
+        <sentence_id>51813</sentence_id>
+        <char_offset>59</char_offset>
+      </citation>
+      <citation>
+        <id>4</id>
+        <reference_id>1</reference_id>
+        <string>Apidianaki (2009)</string>
+        <sentence_id>51802</sentence_id>
+        <char_offset>3</char_offset>
+      </citation>
+      <citation>
+        <id>5</id>
+        <reference_id>2</reference_id>
+        <string>Carpuat and Wu (2005)</string>
+        <sentence_id>51741</sentence_id>
+        <char_offset>94</char_offset>
+      </citation>
+      <citation>
+        <id>6</id>
+        <reference_id>2</reference_id>
+        <string>Carpuat and Wu (2005)</string>
+        <sentence_id>51743</sentence_id>
+        <char_offset>29</char_offset>
+      </citation>
+      <citation>
+        <id>7</id>
+        <reference_id>3</reference_id>
+        <string>Carpuat and Wu (2007)</string>
+        <sentence_id>51744</sentence_id>
+        <char_offset>14</char_offset>
+      </citation>
+      <citation>
+        <id>8</id>
+        <reference_id>3</reference_id>
+        <string>Carpuat and Wu, 2007</string>
+        <sentence_id>51721</sentence_id>
+        <char_offset>338</char_offset>
+      </citation>
+      <citation>
+        <id>9</id>
+        <reference_id>3</reference_id>
+        <string>Carpuat and Wu, 2007</string>
+        <sentence_id>51724</sentence_id>
+        <char_offset>168</char_offset>
+      </citation>
+      <citation>
+        <id>10</id>
+        <reference_id>4</reference_id>
+        <string>Chan et al. (2007)</string>
+        <sentence_id>51746</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>11</id>
+        <reference_id>4</reference_id>
+        <string>Chan et al., 2007</string>
+        <sentence_id>51724</sentence_id>
+        <char_offset>190</char_offset>
+      </citation>
+      <citation>
+        <id>12</id>
+        <reference_id>5</reference_id>
+        <string>Crego et al. (2010)</string>
+        <sentence_id>51825</sentence_id>
+        <char_offset>47</char_offset>
+      </citation>
+      <citation>
+        <id>13</id>
+        <reference_id>5</reference_id>
+        <string>Crego et al. (2010)</string>
+        <sentence_id>51858</sentence_id>
+        <char_offset>79</char_offset>
+      </citation>
+      <citation>
+        <id>14</id>
+        <reference_id>5</reference_id>
+        <string>Crego et al., 2010</string>
+        <sentence_id>51843</sentence_id>
+        <char_offset>64</char_offset>
+      </citation>
+      <citation>
+        <id>15</id>
+        <reference_id>5</reference_id>
+        <string>Crego et al., 2010</string>
+        <sentence_id>51828</sentence_id>
+        <char_offset>41</char_offset>
+      </citation>
+      <citation>
+        <id>16</id>
+        <reference_id>5</reference_id>
+        <string>Crego et al., 2010</string>
+        <sentence_id>51868</sentence_id>
+        <char_offset>74</char_offset>
+      </citation>
+      <citation>
+        <id>17</id>
+        <reference_id>6</reference_id>
+        <string>Grefenstette, 1994</string>
+        <sentence_id>51773</sentence_id>
+        <char_offset>150</char_offset>
+      </citation>
+      <citation>
+        <id>18</id>
+        <reference_id>7</reference_id>
+        <string>Haque et al. (2009)</string>
+        <sentence_id>51748</sentence_id>
+        <char_offset>0</char_offset>
+      </citation>
+      <citation>
+        <id>19</id>
+        <reference_id>9</reference_id>
+        <string>Ide and Wilks, 2007</string>
+        <sentence_id>51721</sentence_id>
+        <char_offset>317</char_offset>
+      </citation>
+      <citation>
+        <id>20</id>
+        <reference_id>10</reference_id>
+        <string>Koehn et al., 2007</string>
+        <sentence_id>51849</sentence_id>
+        <char_offset>27</char_offset>
+      </citation>
+      <citation>
+        <id>21</id>
+        <reference_id>11</reference_id>
+        <string>Lefever and Hoste, 2010</string>
+        <sentence_id>51724</sentence_id>
+        <char_offset>326</char_offset>
+      </citation>
+      <citation>
+        <id>22</id>
+        <reference_id>13</reference_id>
+        <string>Mauser et al. (2009)</string>
+        <sentence_id>51749</sentence_id>
+        <char_offset>20</char_offset>
+      </citation>
+      <citation>
+        <id>23</id>
+        <reference_id>14</reference_id>
+        <string>Max et al. (2010)</string>
+        <sentence_id>51873</sentence_id>
+        <char_offset>89</char_offset>
+      </citation>
+      <citation>
+        <id>24</id>
+        <reference_id>15</reference_id>
+        <string>Mihalcea et al., 2010</string>
+        <sentence_id>51724</sentence_id>
+        <char_offset>303</char_offset>
+      </citation>
+      <citation>
+        <id>25</id>
+        <reference_id>17</reference_id>
+        <string>Och and Ney, 2003</string>
+        <sentence_id>51760</sentence_id>
+        <char_offset>111</char_offset>
+      </citation>
+      <citation>
+        <id>26</id>
+        <reference_id>19</reference_id>
+        <string>Patry and Langlais (2011)</string>
+        <sentence_id>51749</sentence_id>
+        <char_offset>45</char_offset>
+      </citation>
+      <citation>
+        <id>27</id>
+        <reference_id>20</reference_id>
+        <string>Schmid, 1994</string>
+        <sentence_id>51768</sentence_id>
+        <char_offset>135</char_offset>
+      </citation>
+      <citation>
+        <id>28</id>
+        <reference_id>21</reference_id>
+        <string>Specia et al., 2008</string>
+        <sentence_id>51842</sentence_id>
+        <char_offset>49</char_offset>
+      </citation>
+      <citation>
+        <id>29</id>
+        <reference_id>22</reference_id>
+        <string>Specia, 2006</string>
+        <sentence_id>51742</sentence_id>
+        <char_offset>223</char_offset>
+      </citation>
+      <citation>
+        <id>30</id>
+        <reference_id>22</reference_id>
+        <string>Specia (2006)</string>
+        <sentence_id>51758</sentence_id>
+        <char_offset>119</char_offset>
+      </citation>
+    </citations>
+  </content>
+</document>

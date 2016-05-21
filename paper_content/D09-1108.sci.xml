@@ -1,0 +1,671 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Fast Translation Rule Matching for Syntax-based Statistical Machine Translation</TITLE>
+  <AUTHORS/>
+  <ABSTRACT>
+    <A-S ID="S-6909">In a linguistically-motivated syntax-based translation system, the entire translation process is normally carried out in two steps, translation rule matching and target sentence decoding using the matched rules.</A-S>
+    <A-S ID="S-6910">Both steps are very timeconsuming due to the tremendous number of translation rules, the exhaustive search in translation rule matching and the complex nature of the translation task itself.</A-S>
+    <A-S ID="S-6911">In this paper, we propose a hyper-tree-based fast algorithm for translation rule matching.</A-S>
+    <A-S ID="S-6912">Experimental results on the NIST MT-2003 Chinese-English translation task show that our algorithm is at least 19 times faster in rule matching and is able to help to save 57% of overall translation time over previous methods when using large fragment translation rules.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-6913">Recently linguistically-motivated syntax-based translation method has achieved great success in statistical machine translation (SMT) (<REF ID="R-01" RPTR="2">Galley et al., 2004</REF>; <REF ID="R-09" RPTR="11">Liu et al., 2006</REF>, 2007; Zhang et al., 2007, 2008a; <REF ID="R-11" RPTR="13">Mi et al., 2008</REF>; <REF ID="R-12" RPTR="16">Mi and Huang 2008</REF>; <REF ID="R-17" RPTR="23">Zhang et al., 2009</REF>).</S>
+        <S ID="S-6914">It translates a source sentence to its target one in two steps by using structured translation rules.</S>
+        <S ID="S-6915">In the first step, which is called translation rule matching step, all the applicable 1 translation rules are extracted from the entire rule set by matching the source parse tree/forest.</S>
+        <S ID="S-6916">The second step is to decode the source sentence into its target one using the extracted translation rules.</S>
+        <S ID="S-6917">Both of the two steps are very time-consuming due to the exponential number of translation rules and the complex nature of machine translation as</S>
+      </P>
+      <P>
+        <S ID="S-6918">1 Given a source structure (either a parse tree or a parse</S>
+      </P>
+      <P>
+        <S ID="S-6919">forest), a translation rule is applicable if and only if the left hand side of the translation rule exactly matches a tree fragment of the given source structure.</S>
+      </P>
+      <P>
+        <S ID="S-6920">an NP-hard search problem (<REF ID="R-07" RPTR="9">Knight, 1999</REF>).</S>
+        <S ID="S-6921">In the SMT research community, the second step has been well studied and many methods have been proposed to speed up the decoding process, such as node-based or span-based beam search with different pruning strategies (<REF ID="R-09" RPTR="12">Liu et al., 2006</REF>; Zhang et al., 2008a, 2008b) and cube pruning (<REF ID="R-03" RPTR="4">Huang and Chiang, 2007</REF>; <REF ID="R-11" RPTR="14">Mi et al., 2008</REF>).</S>
+        <S ID="S-6922">However, the first step attracts less attention.</S>
+        <S ID="S-6923">The previous solution to this problem is to do exhaustive searching with heuristics on each tree/forest node or on each source span.</S>
+        <S ID="S-6924">This solution becomes computationally infeasible when it is applied to packed forests with loose pruning threshold or rule sets with large tree fragments of large rule height and width.</S>
+        <S ID="S-6925">This not only overloads the translation process but also compromises the translation performance since as shown in our experiments the large tree fragment rules are also very useful.</S>
+      </P>
+      <P>
+        <S ID="S-6926">To solve the above issue, in this paper, we propose a hyper-tree-based fast algorithm for translation rule matching.</S>
+        <S ID="S-6927">Our solution includes two steps.</S>
+        <S ID="S-6928">In the first step, all the translation rules are re-organized using our proposed hyper-tree structure, which is a compact representation of the entire translation rule set, in order to make the common parts of translation rules shared as much as possible.</S>
+        <S ID="S-6929">This enables the common parts of different translation rules to be visited only once in rule matching.</S>
+        <S ID="S-6930">Please note that the first step can be easily done off-line very fast.</S>
+        <S ID="S-6931">As a result, it does not consume real translation time.</S>
+        <S ID="S-6932">In the second step, we design a recursive algorithm to traverse the hyper-tree structure and the input source forest in a top-down manner to do the rule matching between them.</S>
+        <S ID="S-6933">As we will show later, the hyper-tree structure and the recursive algorithm significantly improve the speed of the rule matching and the entire translation process compared with previous methods.</S>
+      </P>
+      <P>
+        <S ID="S-6934">With the proposed algorithm, we are able to carry out experiments with very loose pruning</S>
+      </P>
+      <P>
+        <S ID="S-6935">thresholds and larger tree fragment rules efficiently.</S>
+        <S ID="S-6936">Experimental results on the NIST MT- 2003 Chinese-English translation task shows that our algorithm is 19 times faster in rule matching and is able to save 57% of overall translation time over previous methods when using large fragment translation rules with height up to 5.</S>
+        <S ID="S-6937">It also shows that the larger rules with height of up to 5 significantly outperforms the rules with height of up to 3 by around 1 BLEU score.</S>
+      </P>
+      <P>
+        <S ID="S-6938">The rest of this paper is organized as follows.</S>
+        <S ID="S-6939">Section 2 introduces the syntax-based translation system that we are working on.</S>
+        <S ID="S-6940">Section 3 reviews the previous work.</S>
+        <S ID="S-6941">Section 4 explains our solution while section 5 reports the experimental results.</S>
+        <S ID="S-6942">Section 6 concludes the paper.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Syntax-based Translation</HEADER>
+      <P>
+        <S ID="S-6973">This section briefly introduces the forest/treebased tree-to-string translation model which serves as the translation platform in this paper.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>2.1 Tree-to-string model</HEADER>
+        <P>
+          <S ID="S-6943">The tree-to-string model (<REF ID="R-01" RPTR="1">Galley et al. 2004</REF>; <REF ID="R-09" RPTR="10">Liu et al. 2006</REF>) views the translation as a structure mapping process, which first breaks the source syntax tree into many tree fragments and then maps each tree fragment into its corresponding target translation using translation rules, finally combines these target translations into a complete sentence.</S>
+          <S ID="S-6944">Fig.</S>
+          <S ID="S-6945">1 illustrates this process.</S>
+          <S ID="S-6946">In real translation, the number of possible tree fragment segmentations for a given input tree is exponential in the number of tree nodes.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>2.2 Forest-based translation</HEADER>
+        <P>
+          <S ID="S-6947">To overcome parse error for SMT, <REF ID="R-12" RPTR="15">Mi and Huang (2008)</REF> propose forest-based translation by using a packed forest instead of a single syntax tree as the translation input.</S>
+          <S ID="S-6948">A packed forest (<REF ID="R-16" RPTR="22">Tomita 1987</REF>; <REF ID="R-05" RPTR="7">Klein and Manning, 2001</REF><REF ID="R-04" RPTR="5">Manning, 2001</REF>; <REF ID="R-02" RPTR="3">Huang and Chiang, 2005</REF>) is a compact representation of many possible parse trees of a sentence, which can be formally described as a triple , where V is the set of non-terminal nodes, E is the set of hyper-edges and S is a sentence represented as an ordered word sequence.</S>
+          <S ID="S-6949">A hyper-edge in a packed forest is a group of edges in a tree which connects a father node to all its children nodes, representing a CFG-based parse rule.</S>
+          <S ID="S-6950">Fig.</S>
+          <S ID="S-6951">2 is a packed forest incorporating two parse trees T1 and T2 of a sentence as shown in Fig.</S>
+          <S ID="S-6952">3 and Fig.</S>
+          <S ID="S-6953">4.</S>
+          <S ID="S-6954">Given a hyper-edge e, let h be its father node, then we say that e is attached to h.</S>
+        </P>
+        <P>
+          <S ID="S-6955">A non-terminal node in a packed forest can be represented as &#8220;label [start, stop]&#8221;, where &#8220;label&#8221; is its syntax category and &#8220;[start, stop]&#8221; is the range of words it covers.</S>
+          <S ID="S-6956">For example, the node in Fig.</S>
+          <S ID="S-6957">5 pointed by the dark arrow is labelled as &#8220;NP[3,4]&#8221;, where NP is its label and [3,4] means that it covers the span from the 3 rd word to the 4 th word.</S>
+          <S ID="S-6958">In forest-based translation, rule matching is much more complicated than the tree-based one.</S>
+        </P>
+        <P>
+          <S ID="S-6959">XNA declaration is related to some regulation</S>
+        </P>
+        <P>
+          <S ID="S-6960">Figure 1.</S>
+          <S ID="S-6961">A tree-to-string translation process.</S>
+          <S ID="S-6962">Figure 2.</S>
+          <S ID="S-6963">A packed forest</S>
+        </P>
+        <P>
+          <S ID="S-6964"><REF ID="R-17" RPTR="24">Zhang et al. (2009)</REF> reduce the tree sequence problem into tree problem by introducing virtual node and related forest conversion algorithms, so</S>
+        </P>
+        <P>
+          <S ID="S-6965">the algorithm proposed in this paper is also applicable to the tree sequence-based models.</S>
+        </P>
+        <P>
+          <S ID="S-6966">For example, if we want to extract useful rules for node NP[3,4] in Fig 5, we have to generate all the tree fragments rooted at node NP[3,4] as shown in Fig 6, and then query each fragment in the rule set.</S>
+          <S ID="S-6967">Let be a node in the packed forest,</S>
+        </P>
+        <P>
+          <S ID="S-6968">represents the number of possible tree fragments rooted at node , then we have:</S>
+        </P>
+        <P>
+          <S ID="S-6969">Figure 3.</S>
+          <S ID="S-6970">Tree 1 (T1)</S>
+        </P>
+        <P>
+          <S ID="S-6971">Figure 4.</S>
+          <S ID="S-6972">Tree 2 (T2)</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Matching Methods in Previous Work</HEADER>
+      <P>
+        <S ID="S-7017">In this section, we discuss the two typical rule matching algorithms used in previous work.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Exhaustive search by tree fragments</HEADER>
+        <P>
+          <S ID="S-6974">This method generates all possible tree fragments rooted by each node in the source parse tree or forest, and then matches all the generated tree fragments against the source parts (left hand side) of translation rules to extract the useful rules (Zhang et al., 2008a).</S>
+        </P>
+        <P>
+          <S ID="S-6975">Figure 5.</S>
+          <S ID="S-6976">Node NP[3,4] in packed forest</S>
+        </P>
+        <P>
+          <S ID="S-6977">&#65533; &#65533;&#65533; &#65533; &#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533; &#65533; &#65533; &#65533;&#65533; &#65533;&#65533;&#65533; &#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533; &#65533;&#65533; &#65533; &#65533; &#65533;&#65533; &#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-6978">&#65533;&#65533;&#65533;&#65533; &#65533;&#65533; &#65533;</S>
+        </P>
+        <P>
+          <S ID="S-6979">The above equation shows that the number of tree fragments is exponential to the span size, the height and the number of hyper-edges it covers.</S>
+          <S ID="S-6980">In a real system, one can use heuristics, e.g. the maximum number of nodes and the maximum height of fragment, to limit the number of possible fragments.</S>
+          <S ID="S-6981">However, these heuristics are very subjective and hard to optimize.</S>
+          <S ID="S-6982">In addition, they may filter out some &#8220;good&#8221; fragments.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Exhaustive search by rules</HEADER>
+        <P>
+          <S ID="S-6983">This method does not generate any source tree fragments.</S>
+          <S ID="S-6984">Instead, it does top-down recursive matching from each node one-by-one with each translation rule in the rule set (<REF ID="R-12" RPTR="17">Mi and Huang 2008</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-6985">For example, given a translation rule with its left hand side as shown in Fig.</S>
+          <S ID="S-6986">7, the rule matching between the given rule and the node IP[1,4] in Fig.</S>
+          <S ID="S-6987">2 can be done as follows.</S>
+        </P>
+        <P>
+          <S ID="S-6988">1.</S>
+          <S ID="S-6989">Decompose the left hand side of the translation rule as shown in Fig.</S>
+          <S ID="S-6990">7 into a sequence of hyper-edges in top-down, left-to-right order as follows:</S>
+        </P>
+        <P>
+          <S ID="S-6991">IP =&gt; NP VP; NP =&gt; NP NP; NP =&gt; NN; NN =&gt; &#22768; &#26126;</S>
+        </P>
+        <P>
+          <S ID="S-6992">&#65533;</S>
+        </P>
+        <P>
+          <S ID="S-6993">Figure 6.</S>
+          <S ID="S-6994">Candidate fragments on NP[3,4]</S>
+        </P>
+        <P>
+          <S ID="S-6995">Figure 7.</S>
+          <S ID="S-6996">The left hand side of a rule</S>
+        </P>
+        <P>
+          <S ID="S-6997">2.</S>
+          <S ID="S-6998">Pattern match these hyper-edges(rule) oneby-one in top-down left-to-right order from node IP[1,4].</S>
+          <S ID="S-6999">If there is a continuous path in the forest matching all of these hyper-edges in order, then we can say that the rule is useful and matchable</S>
+        </P>
+        <P>
+          <S ID="S-7000">with the tree fragment covered by the continuous path.</S>
+          <S ID="S-7001">The following illustrates the matching steps:</S>
+        </P>
+        <P>
+          <S ID="S-7002">1.</S>
+          <S ID="S-7003">Match hyper-edge &#8220;IP =&gt; NP VP&#8221; with node IP[1,4].</S>
+          <S ID="S-7004">There are two hyper-edges in the forest matching it: &#8220;IP[1,4] =&gt; NP[1,1] VP[2,4]&#8221; and &#8220;IP[1,4] =&gt; NP[1,2] VP [3,4]&#8221;, which generates two candidate paths.</S>
+        </P>
+        <P>
+          <S ID="S-7005">2.</S>
+          <S ID="S-7006">Since hyper-edge &#8220;NP =&gt; NP NP&#8221; fails to match NP[1,1], the path initiated with &#8220;IP[1,4] =&gt; NP[1,1] VP[2,4]&#8221; is pruned out.</S>
+        </P>
+        <P>
+          <S ID="S-7007">3.</S>
+          <S ID="S-7008">Since there is a hyper-edge &#8220;NP[1,2] =&gt; NP[1,1] NP[2,2]&#8221; matching &#8220;NP =&gt; NP NP&#8221; on NP[1,2], then continue for further matching.</S>
+        </P>
+        <P>
+          <S ID="S-7009">4.</S>
+          <S ID="S-7010">Since &#8220;NP=&gt;NN&#8221; on NP[2,2] matches &#8220;NP[2,2] =&gt; NN[2,2]&#8221;, then continue for further matching.</S>
+        </P>
+        <P>
+          <S ID="S-7011">5.</S>
+          <S ID="S-7012">&#8220;NN=&gt; &#22768; &#26126; &#8221; on NN[2,2] matches &#8220;NN[2,2] =&gt; &#22768; &#26126; &#8221; and it is the last hyper-edge in the input rules.</S>
+          <S ID="S-7013">Finally, there is one continuous path successfully matching the left hand side of the input rule.</S>
+        </P>
+        <P>
+          <S ID="S-7014">This method is able to avoid the exponential problem of the first method as described in the previous subsection.</S>
+          <S ID="S-7015">However, it has to do one-byone pattern matching for each rule on each node.</S>
+          <S ID="S-7016">When the rule set is very large (indeed it is very large in the forest-based model even with a small training set), it becomes very slow, and even much slower than the first method.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 The Proposed Hyper-tree-based Rule Matching Algorithm</HEADER>
+      <P>
+        <S ID="S-7107">In this section, we first explain the motivation why we re-organize the translation rule sets, and then elaborate how to re-organize the translation rules using our proposed hyper-tree structure.</S>
+        <S ID="S-7108">Finally we discuss the top-down rule matching algorithm between forest and hyper-tree.</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>4.1 Motivation</HEADER>
+        <P>
+          <S ID="S-7018">Figure 8.</S>
+          <S ID="S-7019">Two rules&#8217; left hand side</S>
+        </P>
+        <P>
+          <S ID="S-7020">Figure 9.</S>
+          <S ID="S-7021">Common part of the two rules&#8217; left hand sides in Figure 8</S>
+        </P>
+        <P>
+          <S ID="S-7022">Fig.</S>
+          <S ID="S-7023">9 shows the common part of the left hand sides of two translation rules as shown in Fig.</S>
+          <S ID="S-7024">8.</S>
+          <S ID="S-7025">In previous rule matching algorithm, the common parts are matched as many times as they appear in the rule set, which reduces the rule matching speed significantly.</S>
+          <S ID="S-7026">This motivates us to propose the hyper-tree structure and the rule matching algorithm to make the common parts shared by multiple translation rules to be visited only once in the entire rule matching process.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>4.2 Hyper-node, hyper-path and hyper-tree</HEADER>
+        <P>
+          <S ID="S-7027">A hyper-tree is a compact representation of a group of tree translation rules with common parts shared.</S>
+          <S ID="S-7028">It consists of a set of hyper-nodes with edges connecting different hyper-nodes into a big tree.</S>
+          <S ID="S-7029">A hyper-tree is constructed from the translation rule sets in two steps:</S>
+        </P>
+        <P>
+          <S ID="S-7030">1) Convert each tree translation rule into a hyper-path; 2) Construct the hyper-tree by incrementally</S>
+        </P>
+        <P>
+          <S ID="S-7031">adding each individual hyper-path into the hyper-tree.</S>
+        </P>
+        <P>
+          <S ID="S-7032">A tree rule can be converted into a hyper-path without losing information.</S>
+          <S ID="S-7033">Fig.</S>
+          <S ID="S-7034">10 demonstrates the conversion process:</S>
+        </P>
+        <P>
+          <S ID="S-7035">1) We first fill the rule tree with virtual nodes to make all its leaves have the same depth to the root;</S>
+        </P>
+        <P>
+          <S ID="S-7036">2) We then group all the nodes in the same tree level to form a single hyper-node, where we use a comma as a delimiter to separate the tree nodes with different father nodes;</S>
+        </P>
+        <P>
+          <S ID="S-7037">3) A hyper-path is a set of hyper-nodes linked</S>
+        </P>
+        <P>
+          <S ID="S-7038">in a top-down manner.</S>
+        </P>
+        <P>
+          <S ID="S-7039">The commas and virtual nodes are introduced to help to recover the original tree from the hyperpath.</S>
+          <S ID="S-7040">Given a tree node in a hyper-node, if there are n commas before it, then its father node is the (n+1) th tree node in the father hyper-node.</S>
+          <S ID="S-7041">If we could find father node for each node in hypernodes, then it is straightforward to recover the original tree from the hyper-path by just adding the edges between original father and children nodes except the virtual node .</S>
+        </P>
+        <P>
+          <S ID="S-7042">After converting each tree rule into a hyperpath, we can organize the entire rule set into a big hyper-tree as shown in Figure 11.</S>
+          <S ID="S-7043">The concept of hyper-path and hyper-tree could be viewed as an extension of the "prefix merging" ideas for CFG rules (<REF ID="R-05" RPTR="8">Klein and Manning 2001</REF><REF ID="R-04" RPTR="6">Manning 2001</REF>).</S>
+        </P>
+        <P>
+          <S ID="S-7044">rules for easy discussion.</S>
+          <S ID="S-7045">Indeed, we can easily represent all the complete translation rules (not only left hand side) in Fig.</S>
+          <S ID="S-7046">11 by simply adding the corresponding rule target sides into each hyper-node as done by line 5 of Algorithm 1.</S>
+        </P>
+        <P>
+          <S ID="S-7047">Any hyper-path from the root to any hypernode (not necessarily be a leaf of the hyper-tree) in a hyper-tree can represent a tree fragment.</S>
+          <S ID="S-7048">As a result, the hyper-tree in Fig.</S>
+          <S ID="S-7049">11 can represent up to 6 candidate tree fragments.</S>
+          <S ID="S-7050">It is easy to understand that the maximum number of tree fragments that a hyper-tree can represent is equal to the number of hyper-nodes in it except the root.</S>
+          <S ID="S-7051">It is worth noting that a hyper-node in a hyper-tree without any target side rule attached means there is no translation rule corresponding to the tree fragment represented by the hyper-path from the root to the current hyper-node.</S>
+          <S ID="S-7052">The compact representation of the rule set by hyper-tree enables a fast algorithm to do translation rule matching.</S>
+        </P>
+        <P>
+          <S ID="S-7053">Algorithm 1.</S>
+          <S ID="S-7054">Compile rule set into hyper-tree Input: rule set Output: hyper-tree</S>
+        </P>
+        <P>
+          <S ID="S-7055">Figure 10.</S>
+          <S ID="S-7056">Convert tree to hyper-path</S>
+        </P>
+        <P>
+          <S ID="S-7057">Figure 11.</S>
+          <S ID="S-7058">A hyper-tree example</S>
+        </P>
+        <P>
+          <S ID="S-7059">Algorithm 1 shows how to organize the rule set into a big hyper-tree.</S>
+          <S ID="S-7060">The general process is that for each rule we convert it into a hyper-path and then add the hyper-path into a hyper-tree incrementally.</S>
+          <S ID="S-7061">However, there are many different hyper-trees generated given a big rule set.</S>
+          <S ID="S-7062">We then introduce a TOP label as the root node to link all the individual hyper-trees to a single big hypertree.</S>
+          <S ID="S-7063">Algorithm 2 shows the process of adding a hyper-path into a hyper-tree.</S>
+          <S ID="S-7064">Given a hyper-path, we do a top-down matching between the hypertree and the input hyper-path from root hypernode until a leaf hyper-node is reached or there is no matching hyper-node at some level found.</S>
+          <S ID="S-7065">Then we add the remaining unmatchable part of the input hyper-path as the descendants of the last matchable hyper-node.</S>
+        </P>
+        <P>
+          <S ID="S-7066">Please note that in Fig.</S>
+          <S ID="S-7067">10 and Fig.</S>
+          <S ID="S-7068">11, we ignore the target side (right hand side) of translation</S>
+        </P>
+        <P>
+          <S ID="S-7069">Algorithm 2.</S>
+          <S ID="S-7070">Add hyper-path into hyper-tree Input: hyper-path p and hyper-tree t Notation:</S>
+        </P>
+        <P>
+          <S ID="S-7071">h: the height of hyper-path p p(i) : the hyper-node of ith level (top-down) of p TN: the hyper-node in hyper-tree Output: updated hyper-tree t</S>
+        </P>
+        <P>
+          <S ID="S-7072">4.3 Translation rule matching between forest and hyper-tree</S>
+        </P>
+        <P>
+          <S ID="S-7073">Given the source parse forest and the translation rules represented in the hyper-tree structure, here we present a fast matching algorithm to extract socalled useful translation rules from the entire rule set in a top-down manner for each node of the forest.</S>
+        </P>
+        <P>
+          <S ID="S-7074">As shown in Algorithm 3, the general process of the matching algorithm is as follows:</S>
+        </P>
+        <P>
+          <S ID="S-7075">Algorithm 3.</S>
+          <S ID="S-7076">Rule matching on one node Input: hyper-tree T, forest F, and node n Notation:</S>
+        </P>
+        <P>
+          <S ID="S-7077">FP: a pair &lt;FNS, TN&gt;, FNS is the frontier nodes of matched tree fragment, TN is the hyper-tree node matching it</S>
+        </P>
+        <P>
+          <S ID="S-7078">SFP: the queue of FP Output: Available rules on node n</S>
+        </P>
+        <P>
+          <S ID="S-7079">Algorithm 4.</S>
+          <S ID="S-7080">PropagateNextLevel Input: Frontier node sequence FNS, hyper-tree node TN Notation: CT: a child node of TN</S>
+        </P>
+        <P>
+          <S ID="S-7081">the number of node sequence (separated by comma, see Fig 11) in CT is equal to the number of node in TN.</S>
+          <S ID="S-7082">CT(i) : the ith node sequence in hyper-node CT FNS(i): the ith node in FNS TFNS: the temporary set of frontier node sequence RFNS: the result set of frontier node sequence FP: a pair of frontier node sequence</S>
+        </P>
+        <P>
+          <S ID="S-7083">and hyper-tree node RFP: the result set of FP Output: RFP</S>
+        </P>
+        <P>
+          <S ID="S-7084">1) For each node n of the source forest if no child node of TOP in hyper-tree has the same label with it, it means that no rule matches any tree fragments rooted at the node n (i.e., no useful rules to be used for the node n) (line 1-2)</S>
+        </P>
+        <P>
+          <S ID="S-7085">2) Otherwise, we match the sub-forest starting from the node n against a sub-hyper-tree starting from the matchable child node of TOP layer by layer in a top-down manner.</S>
+          <S ID="S-7086">There may be many possible tree fragments rooted at node n and each of them may have multiple useful translation rules.</S>
+          <S ID="S-7087">In our implementation, we maintain a data structure of FP = &lt;FNS, TN&gt; to record the currently matched tree fragment of forest and its corresponding hyper-tree node in the rule set, where FNS is the frontier node set of the current tree fragment and TN is the hyper-tree node.</S>
+          <S ID="S-7088">The data structure FP is used to help extract useful translation rules and is also used for further matching of larger tree fragments.</S>
+          <S ID="S-7089">Finally, all the FPs for the node n are kept in a queue.</S>
+          <S ID="S-7090">During the search, the queue size is dynamically increased.</S>
+          <S ID="S-7091">The matching algorithm terminates when all the FPs have been visited (line 5-6 and Algorithm 4).</S>
+        </P>
+        <P>
+          <S ID="S-7092">3) In the final queue, each element (FP) of the queue contains the frontier node sequence of the matched tree fragment and its corresponding hyper-tree node.</S>
+          <S ID="S-7093">If the target side of a rule in the hyper-tree node is not empty, we just output the frontier nodes of the matched tree fragment, its root node n and all the useful translation rules for later translation process.</S>
+        </P>
+        <P>
+          <S ID="S-7094">Algorithm 4 describes the detailed process of how to propagate the matching process down to the next level.</S>
+          <S ID="S-7095">&lt;FNS, TN&gt; is the current level frontier node sequence and hyper-tree node.</S>
+          <S ID="S-7096">Given a child hyper-node CT of TN (line 1), we try to find the group of next level frontier node sequence to match it (line 2-18).</S>
+          <S ID="S-7097">As shown in Fig 11, a hyper-node consists of a sequence of node sequence with comma as delimiter.</S>
+          <S ID="S-7098">For the i th node sequence CT(i) in CT, If CT(i) is , that means FNS(i) is a leaf/frontier node in the matched tree fragment and thus no need to propagate to the next level (line 4-5).</S>
+          <S ID="S-7099">Otherwise, we try each hyperedge e of FNS(i) to see whether its children match CT(i), and put the children of the matched hyperedge into a temp set TFNS (line 7-9).</S>
+          <S ID="S-7100">If the temp set is empty, that means the current matching fails and no further expansion needs (line 10-12).</S>
+          <S ID="S-7101">Otherwise, we integrate current matched children into the final group of frontier node sequence (line 13- 16) by Descartes Product ( ).</S>
+          <S ID="S-7102">Finally, we construct all the &lt;FNS, TN&gt; pair for next level matching (line 17-18).</S>
+        </P>
+        <P>
+          <S ID="S-7103">It would be interesting to study the time complexity of our Algorithm 3 and 4.</S>
+          <S ID="S-7104">Suppose the maximum number of children of each hyper-node in hyper-tree is N (line 1), the maximum number of node sequence in CT is M (line 2), the maximum number of hyper-edge in each node in packed forest is K (line 7), the maximum number of hyper-edge with same children representation in each node in packed forest is C (i.e. the maximum size of TFNS in line 16, and the maximum complexity of the Descartes Product in line 16</S>
+        </P>
+        <P>
+          <S ID="S-7105">would be C M ), then the time complexity upperbound of Algorithm 4 is O(NM(K+C M )).</S>
+          <S ID="S-7106">For Algorithm 3, its time complexity is O(RNM(K+C M )), where R is the maximum number of tree fragment matched in each node.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiment</HEADER>
+      <P>
+        <S ID="S-7181"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Experimental settings</HEADER>
+        <P>
+          <S ID="S-7109">We carry out experiment on Chinese-English NIST evaluation tasks.</S>
+          <S ID="S-7110">We use FBIS corpus (250K sentence pairs) as training data with the source side parsed by a modified Charniak parser (<REF ID="R-00" RPTR="0">Charniak 2000</REF>) which can output a packed forest.</S>
+          <S ID="S-7111">The Charniak Parser is trained on CTB5, tuned on 301-325 portion, with F1 score of 80.85% on 271- 300 portion.</S>
+          <S ID="S-7112">We use GIZA++ (<REF ID="R-13" RPTR="20">Och and Ney, 2003</REF>) to do m-to-n word-alignment and adopt heuristic &#8220;grow-diag-final-and&#8221; to do refinement.</S>
+          <S ID="S-7113">A 4-gram language model is trained on Gigaword 3 Xinhua portion by SRILM toolkit (<REF ID="R-15" RPTR="21">Stolcke, 2002</REF>) with Kneser-Ney smoothing.</S>
+          <S ID="S-7114">We use NIST 2002 as development set and NIST 2003 as test set.</S>
+          <S ID="S-7115">The feature weights are tuned by the modified Koehn&#8217;s MER (Och, 2003, Koehn, 2007) trainer.</S>
+          <S ID="S-7116">We use case-sensitive BLEU-4 (Papineni et al., 2002) to measure the quality of translation result.</S>
+          <S ID="S-7117">Zhang et al. 2004&#8217;s implementation is used to do significant test.</S>
+        </P>
+        <P>
+          <S ID="S-7118">Following (<REF ID="R-12" RPTR="18">Mi and Huang 2008</REF>), we use viterbi algorithm to prune the forest.</S>
+          <S ID="S-7119">Instead of using a static pruning threshold (<REF ID="R-12" RPTR="19">Mi and Huang 2008</REF>), we set the threshold as the distance of the probabilities of the n th best tree and the 1 st best tree.</S>
+          <S ID="S-7120">It means the pruned forest is able to at least keep all the top n best trees.</S>
+          <S ID="S-7121">However, because of the sharing nature of the packed forest, it may still contain a large number of additional trees.</S>
+          <S ID="S-7122">Our statistic shows that when we set the threshold as the 100 th best tree, the average number of all possible trees in the forest is 1.2*10 5 after pruning.</S>
+        </P>
+        <P>
+          <S ID="S-7123">In our experiments, we compare our algorithm with the two traditional algorithms as discussed in section 3.</S>
+          <S ID="S-7124">For the &#8220;Exhaustive search by tree&#8221; algorithm, we use a bottom-up dynamic programming algorithm to generate all the candidate tree fragments rooted at each node.</S>
+          <S ID="S-7125">For the &#8220;Exhaustive search by rule&#8221; algorithm, we group all rules with the same left hand side in order to remove the duplicated matching for the same left hand side rules.</S>
+          <S ID="S-7126">All these settings aim for fair comparison.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Accuracy, speed vs. rule heights</HEADER>
+        <P>
+          <S ID="S-7127">We first compare the three algorithms&#8217; performance by setting the maximum rule height from 1</S>
+        </P>
+        <P>
+          <S ID="S-7128">H</S>
+        </P>
+        <P>
+          <S ID="S-7129">to 5.</S>
+          <S ID="S-7130">We set the forest pruning threshold to the 100 th best parse tree.</S>
+        </P>
+        <P>
+          <S ID="S-7131">Table 1 compares the speed of the three algorithms.</S>
+          <S ID="S-7132">It clearly shows that the speed of both of the two traditional algorithms increases dramatically while the speed of our hyper-tree based algorithm is almost linear to the tree height.</S>
+          <S ID="S-7133">In the case of rule height of 5, the hyper-tree algorithm is at least 19 times (9.329/0.486) faster than the two traditional algorithms and saves 8.843(9.329 - 0.486) seconds in rule matching for each sentence on average, which contributes 57% (8.843/(9.329 + 6.21)) speed improvement to the overall translation.</S>
+        </P>
+        <P>
+          <S ID="S-7134">Exhaustive by tree Rule Matching</S>
+        </P>
+        <P>
+          <S ID="S-7135">Exhaustive by rule Hypertreebased</S>
+        </P>
+        <P>
+          <S ID="S-7136">1 0.043 0.077 0.083 2.96</S>
+        </P>
+        <P>
+          <S ID="S-7137">Table 1.</S>
+          <S ID="S-7138">Speed in seconds per sentence vs. rule height; &#8220;H&#8221; is rule height, &#8220;D&#8221; represents the decoding time after rule matching</S>
+        </P>
+        <P>
+          <S ID="S-7139">Height BLEU 1 0.1646 2 0.2498 3 0.2824 4 0.2874 5 0.2925 Moses 0.2625</S>
+        </P>
+        <P>
+          <S ID="S-7140">Table 2.</S>
+          <S ID="S-7141">BLEU vs. rule height</S>
+        </P>
+        <P>
+          <S ID="S-7142">Table 2 reports the BLEU score with different rule heights, where Moses, a state-of-the-art phrase-based SMT system, serves as the baseline system.</S>
+          <S ID="S-7143">It shows the BLEU score consistently improves as the rule height increases.</S>
+          <S ID="S-7144">In addition, one can see that the rules with maximum height of 5 are able to outperform the rules with maximum height of 3 by 1 BLEU score (p&lt;0.05) and significantly outperforms Moses by 3 BLEU score (p&lt;0.01).</S>
+          <S ID="S-7145">To our knowledge, this is the first time to report the performance of rules up to height of 5 for forest-based translation model.</S>
+        </P>
+        <P>
+          <S ID="S-7146">D</S>
+        </P>
+        <P>
+          <S ID="S-7147">We also study the distribution of the rules used in the 1-best translation output.</S>
+          <S ID="S-7148">The results are shown in Table 3; we could see something interesting that is as the rule height increases, the total number of rules with that height decreases, while the percentage of partial-lexicalized increases dramatically.</S>
+          <S ID="S-7149">And one thing needs to note is the percentage of partial-lexicalized rules with height of 1 is 0, since there is no partial-lexicalized rule with height of 1 in the rule set (the father node of a word is a pos tag node).</S>
+        </P>
+        <P>
+          <S ID="S-7150">H Total Rule Type Percentage (%)</S>
+        </P>
+        <P>
+          <S ID="S-7151">F P U</S>
+        </P>
+        <P>
+          <S ID="S-7152">1 9814 76.58 0 23.42</S>
+        </P>
+        <P>
+          <S ID="S-7153">Table 3. statistics of rules used in the 1-best translation output, &#8220;F&#8221; means full-lexicalized, &#8220;P&#8221; means partial-lexicalized, &#8220;U&#8221; means unlexiclaizd.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Speed vs. forest pruning threshold</HEADER>
+        <P>
+          <S ID="S-7154">This section studies the impact of the forest pruning threshold on the rule matching speed when setting the maximum rule height to 5.</S>
+        </P>
+        <P>
+          <S ID="S-7155">Threshold Exhaustive by tree Rule Matching</S>
+        </P>
+        <P>
+          <S ID="S-7156">Exhaustive by rule Hypertreebased</S>
+        </P>
+        <P>
+          <S ID="S-7157">Table 4.</S>
+          <S ID="S-7158">Speed in seconds per sentence vs. forest pruning threshold</S>
+        </P>
+        <P>
+          <S ID="S-7159">In Table 4, we can see that our hyper-tree based algorithm is the fastest among the three algorithms in all pruning threshold settings and even 150 times faster than both of the two traditional algorithms with threshold of 500 th best.</S>
+          <S ID="S-7160">Table 5 shows the average number of parse trees embedded in a packed forest with different pruning thresholds per sentence.</S>
+          <S ID="S-7161">We can see that the number of trees increases exponentially when the pruning threshold increases linearly.</S>
+          <S ID="S-7162">When the threshold is 500 th best, the average number of trees per sentence is 1.49*10 9 .</S>
+          <S ID="S-7163">However, even in this extreme case, the hyper-tree based algorithm is still capable of completing rule matching within 1 second.</S>
+        </P>
+        <P>
+          <S ID="S-7164">Table 5.</S>
+          <S ID="S-7165">Average number of trees in packed forest with different pruning threshold.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Hyper-tree compression rate</HEADER>
+        <P>
+          <S ID="S-7166">As we describe in section 4.2, theoretically the number of tree fragments that a hyper-tree can represent is equal to the number of hyper-nodes in it.</S>
+          <S ID="S-7167">However, in real rule set, there is no guarantee that each tree fragment in the hyper-tree has corresponding translation rules.</S>
+          <S ID="S-7168">To gain insights into how effective the compact representation of the hyper-tree and how many hyper-nodes without translation rules, we define the compression rate as follows.</S>
+        </P>
+        <P>
+          <S ID="S-7169">Table 6 reports the different statistics on the rule sets with different maximum rule heights ranging from 1 to 5.</S>
+          <S ID="S-7170">The reported statistics are the number of rules, the number of unique left hand side (since there may be more than one rules having the same left hand side), the number of hypernodes and the compression rate.</S>
+        </P>
+        <P>
+          <S ID="S-7171">Table 6.</S>
+          <S ID="S-7172">Statistics of rule set and hyper-tree.</S>
+          <S ID="S-7173">&#8220;H&#8221; is rule height, &#8220;n_rules&#8221; is the number of rules, &#8220;n_LHS&#8221; is the number of unique left hand side, &#8220;n_nodes&#8221; is the number of hyper-nodes in hypertree and &#8220;c_rate&#8221; is the compression rate.</S>
+        </P>
+        <P>
+          <S ID="S-7174">Table 6 shows that in all the five cases, the compression rates of hyper-tree are all more than</S>
+        </P>
+        <P>
+          <S ID="S-7175">98%.</S>
+          <S ID="S-7176">It means that almost all the tree fragments embedded in the hyper-tree have corresponding translation rules.</S>
+          <S ID="S-7177">As a result, we are able to use almost only one hyper-edge (i.e. only the frontier nodes of a tree fragment without any internal nodes) to represent all the rules with the same left hand side.</S>
+          <S ID="S-7178">This suggests that our hyper-tree is particularly effective in representing the tree translation rules compactly.</S>
+          <S ID="S-7179">It also shows that there are a lot of common parts among different translation rules.</S>
+        </P>
+        <P>
+          <S ID="S-7180">All the experiments reported in this section convincingly demonstrate the effectiveness of our proposed hyper-tree representation of translation rules and the hyper-tree-based rule matching algorithm.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Conclusion</HEADER>
+      <P>
+        <S ID="S-7182">In this paper 2, we propose the concept of hypertree for compact rule representation and a hypertree-based fast algorithm for translation rule matching in a forest-based translation system.</S>
+        <S ID="S-7183">We compare our algorithm with two previous widelyused rule matching algorithms.</S>
+        <S ID="S-7184">Experimental results on the NIST Chinese-English MT 2003 evaluation data set show the rules with maximum rule height of 5 outperform those with height 3 by 1.0 BLEU and outperform MOSES by 3.0 BLEU.</S>
+        <S ID="S-7185">In the same test cases, our algorithm is at least 19 times faster than the two traditional algorithms, and contributes 57% speed improvement to the overall translation.</S>
+        <S ID="S-7186">We also show that in a more challenging setting (forest containing 1.49*10 9 trees on average) our algorithm is 150 times faster than the two traditional algorithms.</S>
+        <S ID="S-7187">Finally, we show that the hyper-tree structure has more than 98% compression rate.</S>
+        <S ID="S-7188">It means the compact representation by the hyper-tree is very effective for translation rules.</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Eugene Charniak</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2000</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>What&#8217;s in a translation rule?</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Forest rescoring: Faster decoding with integrated language models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Christopher D Manning</RAUTHOR>
+      <REFTITLE>The corresponding authors of this paper are Hui Zhang (zhangh1982@gmail.com) and Min Zhang (mzhang@i2r.a-star.edu.sg) Dan Klein</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Dan Klein</RAUTHOR>
+      <REFTITLE>Parsing with Treebank Grammars: Empirical Bounds, Theoretical Models, and the Structure of the Penn Treebank.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>ACL</RAUTHOR>
+      <REFTITLE></REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>Kevin Knight</RAUTHOR>
+      <REFTITLE>Decoding Complexity in WordReplacement Translation Models.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Philipp Koehn</RAUTHOR>
+      <REFTITLE>Moses: Open Source Toolkit for Statistical Machine Translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Tree-toString Alignment Template for Statistical Machine Translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Forest-to-String Statistical Translation Rules.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Haitao Mi</RAUTHOR>
+      <REFTITLE>Forestbased translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Haitao Mi</RAUTHOR>
+      <REFTITLE>Forest-based Translation Rule Extraction.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Franz Josef Och</RAUTHOR>
+      <REFTITLE>A Systematic Comparison of Various Statistical Alignment Models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Computational Linguistics</RAUTHOR>
+      <REFTITLE>Kishore Papineni, Salim Roukos, ToddWard and WeiJing Zhu.</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>SRILM - an extensible language modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Masaru Tomita</RAUTHOR>
+      <REFTITLE>An Efficient AugmentedContext-Free Parsing Algorithm.</REFTITLE>
+      <DATE>1987</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Hui Zhang</RAUTHOR>
+      <REFTITLE>Aiti Aw and Chew Lim Tan.</REFTITLE>
+      <DATE>2009</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Min Zhang</RAUTHOR>
+      <REFTITLE>Ai Ti Aw, Jun Sun, Sheng Li and Chew Lim Tan.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Min Zhang</RAUTHOR>
+      <REFTITLE>Hongfei Jiang, Aiti Aw,</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Min Zhang</RAUTHOR>
+      <REFTITLE>Aiti Aw, Sheng Li.</REFTITLE>
+      <DATE></DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>

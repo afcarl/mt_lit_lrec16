@@ -1,0 +1,734 @@
+<PAPER>
+  <FILENO/>
+  <TITLE>Joint Decoding with Multiple Translation Models</TITLE>
+  <AUTHORS>
+    <AUTHOR>Yang Liu</AUTHOR>
+    <AUTHOR>Haitao Mi</AUTHOR>
+    <AUTHOR>Yang Feng</AUTHOR>
+  </AUTHORS>
+  <ABSTRACT>
+    <A-S ID="S-26762">Current SMT systems usually decode with single translation models and cannot benefit from the strengths of other models in decoding phase.</A-S>
+    <A-S ID="S-26763">We instead propose joint decoding, a method that combines multiple translation models in one decoder.</A-S>
+    <A-S ID="S-26764">Our joint decoder draws connections among multiple models by integrating the translation hypergraphs they produce individually.</A-S>
+    <A-S ID="S-26765">Therefore, one model can share translations and even derivations with other models.</A-S>
+    <A-S ID="S-26766">Comparable to the state-of-the-art system combination technique, joint decoding achieves an absolute improvement of 1.5 BLEU points over individual decoding.</A-S>
+  </ABSTRACT>
+  <BODY>
+    <DIV DEPTH="0">
+      <HEADER>1 Introduction</HEADER>
+      <P>
+        <S ID="S-26767">System combination aims to find consensus translations among different machine translation systems.</S>
+        <S ID="S-26768">It proves that such consensus translations are usually better than the output of individual systems (<REF ID="R-04" RPTR="16">Frederking and Nirenburg, 1994</REF>).</S>
+        <S ID="S-26769">Recent several years have witnessed the rapid development of system combination methods based on confusion networks (e.g., (<REF ID="R-23" RPTR="43">Rosti et al., 2007</REF>; <REF ID="R-06" RPTR="18">He et al., 2008</REF>)), which show state-of-theart performance in MT benchmarks.</S>
+        <S ID="S-26770">A confusion network consists of a sequence of sets of candidate words.</S>
+        <S ID="S-26771">Each candidate word is associated with a score.</S>
+        <S ID="S-26772">The optimal consensus translation can be obtained by selecting one word from each set of candidates to maximizing the overall score.</S>
+        <S ID="S-26773">While it is easy and efficient to manipulate strings, current methods usually have no access to most information available in decoding phase, which might be useful for obtaining further improvements.</S>
+      </P>
+      <P>
+        <S ID="S-26774">In this paper, we propose a framework for combining multiple translation models directly in decoding phase.</S>
+        <S ID="S-26775">1 Based on max-translation decoding and max-derivation decoding used in conventional individual decoders (Section 2), we go further to develop a joint decoder that integrates multiple models on a firm basis:</S>
+      </P>
+      <P>
+        <S ID="S-26776">&#8226; Structuring the search space of each model as a translation hypergraph (Section 3.1), our joint decoder packs individual translation hypergraphs together by merging nodes that have identical partial translations (Section 3.2).</S>
+        <S ID="S-26777">Although such translation-level combination will not produce new translations, it does change the way of selecting promising candidates.</S>
+        <S ID="S-26778">&#8226; Two models could even share derivations with each other if they produce the same structures on the target side (Section 3.3), which we refer to as derivation-level combination.</S>
+        <S ID="S-26779">This method enlarges the search space by allowing for mixing different types of translation rules within one derivation.</S>
+        <S ID="S-26780">&#8226; As multiple derivations are used for finding optimal translations, we extend the minimum error rate training (MERT) algorithm (<REF ID="R-21" RPTR="39">Och, 2003</REF>) to tune feature weights with respect to BLEU score for max-translation decoding (Section 4).</S>
+      </P>
+      <P>
+        <S ID="S-26781">We evaluated our joint decoder that integrated a hierarchical phrase-based model (<REF ID="R-02" RPTR="6">Chiang, 2005</REF>; <REF ID="R-03" RPTR="11">Chiang, 2007</REF>) and a tree-to-string model (<REF ID="R-13" RPTR="29">Liu et al., 2006</REF>) on the NIST 2005 Chinese-English testset.</S>
+        <S ID="S-26782">Experimental results show that joint decod-</S>
+      </P>
+      <P>
+        <S ID="S-26783">1 It might be controversial to use the term &#8220;model&#8221;, which</S>
+      </P>
+      <P>
+        <S ID="S-26784">usually has a very precise definition in the field.</S>
+        <S ID="S-26785">Some researchers prefer to saying &#8220;phrase-based approaches&#8221; or &#8220;phrase-based systems&#8221;.</S>
+        <S ID="S-26786">On the other hand, other authors (e.g., (<REF ID="R-20" RPTR="38">Och and Ney, 2004</REF>; <REF ID="R-12" RPTR="27">Koehn et al., 2003</REF>; <REF ID="R-03" RPTR="12">Chiang, 2007</REF>)) do use the expression &#8220;phrase-based models&#8221;.</S>
+        <S ID="S-26787">In this paper, we use the term &#8220;model&#8221; to emphasize that we integrate different approaches directly in decoding phase rather than postprocessing system outputs.</S>
+      </P>
+      <P>
+        <S ID="S-26788">S &#8594; &#12296;X 1 ,X 1 &#12297;</S>
+      </P>
+      <P>
+        <S ID="S-26789">X &#8594; &#12296;fabiao X 1 , give a X 1 &#12297;</S>
+      </P>
+      <P>
+        <S ID="S-26790">X &#8594; &#12296;yanjiang, talk&#12297;</S>
+      </P>
+      <P>
+        <S ID="S-26791">ing with multiple models achieves an absolute improvement of 1.5 BLEU points over individual decoding with single models (Section 5).</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>2 Background</HEADER>
+      <P>
+        <S ID="S-26792">Statistical machine translation is a decision problem where we need decide on the best of target sentence matching a source sentence.</S>
+        <S ID="S-26793">The process of searching for the best translation is conventionally called decoding, which usually involves sequences of decisions that translate a source sentence into a target sentence step by step.</S>
+        <S ID="S-26794">For example, Figure 1 shows a sequence of SCFG rules (<REF ID="R-02" RPTR="7">Chiang, 2005</REF>; <REF ID="R-03" RPTR="13">Chiang, 2007</REF>) that translates a Chinese sentence &#8220;fabiao yanjiang&#8221; into an English sentence &#8220;give a talk&#8221;.</S>
+        <S ID="S-26795">Such sequence of decisions is called a derivation.</S>
+        <S ID="S-26796">In phrase-based models, a decision can be translating a source phrase into a target phrase or reordering the target phrases.</S>
+        <S ID="S-26797">In syntax-based models, decisions usually correspond to transduction rules.</S>
+        <S ID="S-26798">Often, there are many derivations that are distinct yet produce the same translation.</S>
+        <S ID="S-26799"><REF ID="R-01" RPTR="1">Blunsom et al. (2008)</REF> present a latent variable model that describes the relationship between translation and derivation clearly.</S>
+        <S ID="S-26800">Given a source sentence f, the probability of a target sentence e being its translation is the sum over all possible derivations:</S>
+      </P>
+      <P>
+        <S ID="S-26801">Pr(e|f) = &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-26802">d&#8712;&#8710;(e,f)</S>
+      </P>
+      <P>
+        <S ID="S-26803">Pr(d,e|f) (1)</S>
+      </P>
+      <P>
+        <S ID="S-26804">where &#8710;(e,f) is the set of all possible derivations that translate f into e and d is one such derivation.</S>
+      </P>
+      <P>
+        <S ID="S-26805">They use a log-linear model to define the conditional probability of a derivation d and corresponding translation e conditioned on a source sentence f:</S>
+      </P>
+      <P>
+        <S ID="S-26806">Pr(d,e|f) = exp &#8721; m &#955; mh m (d,e,f) Z(f) (2)</S>
+      </P>
+      <P>
+        <S ID="S-26807">where h m is a feature function, &#955; m is the associated feature weight, and Z(f) is a constant for normalization:</S>
+      </P>
+      <P>
+        <S ID="S-26808">Z(f) = &#8721; e &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-26809">d&#8712;&#8710;(e,f)</S>
+      </P>
+      <P>
+        <S ID="S-26810">exp &#8721; m</S>
+      </P>
+      <P>
+        <S ID="S-26811">&#955; m h m (d,e,f) (3)</S>
+      </P>
+      <P>
+        <S ID="S-26812">A feature value is usually decomposed as the product of decision probabilities: 2</S>
+      </P>
+      <P>
+        <S ID="S-26813">h(d,e,f) = &#8719; d&#8712;d p(d) (4)</S>
+      </P>
+      <P>
+        <S ID="S-26814">where d is a decision in the derivation d.</S>
+      </P>
+      <P>
+        <S ID="S-26815">Although originally proposed for supporting large sets of non-independent and overlapping features, the latent variable model is actually a more general form of conventional linear model (<REF ID="R-18" RPTR="35">Och and Ney, 2002</REF>).</S>
+        <S ID="S-26816">Accordingly, decoding for the latent variable model can be formalized as { } &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-26817">&#234; = argmax &#955; m h m (d,e,f) (5)</S>
+      </P>
+      <P>
+        <S ID="S-26818">e</S>
+      </P>
+      <P>
+        <S ID="S-26819">d&#8712;&#8710;(e,f)exp &#8721; m</S>
+      </P>
+      <P>
+        <S ID="S-26820">where Z(f) is not needed in decoding because it is independent of e. Most SMT systems approximate the summation over all possible derivations by using 1-best derivation for efficiency.</S>
+        <S ID="S-26821">They search for the 1- best derivation and take its target yield as the best translation:</S>
+      </P>
+      <P>
+        <S ID="S-26822">&#234; &#8776; argmax</S>
+      </P>
+      <P>
+        <S ID="S-26823">e,d</S>
+      </P>
+      <P>
+        <S ID="S-26824">{ &#8721;</S>
+      </P>
+      <P>
+        <S ID="S-26825">m</S>
+      </P>
+      <P>
+        <S ID="S-26826">} &#955; m h m (d,e,f) (6)</S>
+      </P>
+      <P>
+        <S ID="S-26827">We refer to Eq.</S>
+        <S ID="S-26828">(5) as max-translation decoding and Eq.</S>
+        <S ID="S-26829">(6) as max-derivation decoding, which are first termed by <REF ID="R-01" RPTR="2">Blunsom et al. (2008)</REF>.</S>
+        <S ID="S-26830">By now, most current SMT systems, adopting either max-derivation decoding or max-translation decoding, have only used single models in decoding phase.</S>
+        <S ID="S-26831">We refer to them as individual decoders.</S>
+        <S ID="S-26832">In the following section, we will present a new method called joint decoding that includes multiple models in one decoder.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>3 Joint Decoding</HEADER>
+      <P>
+        <S ID="S-26918">There are two major challenges for combining multiple models directly in decoding phase.</S>
+        <S ID="S-26919">First, they rely on different kinds of knowledge sources</S>
+      </P>
+      <P>
+        <S ID="S-26920">2 There are also features independent of derivations, such</S>
+      </P>
+      <P>
+        <S ID="S-26921">as language model and word penalty.</S>
+      </P>
+      <P>
+        <S ID="S-26922">S</S>
+      </P>
+      <P>
+        <S ID="S-26923">(a) packing</S>
+      </P>
+      <P>
+        <S ID="S-26924">S</S>
+      </P>
+      <P>
+        <S ID="S-26925">(b)</S>
+      </P>
+      <P>
+        <S ID="S-26926">give a talk 0-2 give talks</S>
+      </P>
+      <P>
+        <S ID="S-26927">0-2 make a speech</S>
+      </P>
+      <P>
+        <S ID="S-26928">0-2</S>
+      </P>
+      <P>
+        <S ID="S-26929">give 0-1 talk 1-2 speech 1-2</S>
+      </P>
+      <P>
+        <S ID="S-26930">S</S>
+      </P>
+      <P>
+        <S ID="S-26931">(c)</S>
+      </P>
+      <P>
+        <S ID="S-26932">and thus need to collect different information during decoding.</S>
+        <S ID="S-26933">For example, taking a source parse as input, a tree-to-string decoder (e.g., (<REF ID="R-13" RPTR="30">Liu et al., 2006</REF>)) pattern-matches the source parse with treeto-string rules and produces a string on the target side.</S>
+        <S ID="S-26934">On the contrary, a string-to-tree decoder (e.g., (<REF ID="R-05" RPTR="17">Galley et al., 2006</REF>; <REF ID="R-24" RPTR="46">Shen et al., 2008</REF>)) is a parser that applies string-to-tree rules to obtain a target parse for the source string.</S>
+        <S ID="S-26935">As a result, the hypothesis structures of the two models are fundamentally different.</S>
+      </P>
+      <P>
+        <S ID="S-26936">Second, translation models differ in decoding algorithms.</S>
+        <S ID="S-26937">Depending on the generating order of a target sentence, we distinguish between two major categories: left-to-right and bottom-up.</S>
+        <S ID="S-26938">Decoders that use rules with flat structures (e.g., phrase pairs) usually generate target sentences from left to right while those using rules with hierarchical structures (e.g., SCFG rules) often run in a bottom-up style.</S>
+      </P>
+      <P>
+        <S ID="S-26939">In response to the two challenges, we first argue that the search space of an arbitrary model can be structured as a translation hypergraph, which makes each model connectable to others (Section 3.1).</S>
+        <S ID="S-26940">Then, we show that a packed translation hypergraph that integrates the hypergraphs of individual models can be generated in a bottom-up topological order, either integrated at the translation level (Section 3.2) or the derivation level (Section 3.3).</S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>3.1 Translation Hypergraph</HEADER>
+        <P>
+          <S ID="S-26833">Despite the diversity of translation models, they all have to produce partial translations for substrings of input sentences.</S>
+          <S ID="S-26834">Therefore, we represent the search space of a translation model as a structure called translation hypergraph.</S>
+          <S ID="S-26835">Figure 2(a) demonstrates a translation hypergraph for one model, for example, a hierarchical phrase-based model.</S>
+          <S ID="S-26836">A node in a hypergraph denotes a partial translation for a source substring, except for the starting node &#8220;S&#8221;.</S>
+          <S ID="S-26837">For example, given the example source sentence</S>
+        </P>
+        <P>
+          <S ID="S-26838">0 fabiao 1 yanjiang 2</S>
+        </P>
+        <P>
+          <S ID="S-26839">the node &#12296;&#8220;give talks&#8221;,[0,2]&#12297; in Figure 2(a) denotes that &#8220;give talks&#8221; is one translation of the source string f1 2 = &#8220;fabiao yanjiang&#8221;.</S>
+        </P>
+        <P>
+          <S ID="S-26840">The hyperedges between nodes denote the decision steps that produce head nodes from tail nodes.</S>
+          <S ID="S-26841">For example, the incoming hyperedge of the node &#12296;&#8220;give talks&#8221;,[0, 2]&#12297; could correspond to an SCFG rule:</S>
+        </P>
+        <P>
+          <S ID="S-26842">X &#8594; &#12296;X 1 yanjiang,X 1 talks&#12297;</S>
+        </P>
+        <P>
+          <S ID="S-26843">Each hyperedge is associated with a number of weights, which are the feature values of the corresponding translation rules.</S>
+          <S ID="S-26844">A path of hyperedges constitutes a derivation.</S>
+        </P>
+        <P>
+          <S ID="S-26845">Hypergraph</S>
+        </P>
+        <P>
+          <S ID="S-26846">node hyperedge</S>
+        </P>
+        <P>
+          <S ID="S-26847">path</S>
+        </P>
+        <P>
+          <S ID="S-26848">Decoding translation</S>
+        </P>
+        <P>
+          <S ID="S-26849">rule derivation</S>
+        </P>
+        <P>
+          <S ID="S-26850">More formally, a hypergraph (Klein and Manning., 2001; <REF ID="R-08" RPTR="21">Huang and Chiang, 2005</REF><REF ID="R-02" RPTR="8">Chiang, 2005</REF>) is a tuple &#12296;V,E,R&#12297;, where V is a set of nodes, E is a set of hyperedges, and R is a set of weights.</S>
+          <S ID="S-26851">For a given source sentence f = f1 n = f 1 ...f n , each node v &#8712; V is in the form of &#12296;t,[i,j]&#12297;, which denotes the recognition of t as one translation of the source substring spanning from i through j (that is, f i+1 ...f j ).</S>
+          <S ID="S-26852">Each hyperedge e &#8712; E is a tuple e = &#12296;tails(e), head(e), w(e)&#12297;, where head(e) &#8712; V is the consequent node in the deductive step, tails(e) &#8712; V &#8727; is the list of antecedent nodes, and w(e) is a weight function from R |tails(e)| to R.</S>
+        </P>
+        <P>
+          <S ID="S-26853">As a general representation, a translation hypergraph is capable of characterizing the search space of an arbitrary translation model.</S>
+          <S ID="S-26854">Furthermore, it offers a graphic interpretation of decoding process.</S>
+          <S ID="S-26855">A node in a hypergraph denotes a translation, a hyperedge denotes a decision step, and a path of hyperedges denotes a derivation.</S>
+          <S ID="S-26856">A translation hypergraph is formally a semiring as the weight of a path is the product of hyperedge weights and the weight of a node is the sum of path weights.</S>
+          <S ID="S-26857">While max-derivation decoding only retains the single best path at each node, max-translation decoding sums up all incoming paths.</S>
+          <S ID="S-26858">Table 1 summarizes the relationship between translation hypergraph and decoding.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.2 Translation-Level Combination</HEADER>
+        <P>
+          <S ID="S-26859">The conventional interpretation of Eq.</S>
+          <S ID="S-26860">(1) is that the probability of a translation is the sum over all possible derivations coming from the same model.</S>
+          <S ID="S-26861">Alternatively, we interpret Eq.</S>
+          <S ID="S-26862">(1) as that the derivations could come from different models.</S>
+          <S ID="S-26863">3 This forms the theoretical basis of joint decoding.</S>
+          <S ID="S-26864">Although the information inside a derivation differs widely among translation models, the beginning and end points (i.e., f and e, respectively) must be identical.</S>
+          <S ID="S-26865">For example, a tree-to-string</S>
+        </P>
+        <P>
+          <S ID="S-26866">3 The same for all d occurrences in Section 2.</S>
+          <S ID="S-26867">For example, &#8710;(e, f) might include derivations from various models now.</S>
+          <S ID="S-26868">Note that we still use Z for normalization.</S>
+        </P>
+        <P>
+          <S ID="S-26869">model first parses f to obtain a source tree T(f) and then transforms T(f) to the target sentence e. Conversely, a string-to-tree model first parses f into a target tree T(e) and then takes the surface string e as the translation.</S>
+          <S ID="S-26870">Despite different inside, their derivations must begin with f and end with e.</S>
+        </P>
+        <P>
+          <S ID="S-26871">This situation remains the same for derivations between a source substring f j i and its partial translation t during joint decoding:</S>
+        </P>
+        <P>
+          <S ID="S-26872">Pr(t|f j i ) = &#8721;</S>
+        </P>
+        <P>
+          <S ID="S-26873">d&#8712;&#8710;(t,f j i ) Pr(d,t|f j i ) (7)</S>
+        </P>
+        <P>
+          <S ID="S-26874">where d might come from multiple models.</S>
+          <S ID="S-26875">In other words, derivations from multiple models could be brought together for computing the probability of one partial translation.</S>
+          <S ID="S-26876">Graphically speaking, joint decoding creates a packed translation hypergraph that combines individual hypergraphs by merging nodes that have identical translations.</S>
+          <S ID="S-26877">For example, Figure 2 (a) and (b) demonstrate two translation hypergraphs generated by two models respectively and Figure 2 (c) is the resulting packed hypergraph.</S>
+          <S ID="S-26878">The solid lines denote the hyperedges of the first model and the dashed lines denote those of the second model.</S>
+          <S ID="S-26879">The shaded nodes are shared by both models.</S>
+          <S ID="S-26880">Therefore, the two models are combined at the translation level.</S>
+          <S ID="S-26881">Intuitively, shared nodes should be favored in decoding because they offer consensus translations among different models.</S>
+        </P>
+        <P>
+          <S ID="S-26882">Now the question is how to decode with multiple models jointly in just one decoder.</S>
+          <S ID="S-26883">We believe that both left-to-right and bottom-up strategies can be used for joint decoding.</S>
+          <S ID="S-26884">Although phrase-based decoders usually produce translations from left to right, they can adopt bottom-up decoding in principle.</S>
+          <S ID="S-26885">Xiong et al. (2006) develop a bottom-up decoder for BTG (<REF ID="R-28" RPTR="50">Wu, 1997</REF>) that uses only phrase pairs.</S>
+          <S ID="S-26886">They treat reordering of phrases as a binary classification problem.</S>
+          <S ID="S-26887">On the other hand, it is possible for syntax-based models to decode from left to right.</S>
+          <S ID="S-26888"><REF ID="R-27" RPTR="49">Watanabe et al. (2006)</REF> propose leftto-right target generation for hierarchical phrasebased translation.</S>
+          <S ID="S-26889">Although left-to-right decoding might enable a more efficient use of language models and hopefully produce better translations, we adopt bottom-up decoding in this paper just for convenience.</S>
+          <S ID="S-26890">Figure 3 demonstrates the search algorithm of our joint decoder.</S>
+          <S ID="S-26891">The input is a source language sentence f1 n , and a set of translation models M</S>
+        </P>
+        <P>
+          <S ID="S-26892">(line 1).</S>
+          <S ID="S-26893">After initializing the translation hypergraph G (line 2), the decoder runs in a bottomup style, adding nodes for each span [i,j] and for each model m.</S>
+          <S ID="S-26894">For each span [i,j] (lines 3-5), the procedure ADD(G,i,j,m) add nodes generated by the model m to the hypergraph G (line 6).</S>
+          <S ID="S-26895">Each model searches for partial translations independently: it uses its own knowledge sources and visits its own antecedent nodes, just running like a bottom-up individual decoder.</S>
+          <S ID="S-26896">After all models finishes adding nodes for span [i,j], the procedure PRUNE(G, i, j) merges identical nodes and removes less promising nodes to control the search space (line 8).</S>
+          <S ID="S-26897">The pruning strategy is similar to that of individual decoders, except that we require there must exist at least one node for each model to ensure further inference.</S>
+        </P>
+        <P>
+          <S ID="S-26898">Although translation-level combination will not offer new translations as compared to single models, it changes the way of selecting promising candidates in a combined search space and might potentially produce better translations than individual decoding.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>3.3 Derivation-Level Combination</HEADER>
+        <P>
+          <S ID="S-26899">In translation-level combination, different models interact with each other only at the nodes.</S>
+          <S ID="S-26900">The derivations of one model are unaccessible to other models.</S>
+          <S ID="S-26901">However, if two models produce the same structures on the target side, it is possible to combine two models within one derivation, which we refer to as derivation-level combination.</S>
+          <S ID="S-26902">For example, although different on the source side, both hierarchical phrase-based and tree-tostring models produce strings of terminals and nonterminals on the target side.</S>
+          <S ID="S-26903">Figure 4 shows a derivation composed of both hierarchical phrase IP(x 1 :VV, x 2 :NN) &#8594; x 1 x 2</S>
+        </P>
+        <P>
+          <S ID="S-26904">X &#8594; &#12296;fabiao, give&#12297;</S>
+        </P>
+        <P>
+          <S ID="S-26905">X &#8594; &#12296;yanjiang, a talk&#12297;</S>
+        </P>
+        <P>
+          <S ID="S-26906">pairs and tree-to-string rules.</S>
+          <S ID="S-26907">Hierarchical phrase pairs are used for translating smaller units and tree-to-string rules for bigger ones.</S>
+          <S ID="S-26908">It is appealing to combine them in such a way because the hierarchical phrase-based model provides excellent rule coverage while the tree-to-string model offers linguistically motivated non-local reordering.</S>
+          <S ID="S-26909">Similarly, Blunsom and <REF ID="R-00" RPTR="0">Osborne (2008)</REF> use both hierarchical phrase pairs and tree-to-string rules in decoding, where source parse trees serve as conditioning context rather than hard constraints.</S>
+        </P>
+        <P>
+          <S ID="S-26910">Depending on the target side output, we distinguish between string-targeted and tree-targeted models.</S>
+          <S ID="S-26911">String-targeted models include phrasebased, hierarchical phrase-based, and tree-tostring models.</S>
+          <S ID="S-26912">Tree-targeted models include string-to-tree and tree-to-tree models.</S>
+          <S ID="S-26913">All models can be combined at the translation level.</S>
+          <S ID="S-26914">Models that share with same target output structure can be further combined at the derivation level.</S>
+        </P>
+        <P>
+          <S ID="S-26915">The joint decoder usually runs as maxtranslation decoding because multiple derivations from various models are used.</S>
+          <S ID="S-26916">However, if all models involved belong to the same category, a joint decoder can also adopt the max-derivation fashion because all nodes and hyperedges are accessible now (Section 5.2).</S>
+        </P>
+        <P>
+          <S ID="S-26917">Allowing derivations for comprising rules from different models and integrating their strengths, derivation-level combination could hopefully produce new and better translations as compared with single models.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>4 Extended Minimum Error Rate Training</HEADER>
+      <P>
+        <S ID="S-26941">Minimum error rate training (<REF ID="R-21" RPTR="40">Och, 2003</REF>) is widely used to optimize feature weights for a linear model (<REF ID="R-18" RPTR="36">Och and Ney, 2002</REF>).</S>
+        <S ID="S-26942">The key idea of MERT is to tune one feature weight to minimize error rate each time while keep others fixed.</S>
+        <S ID="S-26943">Therefore, each</S>
+      </P>
+      <P>
+        <S ID="S-26944">f(x)</S>
+      </P>
+      <P>
+        <S ID="S-26945">(0,0) x 1 x 2</S>
+      </P>
+      <P>
+        <S ID="S-26946">t 1 t 2</S>
+      </P>
+      <P>
+        <S ID="S-26947">t 3</S>
+      </P>
+      <P>
+        <S ID="S-26948">x</S>
+      </P>
+      <P>
+        <S ID="S-26949">candidate translation can be represented as a line:</S>
+      </P>
+      <P>
+        <S ID="S-26950">f(x) = a &#215; x + b (8)</S>
+      </P>
+      <P>
+        <S ID="S-26951">where a is the feature value of current dimension, x is the feature weight being tuned, and b is the dotproduct of other dimensions.</S>
+        <S ID="S-26952">The intersection of two lines is where the candidate translation will change.</S>
+        <S ID="S-26953">Instead of computing all intersections, Och (2003) only computes critical intersections where highest-score translations will change.</S>
+        <S ID="S-26954">This method reduces the computational overhead significantly.</S>
+      </P>
+      <P>
+        <S ID="S-26955">Unfortunately, minimum error rate training cannot be directly used to optimize feature weights of max-translation decoding because Eq.</S>
+        <S ID="S-26956">(5) is not a linear model.</S>
+        <S ID="S-26957">However, if we also tune one dimension each time and keep other dimensions fixed, we obtain a monotonic curve as follows:</S>
+      </P>
+      <P>
+        <S ID="S-26958">f(x) = K&#8721;</S>
+      </P>
+      <P>
+        <S ID="S-26959">e a k&#215;x+b k (9)</S>
+      </P>
+      <P>
+        <S ID="S-26960">k=1</S>
+      </P>
+      <P>
+        <S ID="S-26961">where K is the number of derivations for a candidate translation, a k is the feature value of current dimension on the kth derivation and b k is the dotproduct of other dimensions on the kth derivation.</S>
+        <S ID="S-26962">If we restrict that a k is always non-negative, the curve shown in Eq.</S>
+        <S ID="S-26963">(9) will be a monotonically increasing function.</S>
+        <S ID="S-26964">Therefore, it is possible to extend the MERT algorithm to handle situations where multiple derivations are taken into account for decoding.</S>
+        <S ID="S-26965">The key difference is the calculation of critical intersections.</S>
+        <S ID="S-26966">The major challenge is that two curves might have multiple intersections while two lines have at most one intersection.</S>
+        <S ID="S-26967">Fortunately, as the curve is monotonically increasing, we need only to find the leftmost intersection of a curve with other curves that have greater values after the intersection as a candidate critical intersection.</S>
+      </P>
+      <P>
+        <S ID="S-26968">Figure 5 demonstrates three curves: t 1 , t 2 , and t 3 .</S>
+        <S ID="S-26969">Suppose that the left bound of x is 0, we compute the function values for t 1 , t 2 , and t 3 at x = 0 and find that t 3 has the greatest value.</S>
+        <S ID="S-26970">As a result, we choose x = 0 as the first critical intersection.</S>
+        <S ID="S-26971">Then, we compute the leftmost intersections of t 3 with t 1 and t 2 and choose the intersection closest to x = 0, that is x 1 , as our new critical intersection.</S>
+        <S ID="S-26972">Similarly, we start from x 1 and find x 2 as the next critical intersection.</S>
+        <S ID="S-26973">This iteration continues until it reaches the right bound.</S>
+        <S ID="S-26974">The bold curve denotes the translations we will choose over different ranges.</S>
+        <S ID="S-26975">For example, we will always choose t 2 for the range [x 1 ,x 2 ].</S>
+        <S ID="S-26976">To compute the leftmost intersection of two curves, we divide the range from current critical intersection to the right bound into many bins (i.e., smaller ranges) and search the bins one by one from left to right.</S>
+        <S ID="S-26977">We assume that there is at most one intersection in each bin.</S>
+        <S ID="S-26978">As a result, we can use the Bisection method for finding the intersection in each bin.</S>
+        <S ID="S-26979">The search process ends immediately once an intersection is found.</S>
+        <S ID="S-26980">We divide max-translation decoding into three phases: (1) build the translation hypergraphs, (2) generate n-best translations, and (3) generate n &#8242; - best derivations.</S>
+        <S ID="S-26981">We apply Algorithm 3 of <REF ID="R-08" RPTR="23">Huang and Chiang (2005)</REF><REF ID="R-02" RPTR="5">Chiang (2005)</REF> for n-best list generation.</S>
+        <S ID="S-26982">Extended MERT runs on n-best translations plus n &#8242; - best derivations to optimize the feature weights.</S>
+        <S ID="S-26983">Note that feature weights of various models are tuned jointly in extended MERT.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>5 Experiments</HEADER>
+      <P>
+        <S ID="S-27035"></S>
+      </P>
+      <DIV DEPTH="1">
+        <HEADER>5.1 Data Preparation</HEADER>
+        <P>
+          <S ID="S-26984">Our experiments were on Chinese-to-English translation.</S>
+          <S ID="S-26985">We used the FBIS corpus (6.9M + 8.9M words) as the training corpus.</S>
+          <S ID="S-26986">For language model, we used the SRI Language Modeling Toolkit (<REF ID="R-26" RPTR="48">Stolcke, 2002</REF>) to train a 4-gram model on the Xinhua portion of GIGAWORD corpus.</S>
+          <S ID="S-26987">We used the NIST 2002 MT Evaluation test set as our development set, and used the NIST 2005 test set as test set.</S>
+          <S ID="S-26988">We evaluated the translation quality using case-insensitive BLEU metric (<REF ID="R-22" RPTR="42">Papineni et al., 2002</REF>).</S>
+          <S ID="S-26989">Our joint decoder included two models.</S>
+          <S ID="S-26990">The</S>
+        </P>
+        <P>
+          <S ID="S-26991">Model Combination Max-derivation Max-translation Time BLEU Time BLEU</S>
+        </P>
+        <P>
+          <S ID="S-26992">both</S>
+        </P>
+        <P>
+          <S ID="S-26993">first model was the hierarchical phrase-based model (<REF ID="R-02" RPTR="9">Chiang, 2005</REF>; <REF ID="R-03" RPTR="14">Chiang, 2007</REF>).</S>
+          <S ID="S-26994">We obtained word alignments of training data by first running GIZA++ (<REF ID="R-19" RPTR="37">Och and Ney, 2003</REF>) and then applying the refinement rule &#8220;grow-diag-final-and&#8221; (<REF ID="R-12" RPTR="28">Koehn et al., 2003</REF>).</S>
+          <S ID="S-26995">About 2.6M hierarchical phrase pairs extracted from the training corpus were used on the test set.</S>
+        </P>
+        <P>
+          <S ID="S-26996">Another model was the tree-to-string model (<REF ID="R-13" RPTR="31">Liu et al., 2006</REF>; <REF ID="R-14" RPTR="32">Liu et al., 2007</REF>).</S>
+          <S ID="S-26997">Based on the same word-aligned training corpus, we ran a Chinese parser on the source side to obtain 1-best parses.</S>
+          <S ID="S-26998">For 15,157 sentences we failed to obtain 1-best parses.</S>
+          <S ID="S-26999">Therefore, only 93.7% of the training corpus were used by the tree-to-string model.</S>
+          <S ID="S-27000">About 578K tree-to-string rules extracted from the training corpus were used on the test set.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.2 Individual Decoding Vs. Joint Decoding</HEADER>
+        <P>
+          <S ID="S-27001">Table 2 shows the results of comparing individual decoding and joint decoding on the test set.</S>
+          <S ID="S-27002">With conventional max-derivation decoding, the hierarchical phrase-based model achieved a BLEU score of 30.11 on the test set, with an average decoding time of 40.53 seconds/sentence.</S>
+          <S ID="S-27003">We found that accounting for all possible derivations in maxtranslation decoding resulted in a small negative effect on BLEU score (from 30.11 to 29.82), even though the feature weights were tuned with respect to BLEU score.</S>
+          <S ID="S-27004">One possible reason is that we only used n-best derivations instead of all possible derivations for minimum error rate training.</S>
+        </P>
+        <P>
+          <S ID="S-27005">Max-derivation decoding with the tree-to-string model yielded much lower BLEU score (i.e., 27.23) than the hierarchical phrase-based model.</S>
+          <S ID="S-27006">One reason is that the tree-to-string model fails to capture a large amount of linguistically unmotivated mappings due to syntactic constraints.</S>
+          <S ID="S-27007">Another reason is that the tree-to-string model only used part of the training data because of parsing failure.</S>
+          <S ID="S-27008">Similarly, accounting for all possible</S>
+        </P>
+        <P>
+          <S ID="S-27009">percentage 1.0 0.9 0.8 0.7 0.6 0.5 0.4 0.3 0.2 0.1 0.0</S>
+        </P>
+        <P>
+          <S ID="S-27010">0 1 2 3 4 5 6 7 8 9 10 11 span width</S>
+        </P>
+        <P>
+          <S ID="S-27011">derivations in max-translation decoding failed to bring benefits for the tree-to-string model (from 27.23 to 27.11).</S>
+          <S ID="S-27012">When combining the two models at the translation level, the joint decoder achieved a BLEU score of 30.79 that outperformed the best result (i.e., 30.11) of individual decoding significantly (p &lt; 0.05).</S>
+          <S ID="S-27013">This suggests that accounting for all possible derivations from multiple models will help discriminate among candidate translations.</S>
+        </P>
+        <P>
+          <S ID="S-27014">Figure 6 demonstrates the percentages of nodes shared by the two models over various span widths in packed translation hypergraphs during maxtranslation decoding.</S>
+          <S ID="S-27015">For one-word source strings, 89.33% nodes in the hypergrpah were shared by both models.</S>
+          <S ID="S-27016">With the increase of span width, the percentage decreased dramatically due to the diversity of the two models.</S>
+          <S ID="S-27017">However, there still exist nodes shared by two models even for source substrings that contain 33 words.</S>
+        </P>
+        <P>
+          <S ID="S-27018">When combining the two models at the derivation level using max-derivation decoding, the joint decoder achieved a BLEU score of 31.63 that outperformed the best result (i.e., 30.11) of individ-</S>
+        </P>
+        <P>
+          <S ID="S-27019">Method Model BLEU</S>
+        </P>
+        <P>
+          <S ID="S-27020">individual decoding</S>
+        </P>
+        <P>
+          <S ID="S-27021">joint decoding both 31.63</S>
+        </P>
+        <P>
+          <S ID="S-27022">ual decoding significantly (p &lt; 0.01).</S>
+          <S ID="S-27023">This improvement resulted from the mixture of hierarchical phrase pairs and tree-to-string rules.</S>
+          <S ID="S-27024">To produce the result, the joint decoder made use of 8,114 hierarchical phrase pairs learned from training data, 6,800 glue rules connecting partial translations monotonically, and 16,554 tree-to-string rules.</S>
+          <S ID="S-27025">While tree-to-string rules offer linguistically motivated non-local reordering during decoding, hierarchical phrase pairs ensure good rule coverage.</S>
+          <S ID="S-27026">Max-translation decoding still failed to surpass max-derivation decoding in this case.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.3 Comparison with System Combination</HEADER>
+        <P>
+          <S ID="S-27027">We re-implemented a state-of-the-art system combination method (<REF ID="R-23" RPTR="44">Rosti et al., 2007</REF>).</S>
+          <S ID="S-27028">As shown in Table 3, taking the translations of the two individual decoders as input, the system combination method achieved a BLEU score of 31.50, slightly lower than that of joint decoding.</S>
+          <S ID="S-27029">But this difference is not significant statistically.</S>
+        </P>
+      </DIV>
+      <DIV DEPTH="1">
+        <HEADER>5.4 Individual Training Vs. Joint Training</HEADER>
+        <P>
+          <S ID="S-27030">Table 4 shows the effects of individual training and joint training.</S>
+          <S ID="S-27031">By individual, we mean that the two models are trained independently.</S>
+          <S ID="S-27032">We concatenate and normalize their feature weights for the joint decoder.</S>
+          <S ID="S-27033">By joint, we mean that they are trained together by the extended MERT algorithm.</S>
+          <S ID="S-27034">We found that joint training outperformed individual training significantly for both max-derivation decoding and max-translation decoding.</S>
+        </P>
+      </DIV>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>6 Related Work</HEADER>
+      <P>
+        <S ID="S-27036">System combination has benefited various NLP tasks in recent years, such as products-of-experts (e.g., (<REF ID="R-25" RPTR="47">Smith and Eisner, 2005</REF>)) and ensemblebased parsing (e.g., (<REF ID="R-07" RPTR="20">Henderson and Brill, 1999</REF>)).</S>
+        <S ID="S-27037">In machine translation, confusion-network based combination techniques (e.g., (<REF ID="R-23" RPTR="45">Rosti et al., 2007</REF>; <REF ID="R-06" RPTR="19">He et al., 2008</REF>)) have achieved the state-of-theart performance in MT evaluations.</S>
+        <S ID="S-27038">From a dif-</S>
+      </P>
+      <P>
+        <S ID="S-27039">ferent perspective, we try to combine different approaches directly in decoding phase by using hypergraphs.</S>
+        <S ID="S-27040">While system combination techniques manipulate only the final translations of each system, our method opens the possibility of exploiting much more information.</S>
+      </P>
+      <P>
+        <S ID="S-27041"><REF ID="R-01" RPTR="3">Blunsom et al. (2008)</REF> first distinguish between max-derivation decoding and max-translation decoding explicitly.</S>
+        <S ID="S-27042">They show that max-translation decoding outperforms max-derivation decoding for the latent variable model.</S>
+        <S ID="S-27043">While they train the parameters using a maximum a posteriori estimator, we extend the MERT algorithm (<REF ID="R-21" RPTR="41">Och, 2003</REF>) to take the evaluation metric into account.</S>
+      </P>
+      <P>
+        <S ID="S-27044">Hypergraphs have been successfully used in parsing (Klein and Manning., 2001; <REF ID="R-08" RPTR="22">Huang and Chiang, 2005</REF><REF ID="R-02" RPTR="10">Chiang, 2005</REF>; <REF ID="R-10" RPTR="25">Huang, 2008</REF>) and machine translation (<REF ID="R-09" RPTR="24">Huang and Chiang, 2007</REF><REF ID="R-03" RPTR="15">Chiang, 2007</REF>; <REF ID="R-17" RPTR="34">Mi et al., 2008</REF>; <REF ID="R-16" RPTR="33">Mi and Huang, 2008</REF><REF ID="R-10" RPTR="26">Huang, 2008</REF>).</S>
+        <S ID="S-27045">Both Mi et al. (2008) and <REF ID="R-01" RPTR="4">Blunsom et al. (2008)</REF> use a translation hypergraph to represent search space.</S>
+        <S ID="S-27046">The difference is that their hypergraphs are specifically designed for the forest-based tree-to-string model and the hierarchical phrase-based model, respectively, while ours is more general and can be applied to arbitrary models.</S>
+      </P>
+    </DIV>
+    <DIV DEPTH="0">
+      <HEADER>7 Conclusion</HEADER>
+      <P>
+        <S ID="S-27047">We have presented a framework for including multiple translation models in one decoder.</S>
+        <S ID="S-27048">Representing search space as a translation hypergraph, individual models are accessible to others via sharing nodes and even hyperedges.</S>
+        <S ID="S-27049">As our decoder accounts for multiple derivations, we extend the MERT algorithm to tune feature weights with respect to BLEU score for max-translation decoding.</S>
+        <S ID="S-27050">In the future, we plan to optimize feature weights for max-translation decoding directly on the entire packed translation hypergraph rather than on n-best derivations, following the latticebased MERT (Macherey et al., 2008).</S>
+      </P>
+    </DIV>
+  </BODY>
+  <ACKNOWLEDGMENTS/>
+  <REFERENCES>
+    <REFERENCE ID="0">
+      <RAUTHOR>Mile Osborne</RAUTHOR>
+      <REFTITLE>tic inference for machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="1">
+      <RAUTHOR>Phil Blunsom</RAUTHOR>
+      <REFTITLE>A discriminative latent variable model for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="2">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>A hierarchical phrase-based model for statistical machine translation.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="3">
+      <RAUTHOR>David Chiang</RAUTHOR>
+      <REFTITLE>Hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="4">
+      <RAUTHOR>Robert Frederking</RAUTHOR>
+      <REFTITLE>Three heads are better than one.</REFTITLE>
+      <DATE>1994</DATE>
+    </REFERENCE>
+    <REFERENCE ID="5">
+      <RAUTHOR>Michel Galley</RAUTHOR>
+      <REFTITLE>Scalable inference and training of context-rich syntactic translation models.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="6">
+      <RAUTHOR>Xiaodong He</RAUTHOR>
+      <REFTITLE>Indirect-HMMbased hypothesis alignment for combining outputs from machine translation systems.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="7">
+      <RAUTHOR>John C Henderson</RAUTHOR>
+      <REFTITLE>Exploiting diversity in natural language processing: Combining parsers.</REFTITLE>
+      <DATE>1999</DATE>
+    </REFERENCE>
+    <REFERENCE ID="8">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Better k-best parsing.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="9">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Forest rescoring: Faster decoding with integrated language models.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="10">
+      <RAUTHOR>Liang Huang</RAUTHOR>
+      <REFTITLE>Forest reranking: Discriminative parsing with non-local features.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="11">
+      <RAUTHOR>Dan Klein</RAUTHOR>
+      <REFTITLE>Parsing and hypergraphs.</REFTITLE>
+      <DATE>2001</DATE>
+    </REFERENCE>
+    <REFERENCE ID="12">
+      <RAUTHOR>Phillip Koehn</RAUTHOR>
+      <REFTITLE>Statistical phrase-based translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="13">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Treeto-string alignment template for statistical machine translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="14">
+      <RAUTHOR>Yang Liu</RAUTHOR>
+      <REFTITLE>Forest-to-string statistical translation rules.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="15">
+      <RAUTHOR>Wolfgang Macherey</RAUTHOR>
+      <REFTITLE>Lattice-based minimum error rate training for statistical machine translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="16">
+      <RAUTHOR>Haitao Mi</RAUTHOR>
+      <REFTITLE>Forest-based translation rule extraction.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="17">
+      <RAUTHOR>Haitao Mi</RAUTHOR>
+      <REFTITLE>Forestbased translation.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="18">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>Discriminative training and maximum entropy models for statistical machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="19">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>A systematic comparison of various statistical alignment models.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="20">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>The alignment template approach to statistical machine translation.</REFTITLE>
+      <DATE>2004</DATE>
+    </REFERENCE>
+    <REFERENCE ID="21">
+      <RAUTHOR>Franz J Och</RAUTHOR>
+      <REFTITLE>Minimum error rate training in statistical machine translation.</REFTITLE>
+      <DATE>2003</DATE>
+    </REFERENCE>
+    <REFERENCE ID="22">
+      <RAUTHOR>Kishore Papineni</RAUTHOR>
+      <REFTITLE>Bleu: a method for automatic evaluation of machine translation.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="23">
+      <RAUTHOR>Antti-Veikko Rosti</RAUTHOR>
+      <REFTITLE>Improved word-level system combination for machine translation.</REFTITLE>
+      <DATE>2007</DATE>
+    </REFERENCE>
+    <REFERENCE ID="24">
+      <RAUTHOR>Libin Shen</RAUTHOR>
+      <REFTITLE>A new string-to-dependency machine translation algorithm with a target dependency language model.</REFTITLE>
+      <DATE>2008</DATE>
+    </REFERENCE>
+    <REFERENCE ID="25">
+      <RAUTHOR>Noah A Smith</RAUTHOR>
+      <REFTITLE>Contrastive estimation: Training log-linear models on unlabeled data.</REFTITLE>
+      <DATE>2005</DATE>
+    </REFERENCE>
+    <REFERENCE ID="26">
+      <RAUTHOR>Andreas Stolcke</RAUTHOR>
+      <REFTITLE>Srilm - an extension language model modeling toolkit.</REFTITLE>
+      <DATE>2002</DATE>
+    </REFERENCE>
+    <REFERENCE ID="27">
+      <RAUTHOR>Taro Watanabe</RAUTHOR>
+      <REFTITLE>Left-to-right target generation for hierarchical phrase-based translation.</REFTITLE>
+      <DATE>2006</DATE>
+    </REFERENCE>
+    <REFERENCE ID="28">
+      <RAUTHOR>Dekai Wu</RAUTHOR>
+      <REFTITLE>Stochastic inversion transduction grammars and bilingual parsing of parallel corpora.</REFTITLE>
+      <DATE>1997</DATE>
+    </REFERENCE>
+  </REFERENCES>
+</PAPER>
